@@ -1,0 +1,5 @@
+interface:
+  display_name: "Spec Implementer"
+  short_description: "Build, test, and review todo specs one at a time, each in its own sub-agent"
+policy:
+  allow_implicit_invocation: true
