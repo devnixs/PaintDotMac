@@ -113,9 +113,21 @@ struct MainMenuTests {
     }
 
     @Test func viewMenuItems() throws {
+        // Spec 0004: Paint.NET's order; the hidden ⌘+ twin of Zoom In keeps the row after it.
         try expectRows(MainMenu.viewMenuIdentifier, [
+            Row(title: "Zoom In", key: "=", modifiers: [.command], action: "zoomIn:"),
+            Row(title: "Zoom In", key: "+", modifiers: [.command], action: "zoomIn:"),
+            Row(title: "Zoom Out", key: "-", modifiers: [.command], action: "zoomOut:"),
+            Row(title: "Zoom to Window", key: "b", modifiers: [.command], action: "zoomToWindow:"),
+            Row(title: "Actual Size", key: "0", modifiers: [.command], action: "actualSize:"),
+            .separator,
             Row(title: "Enter Full Screen", key: "f", modifiers: [.command, .control], action: "toggleFullScreen:"),
         ])
+        // The ⌘+ twin is hidden but still answers key equivalents (⌘+ == ⇧⌘=).
+        let menu = try submenu(MainMenu.viewMenuIdentifier)
+        let plus = try #require(menu.items.first { $0.keyEquivalent == "+" })
+        #expect(plus.isHidden)
+        #expect(plus.allowsKeyEquivalentWhenHidden)
     }
 
     @Test func windowMenuItems() throws {

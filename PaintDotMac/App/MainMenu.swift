@@ -21,6 +21,18 @@ enum MainMenu {
     static let helpMenuIdentifier = NSUserInterfaceItemIdentifier("menu.help")
     static let servicesItemIdentifier = NSUserInterfaceItemIdentifier("menu.app.services")
     static let openRecentItemIdentifier = NSUserInterfaceItemIdentifier("menu.file.openRecent")
+    // Zoom items (0004); stable identifiers so 0045 can audit the shortcut table.
+    static let zoomInItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomIn")
+    static let zoomOutItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomOut")
+    static let zoomToWindowItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomToWindow")
+    static let actualSizeItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.actualSize")
+
+    /// The View menu's zoom actions (0004), sent first-responder-style to
+    /// `DocumentWindowController`.
+    static let zoomInAction = NSSelectorFromString("zoomIn:")
+    static let zoomOutAction = NSSelectorFromString("zoomOut:")
+    static let zoomToWindowAction = NSSelectorFromString("zoomToWindow:")
+    static let actualSizeAction = NSSelectorFromString("actualSize:")
 
     // Actions AppKit routes through the responder chain that no class exposes to Swift;
     // every action is sent to the first responder (target = nil).
@@ -108,8 +120,32 @@ enum MainMenu {
         return menu
     }
 
+    /// Paint.NET's order (ViewMenu.html): Zoom In, Zoom Out, Zoom to Window,
+    /// (Zoom to Selection → 0014 inserts here), Actual Size, separator, Enter Full Screen.
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
+        let zoomIn = makeItem("Zoom In", key: "=", modifiers: .command, action: zoomInAction)
+        zoomIn.identifier = zoomInItemIdentifier
+        menu.addItem(zoomIn)
+        // ⌘+ also zooms in (Paint.NET's Ctrl++): a hidden twin with the "+" equivalent.
+        // AppKit's key-equivalent matching ignores ⇧, so ⌘+ (⇧⌘= on US layouts) hits it.
+        let zoomInPlus = makeItem("Zoom In", key: "+", modifiers: .command, action: zoomInAction)
+        zoomInPlus.identifier = NSUserInterfaceItemIdentifier(zoomInItemIdentifier.rawValue + ".plus")
+        zoomInPlus.isHidden = true
+        zoomInPlus.allowsKeyEquivalentWhenHidden = true
+        menu.addItem(zoomInPlus)
+        let zoomOut = makeItem("Zoom Out", key: "-", modifiers: .command, action: zoomOutAction)
+        zoomOut.identifier = zoomOutItemIdentifier
+        menu.addItem(zoomOut)
+        let zoomToWindow = makeItem("Zoom to Window", key: "b", modifiers: .command,
+                                    action: zoomToWindowAction)
+        zoomToWindow.identifier = zoomToWindowItemIdentifier
+        menu.addItem(zoomToWindow)
+        let actualSize = makeItem("Actual Size", key: "0", modifiers: .command,
+                                  action: actualSizeAction)
+        actualSize.identifier = actualSizeItemIdentifier
+        menu.addItem(actualSize)
+        menu.addItem(.separator())
         menu.addItem(makeItem("Enter Full Screen", key: "f", modifiers: [.command, .control],
                               action: #selector(NSWindow.toggleFullScreen(_:))))
         return menu

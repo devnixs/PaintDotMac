@@ -53,6 +53,12 @@ struct SeededRandom: RandomNumberGenerator, Sendable {
         return range.lowerBound + Int(next() % UInt64(count))
     }
 
+    /// Uniform on `[lowerBound, upperBound]` in steps of one millionth (exactly reproducible).
+    mutating func double(in range: ClosedRange<Double>) -> Double {
+        let parts = next() % 1_000_001
+        return range.lowerBound + (range.upperBound - range.lowerBound) * Double(parts) / 1_000_000
+    }
+
     mutating func byte() -> UInt8 { UInt8(truncatingIfNeeded: next()) }
 
     mutating func color() -> ColorRGBA8 {

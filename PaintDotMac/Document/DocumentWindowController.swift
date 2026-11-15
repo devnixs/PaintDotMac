@@ -1,10 +1,12 @@
 import AppKit
 import CoreGraphics
+import SwiftUI
 
-/// One window per document (APP-1). Built in code with no nib; the content view is the Metal
-/// `CanvasView` (0003) showing the document image, or a label when Metal is unavailable.
+/// One window per document (APP-1). Built in code with no nib; the content view is a stack of
+/// the Metal `CanvasView` (0003) filling the window above the SwiftUI status bar (0004,
+/// APP-5), or a label in place of the canvas when Metal is unavailable.
 @MainActor
-final class DocumentWindowController: NSWindowController {
+final class DocumentWindowController: NSWindowController, NSMenuItemValidation {
     /// Native window tabs: `.automatic` follows the user's "Prefer tabs when opening documents"
     /// setting, and the shared tabbing identifier lets Window > Merge All Windows tab documents
     /// together (PRD §5.1 APP-1, D-36).
@@ -19,7 +21,13 @@ final class DocumentWindowController: NSWindowController {
 
     /// The window's canvas, or `nil` when Metal was unavailable and the window shows the
     /// `canvas.unavailable` label instead.
-    var canvasView: CanvasView? { window?.contentView as? CanvasView }
+    private(set) weak var canvasView: CanvasView?
+
+    /// The document window's status bar state (0004, APP-5).
+    private(set) var statusBarModel: StatusBarModel
+
+    /// The window's zoom/pan controller (0004); `nil` when Metal is unavailable (no canvas).
+    private(set) var navigation: CanvasNavigation?
 
     init(image: LayeredImage) {
         let backingScale = NSScreen.main?.backingScaleFactor ?? 1
@@ -39,20 +47,54 @@ final class DocumentWindowController: NSWindowController {
         window.identifier = Self.windowIdentifier
         window.minSize = CGSize(width: 320, height: 240)
 
+        // The status bar (APP-5): a fixed-height strip at the bottom of the content view;
+        // the canvas fills the rest. Built before `super.init` (Swift requires every stored
+        // property initialized there).
+        statusBarModel = StatusBarModel(imageSize: image.size, dpi: image.dpi, zoom: 1)
         super.init(window: window)
 
-        let canvas = CanvasView(frame: NSRect(origin: .zero, size: contentSize))
+        let statusBarHeight = StatusBarView.statusBarHeight
+        let canvasFrame = NSRect(x: 0, y: statusBarHeight,
+                                 width: contentSize.width,
+                                 height: max(0, contentSize.height - statusBarHeight))
+        let container = NSView(frame: NSRect(origin: .zero, size: contentSize))
+
+        let model = statusBarModel
+        let statusBar = NSHostingView(rootView: StatusBarView(model: model))
+        statusBar.frame = NSRect(x: 0, y: 0, width: contentSize.width, height: statusBarHeight)
+        statusBar.autoresizingMask = [.width]
+
+        let canvas = CanvasView(frame: canvasFrame)
         if canvas.isMetalAvailable {
-            // The canvas is the content view and resizes with the window (0004/0006 later
-            // insert the status bar and tool options bar around it).
             canvas.autoresizingMask = [.width, .height]
-            window.contentView = canvas
-            // Assigning the image after the view joined the window lets the initial zoom
-            // use the window's real backing scale (CAN-6).
-            canvas.image = image
+            canvasView = canvas
+            // Space and later tool keys need the canvas in the responder chain first.
+            window.initialFirstResponder = canvas
         } else {
             NSLog("PaintDotMac: Metal canvas unavailable: \(String(describing: canvas.metalFailure))")
-            window.contentView = Self.metalUnavailableLabel()
+            let placeholder = Self.metalUnavailableLabel()
+            placeholder.frame = canvasFrame
+            placeholder.autoresizingMask = [.width, .height]
+            container.addSubview(placeholder)
+        }
+        if let canvasView { container.addSubview(canvasView) }
+        container.addSubview(statusBar)
+        window.contentView = container
+        if let canvasView {
+            // Only valid once the view joined the window.
+            window.makeFirstResponder(canvasView)
+        }
+
+        if let canvasView {
+            // One hook covers every transform change — initial zoom, resize, navigation —
+            // keeping the status-bar zoom in step (APP-5).
+            canvasView.onTransformChange = { [weak model] transform in
+                model?.zoom = transform.zoom
+            }
+            navigation = CanvasNavigation(canvasView: canvasView, statusBar: model)
+            // Assigning the image after the view joined the window lets the initial zoom
+            // use the window's real backing scale (CAN-6).
+            canvasView.image = image
         }
 
         shouldCascadeWindows = true
@@ -62,6 +104,24 @@ final class DocumentWindowController: NSWindowController {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("not used")  // the app loads no nibs; nothing can reach this
+    }
+
+    // MARK: - Zoom commands (View menu, spec 0004)
+
+    @objc func zoomIn(_ sender: Any?) { navigation?.zoomIn() }
+
+    @objc func zoomOut(_ sender: Any?) { navigation?.zoomOut() }
+
+    @objc func zoomToWindow(_ sender: Any?) { navigation?.zoomToWindow() }
+
+    @objc func actualSize(_ sender: Any?) { navigation?.actualSize() }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(zoomIn(_:)): return navigation?.canZoomIn ?? false
+        case #selector(zoomOut(_:)): return navigation?.canZoomOut ?? false
+        default: return true
+        }
     }
 
     /// Shown centered in place of the canvas when no Metal device or renderer is available.

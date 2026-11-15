@@ -36,6 +36,10 @@ final class CanvasView: MTKView {
     /// Hook for 0004's status bar; fired whenever `transform` changes.
     var onTransformChange: ((CanvasTransform) -> Void)?
 
+    /// The window's navigation (0004); owns every zoom/pan transform change. Nil for bare
+    /// views (unit tests) — navigation events then fall through to the responder chain.
+    weak var navigation: CanvasNavigation?
+
     /// Non-nil when the Metal device and renderer came up. The window controller shows the
     /// `canvas.unavailable` label instead of this view when false.
     private(set) var isMetalAvailable = false
@@ -106,10 +110,87 @@ final class CanvasView: MTKView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        var updated = transform
-        updated.viewSize = bounds.size
-        transform = updated
+        if let navigation {
+            // 0004: keep zoom and view-center point, re-clamp (live resize included).
+            navigation.viewResized(to: bounds.size)
+        } else {
+            var updated = transform
+            updated.viewSize = bounds.size
+            transform = updated
+        }
         applyInitialZoomIfNeeded()
+    }
+
+    // MARK: - Navigation events (0004)
+
+    override func magnify(with event: NSEvent) {
+        guard navigation != nil else { super.magnify(with: event); return }
+        navigation?.magnify(magnification: Double(event.magnification),
+                            atView: pointInThis(from: event))
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard navigation != nil else { super.scrollWheel(with: event); return }
+        navigation?.scroll(
+            deltaX: Double(event.scrollingDeltaX), deltaY: Double(event.scrollingDeltaY),
+            isPrecise: event.hasPreciseScrollingDeltas,
+            zoomModifiers: event.modifierFlags.contains(.command),
+            atView: pointInThis(from: event)
+        )
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard navigation?.keyDown(event) != true else { return }  // Space consumed
+        super.keyDown(with: event)  // other keys go up the responder chain
+    }
+
+    override func keyUp(with event: NSEvent) {
+        guard navigation?.keyUp(event) != true else { return }
+        super.keyUp(with: event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let pans = navigation?.mouseDown(atView: pointInThis(from: event)) ?? false
+        if !pans { super.mouseDown(with: event) }  // 0006 routes this to the active tool
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        navigation?.mouseDragged(toView: pointInThis(from: event))
+        if navigation?.spacePan.isPanning != true { super.mouseDragged(with: event) }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if navigation?.spacePan.isPanning != true { super.mouseUp(with: event) }
+        navigation?.mouseUp()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        navigation?.cursorMoved(toView: pointInThis(from: event))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        navigation?.cursorExited()
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if let navigation { navigation.updateCursor() } else { super.cursorUpdate(with: event) }
+    }
+
+    private func pointInThis(from event: NSEvent) -> CGPoint {
+        convert(event.locationInWindow, from: nil)
+    }
+
+    // MARK: - Pointer tracking (0004)
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate,
+                      .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil
+        ))
     }
 
     override func viewDidMoveToWindow() {

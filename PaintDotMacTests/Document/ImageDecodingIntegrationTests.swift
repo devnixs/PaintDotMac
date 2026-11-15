@@ -24,7 +24,7 @@ struct ImageDecodingIntegrationTests {
             #expect(harness.document.image.size == PixelSize(width: 300, height: 200))
             #expect(harness.document.image.layers.count == 1)
             #expect(harness.window.title.hasPrefix("transparent-300x200"))
-            let canvas = try #require(harness.window.contentView)
+            let canvas = try #require(harness.windowController.canvasView)
             #expect(canvas.accessibilityValue() as? String == "300 × 200")
         }
     }
@@ -40,7 +40,7 @@ struct ImageDecodingIntegrationTests {
                 properties: [kCGImagePropertyOrientation: 6]
             )
             let harness = try await DocumentHarness.open(url)
-            let canvas = try #require(harness.window.contentView)
+            let canvas = try #require(harness.windowController.canvasView)
             #expect(canvas.accessibilityValue() as? String == "200 × 300")
         }
     }

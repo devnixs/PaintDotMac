@@ -259,7 +259,7 @@ General rule: **Ctrl → ⌘, Alt → ⌥**. Mac system shortcuts take precedenc
 | Layer Properties | F4 / double-click | Double-click the layer row |
 | Rotate 90° CW / 90° CCW / 180° | Ctrl+H / Ctrl+G / Ctrl+H+H or Ctrl+G+G (older versions: Ctrl+J) | ⌘] / ⌘[ / ⌘J (⌘H is Hide) |
 | Select All | Ctrl+A | ⌘A |
-| Zoom In / Zoom Out | Ctrl++ / Ctrl+- | ⌘= / ⌘− |
+| Zoom In / Zoom Out | Ctrl++ / Ctrl+- | ⌘= (⌘+ also) / ⌘− |
 | Actual Size / Zoom to Window / Zoom to Selection | Ctrl+0 / Ctrl+B / Ctrl+Shift+B | ⌘0 / ⌘B / ⇧⌘B |
 | Erase Selection / Fill Selection | Delete / Backspace | ⌫ or ⌦ / ⌥⌫ |
 | Brush width down / up | [ / ] | [ / ] (no modifier) |

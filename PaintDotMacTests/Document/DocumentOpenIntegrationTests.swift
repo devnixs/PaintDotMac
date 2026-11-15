@@ -30,7 +30,7 @@ struct DocumentOpenIntegrationTests {
             // The title starts with the base name; whether the extension shows follows the
             // Finder "show extensions" setting, so it is not checked.
             #expect(window.title.hasPrefix("launch-fixture"))
-            let canvas = try #require(window.contentView)
+            let canvas = try #require(controllers.first?.canvasView)
             #expect(canvas.accessibilityValue() as? String == "64 × 48")
         }
     }
@@ -51,7 +51,7 @@ struct DocumentOpenIntegrationTests {
             let controller = try #require(paintDocument.windowControllers.first as? DocumentWindowController)
             let window = try #require(controller.window)
             #expect(window.isVisible == false)
-            let canvas = try #require(window.contentView)
+            let canvas = try #require(controller.canvasView)
             #expect(canvas.accessibilityValue() as? String == "40 × 30")
         }
     }

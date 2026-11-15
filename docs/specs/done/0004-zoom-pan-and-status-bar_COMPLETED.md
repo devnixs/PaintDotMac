@@ -257,3 +257,20 @@ Expected values are computed by hand from the rules above.
 - Rendering quality at each zoom (nearest-neighbor, mipmaps, Retina mapping) → 0003.
 - Changing a document's DPI (Resize Image dialog) → 0035; New Image DPI field → 0005.
 - `docs/shortcuts.md` and the shortcut table → 0045.
+
+## Verification status
+
+- Date: 2026-11-15. Quality gate (`.agents/skills/spec-implementer/scripts/quality-gate.sh`): **GREEN** — clean Debug build with no Swift warnings; `tests: 337 passed, 0 failed, 0 skipped (of 337)`; `tests: no crash reports during the run`. It never launches the app; no test shows a window.
+- Performance: none measured, by design — this spec changes only O(1) transform math and event handling; rendering cost is 0003's (already measured in `CanvasRenderPerformanceTests`), and NF-2's 60 fps pan/zoom target is measured in 0048.
+- Manual verification steps (not yet run by user):
+  - [ ] not yet run by user — 1. Open a 4000×3000 photo on a trackpad Mac. Pinch out and in: zoom follows the fingers smoothly, the point under the fingers stays put, the zoom stops at 1% and 3200%, and the status bar zoom updates continuously.
+  - [ ] not yet run by user — 2. Two-finger scroll in all directions: the image follows the fingers (with natural scrolling on), stops at the image edges; a small image (64×64) can't be moved and stays centered.
+  - [ ] not yet run by user — 3. Hold Space: the cursor becomes an open hand; drag: a closed hand and the image follows the pointer; release Space while still dragging: the pan continues until mouse up, then the normal cursor returns. Hold Space, ⌘-Tab away, release, come back: the canvas isn't stuck in pan mode.
+  - [ ] not yet run by user — 4. With a mouse wheel (if available): wheel pans vertically, Shift+wheel horizontally, ⌘+wheel steps through presets around the pointer.
+  - [ ] not yet run by user — 5. Resize the window at 400%: the zoom stays, the image center stays in the middle.
+  - [ ] not yet run by user — 6. Two documents as window tabs: each keeps its own zoom/scroll; switching units in one changes both. Quit and relaunch: the chosen unit is still selected.
+  - [ ] not yet run by user — 7. Retina and non-Retina display (or scaled resolution): Actual Size shows one image pixel per device pixel (crisp, no blur); Zoom to Window fits exactly with no scroll.
+  - [ ] not yet run by user — 8. Dark mode: status bar text and popup are legible; VoiceOver reads "Cursor Position, 12, 34", "Image Size, 4000 × 3000", "Zoom, 100%", and the Units popup.
+  - [ ] not yet run by user — 9. Pan and zoom a 4000×3000 image: subjectively smooth (60 fps); note any stutter for 0048.
+
+Review:

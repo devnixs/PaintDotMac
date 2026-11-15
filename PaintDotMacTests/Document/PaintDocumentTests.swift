@@ -198,7 +198,7 @@ struct PaintDocumentTests {
         let controller = try #require(document.windowControllers.first as? DocumentWindowController)
         let window = try #require(controller.window)
         #expect(window.identifier == NSUserInterfaceItemIdentifier("documentWindow"))
-        #expect(window.contentView is CanvasView)
+        #expect(controller.canvasView != nil)
         window.close()
     }
 
