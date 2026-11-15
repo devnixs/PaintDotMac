@@ -325,13 +325,7 @@ Fixtures are generated in the tests with `TestImages` (unit) and `FixtureFiles` 
 
 ## Open questions
 
-Decided as stated (recommended answers applied); the batch owner should confirm with the user and record them in PRD §12.
-
-1. **Imported layer name:** the file name without its extension ("beach.png" → "beach"). Paint.NET's docs don't say. Recommended: yes.
-2. **Placement and floating for Import/drop:** pixels at the canvas top-left (0,0); a single file floats with Move Selected Pixels active (like Paste into New Layer, so it can be positioned right away); a multi-file import or drop places all layers directly (one step, nothing floats, last layer active). Not at the drop point. Recommended: yes.
-3. **Importing a layered `.ora`:** imported as one layer equal to its composite (visible layers), named after the file. Paint.NET's "one or more new layers" could also mean one layer per source layer; that is deferred. Recommended: composite.
-4. **Copy Merged shortcut:** ⇧⌘C (Paint.NET Ctrl+Shift+C under §5.12's Ctrl → ⌘ rule); PRD §5.12's table has no row for it. Recommended: add the row "Copy Merged | Ctrl+Shift+C | ⇧⌘C".
-5. **Canvas growth on import is automatic (no E-6 prompt)**, per Paint.NET's Layers menu doc ("This happens automatically as required"); E-6's prompt stays for Paste and Paste into New Layer only. The grown area follows 0021's rule (bottom layer = secondary color, others transparent). Recommended: yes.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-56. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

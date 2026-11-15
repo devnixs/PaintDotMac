@@ -303,11 +303,7 @@ Expected values come from Paint.NET's formulas (transcribed above) and hand calc
 
 ## Open questions
 
-Decided as stated (recommended answers applied in this spec); please confirm and record in PRD.md §5.8/§12:
-
-1. **Removing control points: Paint.NET's gestures only — right-click (and, on the Mac, Control-click) removes a point; there is no "drag the point off the graph to delete it".** In Paint.NET 3.36 dragging past the plot edge clamps to the border, so a point dropped on x = 0 or 255 merges into that endpoint, and a point dropped on a neighbour's x replaces the neighbour. The help text reads "Tip: Right-click or Control-click to remove control points." Alternative: also delete a point when it is dragged outside the plot (as some other editors do). Recommended: mirror Paint.NET, with the Control-click addition.
-2. **The Curves value keeps both the Luminosity curve and the three RGB curves, and the session memory/Repeat keeps both; only the active mode is applied.** Paint.NET 3.36 keeps both curves while the dialog is open, but its saved settings hold only the active mode's curve, so after OK in RGB mode, reopening shows a reset Luminosity curve. Alternative: drop the inactive mode's curves on OK. Recommended: keep both (no effect on pixels; less surprising when switching modes).
-3. **Clicking within about 5 curve units of an existing point moves that point under the pointer instead of adding a new one, and a click adds the point at the pointer position (not snapped onto the curve)** — Paint.NET 3.36's behavior (hit radius: squared distance < 30 in 0…255 units). Recommended: mirror Paint.NET.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-60. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

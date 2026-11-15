@@ -330,17 +330,7 @@ Expected values come from hand calculation, the formulas above, the format specs
 
 ## Open questions
 
-Recommendations below are already applied in the spec; each needs the user's confirmation and a PRD §5.11/§12 entry.
-
-1. **FMT-A confirmation frequency.** PRD says ⌘S writes the own format "with the FMT-A confirmation"; it doesn't say how often. **Recommended:** ask once per document session per target (file URL + format); ⌘S to the same target afterwards doesn't ask; Save As/Save To always ask; nothing is persisted. (Paint.NET avoids the repeat by flattening the document itself as an undoable step, which PRD FMT-A rules out.)
-2. **JPEG transparency.** **Recommended:** composite onto white with `c' = (c·a + 255·(255−a) + 127)/255` (Paint.NET's output is white too, as reported by its users; not stated in its docs).
-3. **GIF transparency threshold.** **Recommended:** our own fixed threshold 128 (alpha ≥ 128 opaque) instead of ImageIO's implicit 64, no dithering option, palette by ImageIO. Paint.NET exposes "Transparency threshold" and dithering options in its GIF dialog; PRD F-5 doesn't ask for them.
-4. **BMP and FMT-B "Saving always embeds an sRGB profile".** ImageIO writes no profile into BMP (and GIF's profile handling is ImageIO's). **Recommended:** accept this exception for BMP (untagged files are read as sRGB, so pixels round-trip exactly) and note it in FMT-B; BMP is 32-bit with alpha when any pixel is non-opaque, else 24-bit (Paint.NET's "Auto" bit depth behaves the same way).
-5. **HEIC quality.** PRD F-4 asks for no options. **Recommended:** fixed quality 0.90, no dialog in v1.0 (a HEIC options dialog could reuse `JPEGOptionsDialog` later).
-6. **When the JPEG dialog appears.** **Recommended:** on every JPEG save (⌘S and Save As, also from the close prompt's Save…), starting at the quality last used for the document this session, else `settings.jpegQuality` (95); the dialog never changes `settings.jpegQuality` (that is APP-8's "default JPEG quality", edited in 0046). Paint.NET's quality range is 0–100 (API docs), so the slider is 0–100, not 1–100.
-7. **Dialog and prompt wording.** Paint.NET's docs page for saving was unavailable. **Recommended:** sheet title "JPEG Options" with "Quality:" and "File size:"; flatten prompt "Flatten image?" / "The <format> format doesn't support layers. The saved file will contain a flattened copy of the image. The layers in this document are kept." with "Flatten" and "Cancel".
-
-Settled (implementation-level, stated in Scope 8): this spec replaces `NSDocument`'s built-in save-panel format popup (used by 0028) with its own "Format:" accessory.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-55. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

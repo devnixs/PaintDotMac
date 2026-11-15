@@ -209,13 +209,7 @@ Notation: **pattern(x, y)** = `(x % 256, y % 256, (x + y) % 256, 255)` — every
 
 ## Open questions
 
-Recommended answers are applied in this spec; the user should confirm each.
-
-1. **Aligned vs non-aligned.** Paint.NET has no option: the offset is fixed at the first stroke after Ctrl-click and kept for later strokes ("aligned") until a new source is set. *Recommended:* aligned only, no option; the source is per document, survives tool switches and undo/redo, and is not saved or restored across launches.
-2. **Sampling Layer vs Image.** The Paint.NET Clone Stamp page lists no Sampling option; Paint.NET clones from the layer that was active at the Ctrl-click (3.36 source), which may differ from the destination layer. *Recommended:* add a **Sampling** option (Layer default / Image), reusing `SamplingMode`, as on the Color Picker, Magic Wand, and Paint Bucket; Layer reads the layer active at the ⌥-click.
-3. **Source pixels outside the canvas.** Paint.NET 3.36 resets the anchor when the source leaves the layer bounds. *Recommended:* treat them as transparent, so those destination pixels are left unchanged, and keep the offset.
-4. **Dragging with no source set.** Paint.NET does nothing. *Recommended:* do nothing (no step, no beep), and show a hint "⌥-click to set the source" in the options bar while the document has no source.
-5. **Default brush settings.** *Recommended:* the same defaults as the Paintbrush (width 2, hardness 75, antialiasing on, Normal) and Pressure Sensitivity Size (0055), each stored separately under `tool.cloneStamp.*`.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-82. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

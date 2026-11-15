@@ -317,13 +317,7 @@ As a PaintDotMac user, I can select part of my image and press ⌘C or ⌘X to p
 
 ## Open questions
 
-Decided as stated (recommended answers applied); the batch owner should confirm and record them in PRD §12. (Not questions: the expand fill color is a stated decision in item 3; the floating state lives in `DocumentState` per 0020.)
-
-1. **Cut's erase color and selection.** Paint.NET's EditMenu.html says Cut leaves *transparent white* (#FFFFFF, alpha 0) and clears the selection, while Erase Selection leaves *transparent black*. This spec makes Cut = 0018's Erase Selection pixels (transparent black, D-27 "full erase → transparent black") + Deselect, as one step "Cut". Recommended: keep transparent black (both are invisible; one rule app-wide) and deselect as Paint.NET does.
-2. **Cut without a selection.** Paint.NET's docs don't say. This spec disables Cut when nothing is selected (so ⌘X can never silently clear a whole layer), while Copy copies the whole layer. Recommended: yes.
-3. **Paste into New Image background.** Following "creates a new image, then pastes", the new image has 0005's white "Background" and the clipboard pixels float above it, so transparent clipboard pixels end up over white. Alternative: the new image's single layer is the clipboard pixels themselves (transparency kept, history base only). Recommended: Paint.NET-faithful (white background + "Paste" step).
-4. **Pasted pixels composite (Normal) over the layer instead of overwriting it.** Paint.NET's doc says pasted pixels "will overwrite existing pixels"; 0020 renders floating pixels with a Normal blend over the underlay (identical for opaque clipboard images and for moved pixels, whose underlay has a transparent hole). Recommended: Normal blend (one floating-pixels rule app-wide); overwrite would need a per-session flag in 0020's `FloatingPixels`.
-5. **Zoom after a canvas-size change** (Paste with Expand here; Crop in 0022; 0035–0037 later): keep the zoom percentage and re-center the image (`withImageSize`), also on undo/redo; no automatic Zoom to Window (⌘B fits on demand). Recommended: yes. (0022's Open question 2 is the same question; one answer covers both.)
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-48. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

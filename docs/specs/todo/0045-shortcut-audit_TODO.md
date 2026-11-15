@@ -408,14 +408,7 @@ No pixel or history change; NF-1 to NF-4 are unaffected. Core files import only 
 
 ## Open questions
 
-The recommended answers are applied in this spec; the user hasn't confirmed them. The pending items from earlier specs (Q3) are included in the table with their recommended values but stay marked `pendingDecision` until the user confirms them; this spec does not settle them.
-
-1. **Go to Layer Above / Below: ⌥⇞ / ⌥⇟** (Paint.NET Alt + PgUp / Alt + PgDn, by the Alt → ⌥ rule; fn-⌥-↑/↓ on laptops). 0024 left them without a shortcut "until 0045". Alternatives: ⌥] / ⌥[ (Photoshop's select-layer keys), or none. Recommended: ⌥⇞ / ⌥⇟, disabled while a text field or the Text tool has focus.
-2. **Brightness / Contrast ⇧⌘T** (Paint.NET's current docs list Ctrl + Shift + T; 0031 assumed "Paint.NET has none"). ⇧⌘T is not reserved by macOS and unused in the app. Recommended: add ⇧⌘T.
-3. **Pending from earlier specs (unchanged recommended values, not settled here):** Copy Merged ⇧⌘C (0030); Black and White ⇧⌘G, Sepia ⇧⌘E, Posterize ⇧⌘P (0032; ⇧⌘G is Go to Folder inside Open/Save panels, ⇧⌘P is Page Setup in printing apps); Auto-Level ⇧⌘L (0033); Shapes A / Shift+A cycle shape types as a tool-local key (0039). Recommended: keep all, then add the rows to PRD §5.12.
-4. **Line/Curve , . / keys** (Paint.NET: start cap style, line style, end cap style) are not implemented by 0038. Recommended: leave them unmapped in v1.0 and list them as "Not mapped" in `docs/shortcuts.md`.
-5. **Other Paint.NET shortcuts left unmapped in v1.0** (listed as "Not mapped" in `docs/shortcuts.md`): Save All (Ctrl + Alt + S), Print (Ctrl + P), Enter as Deselect (Return commits pending edits instead), the second Ctrl + B restoring the previous zoom, Ctrl + [ / ] brush width × 5 (⌘[ / ⌘] are Rotate), Ctrl + , Toggle Layer Visibility (⌘, is Settings), Go to Top/Bottom Layer, Ctrl/Alt + 1…9 switch image, PgUp/PgDn/Home/End scrolling and Space + arrow panning (no scroll bars, D-29), the Shift + Delete / Ctrl + Insert / Shift + Insert clipboard aliases, Shift + Backspace fill with secondary color, Ctrl + Shift + F5…F8 reset window. Recommended: leave all unmapped.
-6. **Layer Rotate / Zoom (P1, 0060):** Paint.NET's Ctrl + Shift + Z collides with Redo ⇧⌘Z. Recommended: no shortcut when 0060 adds the item (0060 adds its row to the table).
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-71. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

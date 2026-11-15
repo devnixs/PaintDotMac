@@ -296,12 +296,7 @@ Expected values come from Paint.NET's formulas (transcribed above) and hand calc
 
 ## Open questions
 
-Decided as stated (recommended answers applied in this spec); please confirm and record in PRD.md §5.8/§5.12/§12:
-
-1. **The histogram (Levels dialog and Auto-Level) ignores alpha, like Paint.NET 3.36:** every selected pixel counts its stored color, so fully transparent areas (stored as (0,0,0,0)) count as black and pull Auto-Level's black point to 0; selection membership is mask coverage ≥ 128 (pixel center inside). Alternative: skip alpha-0 pixels or weight by alpha. Recommended: mirror 3.36.
-2. **Paint.NET 3.36 Levels-dialog quirks are not reproduced:** (a) the input-point setters copy the red value into green/blue when pushing the other point — applied per channel here; (b) dragging the grey handle sets gamma to `1/log₀.₅ r`, which makes the handle jump — here the exact inverse of the handle formula; (c) the grey swatch divides integers (gamma becomes 0.1 or 10) — here Double division; (d) every field edit re-applies all five fields (re-normalizing gamma to the 2-decimal display) — here only the edited field is applied. The applied pixel math (`Level.Apply`, `AutoFromLoMdHi`, histogram percentiles/mean) is transcribed exactly. Recommended: yes.
-3. **Auto-Level does nothing at all when any one channel has equal 0.5 % and 99.5 % percentiles** (e.g. a pure-red image whose blue channel is all 0), because 3.36 marks the whole `Level` invalid; the Levels dialog's Auto button then leaves the values unchanged and beeps (docs: Auto-Level ≡ Levels + Auto). Alternative: leave only the flat channel unchanged and level the others. Recommended: mirror 3.36.
-4. **Auto-Level shortcut ⇧⌘L** (Paint.NET Ctrl+Shift+L via PRD §5.12's Ctrl → ⌘ rule; the §5.12 table has no Auto-Level row; ⇧⌘L is not a macOS-reserved shortcut and is unused in the app). Recommended: yes; add the row to PRD §5.12 and 0045's `docs/shortcuts.md`.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-59. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

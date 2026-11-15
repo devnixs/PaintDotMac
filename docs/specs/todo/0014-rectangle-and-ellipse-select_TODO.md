@@ -287,12 +287,7 @@ Expected values below are hand-computed from the formulas in this spec (Paint.NE
 
 ## Open questions
 
-These have a recommended answer already written into the spec; the implementer follows the spec unless the user decides otherwise. The batch owner should confirm them and copy them into PRD §12.
-
-1. **No post-draw handles on Rectangle/Ellipse Select.** Paint.NET's docs list resize nubs only for the Move tools; resizing a drawn selection is 0019 (Move Selection). Recommended: keep it so for v1.0.
-2. **Zoom to Selection with no selection is disabled** (Paint.NET may treat "no selection" as the whole image). Recommended: disabled — ⌘B already covers the whole image.
-3. **`hasMoved` counts pixel changes, not raw mouse events** (a small deviation from Paint.NET 3.36 that avoids accidental 1 × 1 selections at high zoom). Recommended: keep.
-4. **The selection mode and clipping options are shared across selection tools** and stored under `tool.rectangleSelect.*`. Recommended: keep (Paint.NET has one global selection mode).
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-44. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

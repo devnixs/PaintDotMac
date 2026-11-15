@@ -234,8 +234,7 @@ All expected values were computed independently of the implementation, with a st
 
 ## Open questions
 
-1. **Formula source for the L-4 modes.** PRD L-4 says "More blend modes from Paint.NET 5.x", but Paint.NET's current documentation (https://www.paint.net/doc/latest/BlendModes.html, fetched 2026-11-08) lists only the 14 L-3 layer modes (plus the tool-only Overwrite) and no L-4 mode, and no Paint.NET source defines them, so there is no Paint.NET formula to follow (D-17 can't apply). **Recommended (applied in this spec):** use the W3C Compositing and Blending Level 1 formulas (https://www.w3.org/TR/compositing-1/#blending), including the W3C/SVG Soft Light (not Photoshop's or Direct2D's Soft Light, which differs), pinned to the 8-bit arithmetic above. This also matches what the ORA `svg:*` names mean, so `.ora` files look the same in Krita. If you'd rather match Paint.NET 5 pixel-for-pixel, someone needs to measure Paint.NET 5's output (if it has these modes at all) and this spec's formulas would change.
-2. **Position and order of the six modes in the popups.** Paint.NET documents no 20-mode order. **Recommended (applied):** append them after Xor in PRD L-4 order — Hard Light, Soft Light, Color, Luminosity, Hue, Saturation — with no separator. This keeps the L-3 list in Paint.NET's order and keeps blend indices 0…13 (and 0043's `blend_mode_at`) stable. Alternatives: W3C order (Hard Light, Soft Light, Hue, Saturation, Color, Luminosity), or grouping Hard/Soft Light next to Overlay (would renumber indices; raw values would still be stable).
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-85. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

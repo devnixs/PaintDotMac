@@ -166,9 +166,7 @@ Expected values are hand-computed below or come from the simple oracle in the te
 
 ## Open questions
 
-1. **Transparent color and antialiased edges.** Paint.NET 3.36 clears outside pixels to transparent *white* with hard region edges; the current docs say "made transparent with the color information removed". This spec uses `(0,0,0,0)` for unselected pixels and scales alpha by the coverage on antialiased edges (color kept, `(0,0,0,0)` when alpha reaches 0). Recommended: yes, as written (matches D-27's "full erase → transparent black" and 0013's antialiased masks). Needs a PRD §5.5 IMG-1 / §12 entry.
-2. **Zoom after crop.** Same question as 0021's Open question 5 (one answer covers both): keep the zoom percentage and re-center the cropped image (no automatic Zoom to Window), for the crop and for its undo/redo, via 0021's `CanvasTransform.withImageSize`. Recommended: yes (predictable; ⌘B fits on demand; 0035–0037 reuse the same rule).
-3. **Selection after crop.** This spec keeps the selection, translated to the new origin (a rectangle crop becomes a full-canvas selection), rather than deselecting. Recommended: yes. Needs a PRD IMG-1 note.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-49. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

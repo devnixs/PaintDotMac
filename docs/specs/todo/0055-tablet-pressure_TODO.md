@@ -201,13 +201,7 @@ Expected values below were computed by hand from the formulas above (independent
 
 ## Open questions
 
-Recommended answers are applied in this spec; the user should confirm each.
-
-1. **Force Touch trackpad pressure — include or exclude?** Force Touch trackpads report a varying `NSEvent.pressure` during clicks and drags, but pressing harder also triggers force-click stages. *Recommended:* exclude; only tablet events (`.tabletPoint` subtype/type) carry pressure, everything else is 1.0.
-2. **Option shape and default.** Paint.NET has one on/off Pressure Sensitivity toggle (size only). *Recommended:* a "Pressure Sensitivity" popup with Off / Size / Opacity / Size and Opacity, per tool (`tool.<id>.pressureSensitivity`), default **Size** (closest to Paint.NET with the toggle on; no effect for mouse users).
-3. **Minimum width at zero pressure.** *Recommended:* fixed at 10 % of the brush width (`BrushPressure.minimumWidthFraction = 0.1`), linear response, no user-adjustable minimum or curve in v1.x; opacity goes all the way to 0.
-4. **When to show the option.** Paint.NET shows its toggle only when a pen is detected. *Recommended:* always show it for the Paintbrush and Eraser (simpler, and testable without a tablet).
-5. **Brush outline under pressure.** *Recommended:* the outline keeps showing the full brush width (pressure 1), not the live pressure width.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-81. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

@@ -262,13 +262,7 @@ As a PaintDotMac user, I can dock the Tools, History, Layers, and Colors panels 
 
 ## Open questions
 
-Per the open-questions policy, the recommended answer is applied throughout this spec; each needs the user's confirmation (and then a PRD §5.1 APP-3 / §12 update).
-
-1. **How does the user dock and undock a panel?** Paint.NET has no docking to mirror. Options: (a) explicit commands — a Dock button in each floating panel's title bar, a Float button in each docked panel's header, and a Window > Docked Panels submenu (with Dock All / Float All); (b) drag a panel's title bar onto the window edge to dock, and drag a docked header out to float; (c) both. **Recommended (applied): (a).** It is deterministic, keyboard- and VoiceOver-accessible, and fully UI-testable; drag-to-dock can be added later on top of the same `PanelLayout` model.
-2. **Where do docked panels go, and stacked or tabbed?** **Recommended (applied):** Tools in a fixed-width left column; History, Layers, Colors stacked (not tabbed) in that order in one resizable right column; fixed order and sides (not user-configurable). Alternatives: everything in one right column; tabs within the column; user-chosen side and order.
-3. **What is the default layout for new installs and v1.0 upgrades?** **Recommended (applied):** all panels float, exactly as in v1.0 (D-5); docking is opt-in.
-4. **What does Settings > Reset Panel Positions do once docking exists?** **Recommended (applied):** it restores the whole default layout — floats every docked panel, resets the dock width (240 pt) and History/Layers split (40%), and moves floating panels to their default frames; visibility is unchanged and the button keeps its label "Reset Panel Positions".
-5. **What content does a docked History/Layers panel show in a window that isn't the active one, and what happens to the window when docking needs space?** **Recommended (applied):** each window's docked History and Layers show that window's own document (Tools and Colors are app-wide); when a window is too narrow for its docks, it widens (clamped to the screen) rather than squeezing the canvas below 200 pt, and floating never shrinks the window.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-78. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

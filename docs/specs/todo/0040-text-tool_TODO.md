@@ -355,11 +355,7 @@ Expected values come from Core Text font metrics queried directly in the test (a
 
 ## Open questions
 
-1. **Escape: commit or cancel?** Paint.NET's Text tool page says "press the Esc key or click Finish in the Tool Bar to render the text to the layer" (Esc **commits**), whereas 0006's default and the other editable tools (Gradient, Move Selected Pixels, Line / Curve, Shapes) treat Escape as cancel. PRD T-17/D-25 list the commit gestures (tool switch, ⌘↩, click outside) but are silent on Escape. **Recommended and applied:** Escape commits, as in Paint.NET (discarding typed text on a stray Escape is destructive, and ⌘Z removes the committed text in one step). Escape during a nub drag reverts only the drag; during IME composition it goes to the input method.
-2. **Size units and the pixel conversion.** PRD T-17 says "12 pt" but doesn't define the conversion, and Paint.NET's page is inconsistent ("scaled according to the image DPI", 1 pt = 1/72 in, yet "pixel height ≈ points × DPI / 96"). **Recommended and applied:** sizes are points at the document DPI, em size in pixels = pt × DPI / 72 (12 pt @ 96 DPI = 16 px, matching Paint.NET's "Fixed (96 DPI)" output at 96 DPI and Windows/macOS typography). No "Fixed (96 DPI)" unit option in v1.0.
-3. **Blend mode option.** Paint.NET's Text toolbar has the tool blend mode, but PRD T-17's option list doesn't name it. **Recommended and applied:** include the Blend mode popup with the same list as the Paintbrush (D-15), default Normal.
-4. **Clipboard and other menu shortcuts while typing.** Paint.NET lets you type; it is unclear whether ⌘V should paste text into the pending text. **Recommended and applied:** v1.0 has no text clipboard in the Text tool; every menu command (⌘V, ⌘C, ⌘A, ⌘Z, …) commits the pending text first and then acts on the image, like every other pending edit.
-5. **Changing the primary color while text is pending.** Paint.NET re-colors the pending text live; 0023 captures colors at creation for the Gradient. **Recommended and applied:** the pending text always uses the current primary color and re-renders when it changes (AppModel calls `dispatcher.colorsDidChange()` on color changes; only `TextTool` implements `Tool.colorsDidChange`, so the Gradient, Line / Curve, and Shapes keep their creation colors).
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-66. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

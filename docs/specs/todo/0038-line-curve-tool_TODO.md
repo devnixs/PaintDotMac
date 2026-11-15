@@ -337,9 +337,7 @@ Expected values are hand-computed. `P = (0,0,0,255)`, `W = (255,255,255,255)`. C
 
 ## Open questions
 
-1. **Curve model and editing gestures.** PRD T-18 says "Editable Bézier handles". This spec implements a single cubic Bézier with Paint.NET 4+'s four fixed nubs (two endpoints, two control points), adds Inkscape-style "drag the line itself to bend it", and arrow-key nudging. It does **not** offer Paint.NET's Spline/Straight curve-type option, does not add extra control points (Paint.NET 3.x style), and omits the Move handle, right-drag rotation, and Alt "draw from center". Recommended: yes for v1.0; record next to T-18 in PRD §5.3 / §12.
-2. **Undo while a line is pending.** As with the Gradient (0023), ⌘Z first commits the pending line and then undoes it, so the whole line disappears in one step (Paint.NET 4+ instead records each nub edit as its own step while editing). Recommended: keep the 0023 behavior for consistency.
-3. **Dash style list, cap names, arrow size.** Paint.NET's docs don't list them. This spec uses the GDI+ set Paint.NET 3.x used — Solid, Dash, Dot, Dash Dot, Dash Dot Dot (patterns ×width, butt-ended dashes) — caps Flat, Arrow, Arrow (Filled), Rounded, and arrowheads 5 × max(width, 2) long and wide. Recommended: yes; record in PRD T-18.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-64. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

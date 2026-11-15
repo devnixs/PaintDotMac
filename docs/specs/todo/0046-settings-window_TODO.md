@@ -340,13 +340,7 @@ None of NF-1 to NF-4's measured paths change. A checkerboard change re-renders o
 
 ## Open questions
 
-Each question below has its recommended answer applied in this spec and needs the user's confirmation, after which it should be recorded in PRD §12.
-
-1. **What "checkerboard style" offers.** Paint.NET 5 offers only a "Transparency Checkerboard Brightness" control on its Canvas tab (paint.net/doc/latest/SettingsDialog.html; no range documented), and no color or size choice. **Recommended (applied):** two popups, **Checkerboard brightness** Light (#FFFFFF/#CCCCCC, default) / Medium (#999999/#808080) / Dark (#4D4D4D/#333333), and **Checkerboard size** Small 4 pt / Medium 8 pt (default) / Large 16 pt. The alternatives are a continuous brightness slider like Paint.NET's, or brightness only.
-2. **What "the option to restore panel positions" means.** It could be (a) a button that moves the panels back to their default positions now, or (b) a "Remember panel positions" toggle. **Recommended (applied):** (a), a "Reset Panel Positions" button. Panel frames stay remembered by frame autosave as APP-2 requires. The reset moves all four panels (shown or hidden) to `PanelKind.defaultFrame` on the main screen, persists, and doesn't change which panels are visible.
-3. **Default units vs the status-bar unit.** APP-5 says the unit "is chosen from a status-bar popup and persisted; its default comes from Settings". 0004 already made that one app-wide key, live in all windows. **Recommended (applied):** Settings edits the same `settings.measurementUnit` key, so changing it also changes the unit in every open window, and a status-bar change shows in Settings. The alternative is a separate "default for new windows" key, with status-bar changes kept per window or session.
-4. **Lowering the undo limit.** **Recommended (applied):** it applies immediately to all open documents, dropping their oldest steps per H-5 without a confirmation alert, with the presets 256 MB, 512 MB, 1 GB (default), 2 GB, 4 GB, and 8 GB. A stored non-preset value is shown as an extra item. The alternatives are confirming before steps would be dropped, or applying only to new documents.
-5. **Window layout.** Paint.NET's Settings dialog has tabs (User Interface, Canvas, Tools, …). **Recommended (applied):** a single-pane grouped form titled "Settings" (sections Units, Canvas, History, Saving, Panels), since there are only five settings. No OK/Cancel buttons: changes apply as you make them.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-72. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

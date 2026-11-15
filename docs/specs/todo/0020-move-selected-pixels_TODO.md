@@ -262,11 +262,8 @@ Expected values are hand-computed from the formulas above; never pasted from the
   4. The live outline follows the pixels while dragging and marching ants resume at the new place on release; works in dark mode.
 
 ## Open questions
-Decided as stated so the spec is implementable; please confirm and record in PRD.md §5.3/§12. (Settled, not questions: the step names "Move Pixels" / "Scale Pixels" / "Rotate Pixels" / "Finish Pixels" follow the batch rule that history names use Paint.NET's spelling; ⌘-drag duplicates because PRD §5.12 maps Ctrl → ⌘; no resampling/gamma toolbar option because D-21 fixes the resampling.)
-1. **Escape cancels the whole floating session exactly** (an undo-like jump; steps stay redoable). Paint.NET's keyboard table lists Esc as committing tool drawings; 0006's default asks for cancel. Recommended: cancel (Return/Finish commit).
-2. **The layer always shows the transformed pixels** (as Paint.NET 3.36 draws into the layer); `floatingPixels` keeps the source for re-transforming. Save, sampling, and thumbnails see the moved pixels; save doesn't finish. Recommended: yes.
-3. **Undo/redo/jump/save never finish; every other command finishes first** (a "Finish Pixels" step before the command's own step); undoing into a floating state re-selects Move Selected Pixels. Recommended: yes.
-4. **Scale nubs snap to whole pixels while unrotated** (keeps D-21's nearest path reachable and edges sharp). Recommended: yes.
+
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-47. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 - The shared handle geometry, outline-only moves, and their tests → **0019** (reused unchanged).

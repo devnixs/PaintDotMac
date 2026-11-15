@@ -291,13 +291,7 @@ Expected values are hand-derived from the rules above; never paste code output.
 
 ## Open questions
 
-Recommended answers are applied in the spec above; the user should confirm.
-
-1. **Default palette source.** The 96 colors are transcribed from a palette file saved by Paint.NET (third-party test fixture), not from Paint.NET's source or a fresh install; its first four entries match the docs' example, but the docs' example shows `FF23FFBD` as the fifth line where the transcribed list has `FFFFD800` (the doc sample looks illustrative). Rows 4–5 are rows 0–1 at alpha 128. *Recommended:* use the transcribed list; optionally confirm with Paint.NET 5 › Colors › Palette › Reset to Default Palette › Save Current Palette As… and diff.
-2. **Eyedropper target slot.** Paint.NET has no screen eyedropper. *Recommended:* the picked color goes into the **active** slot (like a left-click on a palette swatch), alpha 255; no keyboard shortcut and no menu item, only the Colors panel button.
-3. **Palette file leniency.** Paint.NET's docs only define 8-digit `aarrggbb` lines and whole-line `;` comments. *Recommended:* also accept 6-digit `RRGGBB` lines (opaque) and inline `; …` comments, silently skip malformed lines, and refuse a file with **zero** colors (alert, palette unchanged) instead of loading 96 white swatches; files over 1 MB are refused.
-4. **Add Color mode duration.** The docs say a click replaces a swatch and clicking the icon again exits the mode, without saying whether the mode ends after one replacement. *Recommended:* the mode ends after one replacement (and on Escape, the icon, loading/resetting a palette, or starting the eyedropper).
-5. **Save/Load UI.** Paint.NET saves by name into the palettes folder and loads from the folder list; it has no file dialogs. *Recommended:* mirror that exactly (name prompt with overwrite confirmation, CRLF Paint.NET-format files, no "Open Palette…" file dialog — users drop files into the folder via Open Palettes Folder); palette edits/loads/resets are not undoable and need no confirmation.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-80. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

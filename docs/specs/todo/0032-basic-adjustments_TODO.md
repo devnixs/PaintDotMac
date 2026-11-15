@@ -244,12 +244,7 @@ Expected values come from the Paint.NET 3.36 formulas transcribed above and hand
 
 ## Open questions
 
-Decided as stated (recommended answers applied in this spec); please confirm and record in PRD.md §5.12/§5.8/§12:
-
-1. **Shortcuts for Black and White ⇧⌘G, Sepia ⇧⌘E, and Posterize ⇧⌘P** follow PRD §5.12's Ctrl → ⌘ rule from Paint.NET's Ctrl+Shift+G / Ctrl+Shift+E / Ctrl+Shift+P (`AdjustmentsMenu.GetEffectShortcutKeys`); the PRD table lists only Hue/Saturation. Possible conflicts with Mac conventions: ⇧⌘G is "Find Previous" in apps with a Find menu and "Go to Folder" in open/save panels (PaintDotMac has no Find menu; the panels keep their own ⇧⌘G, tested), and ⇧⌘P is the standard "Page Setup…" (PaintDotMac has no printing in v1.0). ⇧⌘E has no standard meaning. Recommended: keep all three and add rows "Black and White | Ctrl+Shift+G | ⇧⌘G", "Sepia | Ctrl+Shift+E | ⇧⌘E", "Posterize | Ctrl+Shift+P | ⇧⌘P" to §5.12 (0045 records them in `docs/shortcuts.md`); if printing is ever added, Page Setup would take ⇧⌘P and Posterize would lose its shortcut.
-2. **Sepia has no dialog.** Paint.NET 3.36's Sepia has no parameters, but the current Paint.NET docs (FX-E's primary source) say "Sepia has a single control which sets the intensity or strength of the effect", without naming it or giving a range or default. Recommended: ship the 3.36 behavior (no dialog, full strength) as planned for this spec; an intensity slider can be added later once its range/default are known.
-3. **Hue / Saturation uses the integer-exact form of Paint.NET 3.36's formula** (item 7), not a bit-for-bit copy of its `double` HSV round trip, because the GPU can't reproduce those `double` truncation artifacts. It differs from 3.36 by at most a few levels on under 0.5% of colors; Paint.NET's whole-percent HSV quantization (which can shift grays by one level when any setting is non-default) is kept. Recommended: accept.
-4. **Hue / Saturation's Saturation range is 0…200 with default 100** (3.36 source: `Int32Property(Saturation, 100, 0, 200)`, with 101…200 mapped to 103…400 internally). The current docs say "The starting value of the Saturation control is zero" but their own example ("Saturation increased to 136 … more vibrant") only fits the 0…200 / 100 scale. Recommended: 0…200, default 100, as specified.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-58. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

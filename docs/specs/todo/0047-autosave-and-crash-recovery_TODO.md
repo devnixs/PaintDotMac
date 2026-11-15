@@ -168,12 +168,7 @@ All paths are relative to `/Users/raphael/Projects/CSharp/Paint.NetMac`; `Core/`
 
 ## Open questions
 
-Recommended answers are applied in this spec; each needs the user's confirmation (PRD silent).
-
-1. **Autosave interval.** How often should PaintDotMac write the crash-recovery autosave? Recommended: every 30 seconds after a change (`autosavingDelay = 30`), so at most ~30 s of work is lost; not configurable in Settings in v1.0.
-2. **What recovery restores.** Recommended: the layers (names, visibility, opacity, blend modes, pixels), DPI, and active layer exactly as displayed at the last autosave — floating (moved/pasted) pixels and an uncommitted line/shape/text are recovered rendered into their layer; the selection, the undo history (the recovered document starts with one "Open Image" step), and the editable state of floating pixels/shapes/text are not recovered, because `.ora` doesn't store them. While an adjustment/effect dialog is previewing, autosave is skipped, so the recovered image never contains an un-applied preview.
-3. **Original file changed or deleted before recovery.** Recommended: the recovered autosave wins; the document keeps its original location, and ⌘S writes there with macOS's standard "the file has been changed by another application" warning when applicable.
-4. **No own recovery UI.** Recommended: rely on macOS window restoration only — no "Recover documents?" dialog and no File menu command for orphaned autosaves in v1.0. If the user discards restoration (for example by holding Shift at launch), the autosaves are not offered.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-73. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

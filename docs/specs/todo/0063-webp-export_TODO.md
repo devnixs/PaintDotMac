@@ -187,12 +187,7 @@ Test fixtures: `TestImages` (0002) and `webPLossless`/`animatedWebP` (0029). `ca
 
 ## Open questions
 
-Recommendations below are already applied in the spec; each needs the user's confirmation and a PRD §5.11 F-6 / §12 entry.
-
-1. **libwebp if ImageIO never gains WebP write.** ImageIO on macOS 26.6.2 (Xcode 26.3) can read but not write WebP, so this spec ships a path that is dormant on every current Mac. Should PaintDotMac add `libwebp` (a third-party dependency, which PRD/AGENTS.md require the user to approve) to make WebP export always available? **Recommended: no.** Keep WebP export capability-gated through ImageIO, with no dependency; revisit only if users ask for WebP export.
-2. **Lossless WebP option.** ImageIO exposes no WebP-specific lossless key; the only control is `kCGImageDestinationLossyCompressionQuality`, where 1.0 "implies lossless compression is desired if destination format supports it". **Recommended:** no separate "Lossless" checkbox; quality 100 requests lossless implicitly, and the app doesn't promise lossless output.
-3. **WebP options dialog and default quality.** **Recommended:** reuse the JPEG Options sheet as "WebP Options" (Quality 0–100 slider + field, live "File size:" estimate, OK/Cancel) on every WebP save (⌘S, Save As, close prompt), starting at the quality last used for the document this session, else **95** (same default as JPEG/Paint.NET's JPEG default; Paint.NET's WebP docs page could not be checked offline), with no persisted default and no Settings window control.
-4. **FMT-B sRGB profile for WebP.** If an ImageIO WebP encoder turns out not to embed an ICC profile, should that be accepted as a FMT-B exception (as recommended for BMP in 0029)? **Recommended: yes**, since untagged files are read as sRGB; the capable-branch test asserts the profile and the implementer reports a failure rather than weakening it.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-89. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

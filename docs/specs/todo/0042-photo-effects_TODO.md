@@ -285,12 +285,7 @@ Expected values come from hand calculation (checked with an independent script w
 
 ## Open questions
 
-Decided as stated (recommended answers applied in this spec); please confirm and record in PRD.md §5.9/§12:
-
-1. **Sharpen's parameter set is Paint.NET 3.36's single Amount (1–20, default 2, used as the neighborhood radius); Paint.NET 5's Threshold option is not in v1.0.** The Paint.NET 5 docs name Amount and Threshold but give no ranges or defaults, and Paint.NET 5's algorithm isn't published; 3.36's `SharpenEffect` is the last published definition (FX-E fallback). (The planning brief's "Amount default 10" is not what the source says — it is 2.) Recommended: ship Amount only; Threshold can be added later as a schema parameter without breaking remembered values.
-2. **Sharpen reproduces 3.36 bit-exactly, including `GetPercentile`'s off-by-one (the "median" is one level above the true median), so flat areas darken by one level (100 → 99, alpha 128 → 127) and repeated Sharpen keeps darkening flats by about one level per pass; edges are clipped, not replicated; alpha is sharpened like a color channel.** These are Paint.NET 3.36's actual results and keep the GPU equal to the oracle with zero differences. Alternative: use the true median (flat areas unchanged). Recommended: keep the exact 3.36 behaviour.
-3. **Vignette follows Paint.NET's `VignetteEffect.cs` exactly (Ed Harvey's algorithm: `cos⁴` falloff ending at twice the radius, darkening in linear light, `1 − strength` beyond the halo, always black) with its ranges and defaults (Center −1…1 per axis default (0,0); Radius 0.1–4.0 default 0.5; Amount 0–1 default 1), but labels from the Paint.NET 5 docs ("Strength", not the source's "Density").** The docs give no ranges, and Paint.NET 5's own implementation isn't published; this source file is the only published Paint.NET vignette. Paint.NET's exponential slider scaling for Radius and Strength isn't supported by the 0031 schema, so both sliders are linear (fields accept any value with 2 decimals). Recommended: yes.
-4. **Vignette's Center is relative to the selection's bounding box (or the whole canvas without a selection), as in Paint.NET — not always to the canvas.** The pad shows a thumbnail of that box, and Repeat re-centers on the then-current selection. The planning brief suggested canvas-relative semantics; Paint.NET's `OnSetRenderInfo` uses `GetSelection(...).GetBoundsInt()`. Recommended: follow Paint.NET.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-68. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

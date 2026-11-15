@@ -264,11 +264,7 @@ Work order for the implementer: (1) build the harness, report, probe, target, sc
 
 ## Open questions
 
-1. **New target, scheme, and build configuration.** D-4 lists three targets in scheme `PaintDotMac`. Optimized benchmarks need a fourth test target in its own scheme with a `Benchmark` configuration (Release optimization + testability + `BENCHMARK` flag), because Release has no testability and the gate's test run is Debug. *Recommended (applied above):* add target `PaintDotMacBenchmarks`, scheme `PaintDotMacBenchmarks`, configuration `Benchmark`; leave `Release` and the `PaintDotMac` scheme's test targets unchanged; record it in PRD §4 and §12.
-2. **When the gate runs the benchmarks.** *Recommended (applied above):* only with `--benchmarks`, which joins the end-of-batch command (`--sanitizers --release --benchmarks`); the per-spec gate only compiles them. Benchmarks take several minutes and need an idle Mac.
-3. **A target that can't be met on the author's machine.** *Recommended (applied above):* the spec closes when every row is within its 3× gate and every triggered optimization item has shipped or has its best number and Instruments evidence recorded; rows still *missed* are listed in the Verification status and reported to the user, who decides between relaxing the PRD §6 wording and a follow-up spec. No PRD target changes without the user.
-4. **What "120 fps on ProMotion" means for the automated test.** *Recommended (applied above):* the automated NF-1 rows gate the per-frame work (CPU + GPU, p95) against 8.33 ms for every paint row, including the 10-layer case, with 16.7 ms (60 fps) recorded as a secondary row; actual presentation at 120 Hz is the manual probe check 1.
-5. **Magic Wand while a background fill is pending (only if O-3 ships).** PRD T-4 allows moving the fill off the main actor but doesn't say what happens to input meanwhile. *Recommended (applied above):* a second wand click is ignored; ⌘Z/⇧⌘Z, History-panel clicks, tool switch, Escape, and closing the document cancel the pending fill and discard it (no history step, selection unchanged); no busy cursor, because the fill is expected to take well under a second.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-74. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

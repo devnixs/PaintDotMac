@@ -240,11 +240,8 @@ Expected values below are computed by hand from the formulas (independent oracle
   7. Press ⌫ with nothing selected: the whole active layer is cleared; ⌘Z restores it.
 
 ## Open questions
-1. **No selection → whole active layer, items always enabled.** Recommended: yes. This is consistent with D-40 / TOOL-B ("no selection" = everything editable) and with Paint.NET treating an empty selection as the whole canvas. The doc page doesn't state the no-selection result explicitly, and live Paint.NET behavior could not be checked from here. The alternative is to disable both items without a selection.
-2. **Fill Selection overwrites (alpha included) rather than Normal-blending the primary color.** Recommended: overwrite, with premultiplied coverage weighting on antialiased edges, as specified. Only semi-transparent primary colors over non-transparent pixels tell the two apart. The evidence is the doc wording ("fill it with the current Primary color", Erase "replaced with") and Paint.NET 3.x's constant-color clear, which is recalled from memory and was not re-verified.
-3. **Shift+⌫ (Paint.NET: fill with the secondary color)** is not in E-4. Recommended: leave it unmapped in v1.0 (⇧⌫ does nothing), or add it to E-4 as "Fill Selection with the secondary color" if the user wants it.
 
-Once confirmed, PRD.md E-4 and §12 need a new decision row (no selection = whole layer; Fill overwrites; Erase deselects, per the Paint.NET doc; ⇧⌫ unmapped).
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-45. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 - Fill with the secondary color (⇧⌫) — Open question 3.

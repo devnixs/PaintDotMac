@@ -237,9 +237,7 @@ Expected values below are hand-computed (verified by hand arithmetic, not by run
 
 ## Open questions
 
-1. **Meaning of the Antialiasing option for the Gradient.** The gradient has no geometric edges, so this spec defines antialiasing as using the antialiased selection edge (on) vs thresholding the mask at 128 (off). Recommended: yes (matches how Paint.NET's antialiasing toggle affects selection-clipped fills).
-2. **Color changes while a gradient is pending.** This spec captures the primary/secondary colors when the gradient is created (right-click on a handle still swaps them). Paint.NET 4+ updates a pending gradient live when the palette changes. Recommended: keep capture-at-creation for v1.0; live color updates would need a `ToolContext` color-change notification (could be added with 0054 or later).
-3. **Transparency mode endpoint.** The brief described transparency mode as "primary alpha → secondary alpha"; Paint.NET's documentation says "to the inverse of the alpha value of the Secondary color" (so default opaque colors fade opaque → transparent; primary → secondary alpha would be a no-op with defaults). This spec follows Paint.NET. Recommended: confirm and, if accepted, record it next to T-10 in PRD §5.3.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-50. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

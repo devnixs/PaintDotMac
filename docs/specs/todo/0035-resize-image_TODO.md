@@ -281,12 +281,7 @@ Expected values below are hand-computed (and double-checked with an independent 
 
 ## Open questions
 
-1. **Selection after Resize Image.** This spec clears the selection (as Paint.NET does after a resize, as far as can be checked without its current source), and undo restores it. The alternative is scaling the selection with the image. Recommended: clear it, as written. Needs a PRD §5.5 IMG-2 / §12 entry.
-2. **What "Supersampling" does when enlarging.** Paint.NET 5 no longer has "Supersampling"; Paint.NET 3.x/4.x's Supersampling area-averages when shrinking and uses Bicubic otherwise (Paint.NET 5's closest equivalent, "Fant", uses Bilinear when enlarging). This spec uses area average when neither side grows, else Bicubic. Recommended: yes, as written.
-3. **Bilinear/Bicubic when shrinking.** This spec implements the classic point-sampled 2×2 Bilinear and 4×4 Catmull-Rom Bicubic (a = −0.5), which alias on strong reductions; Paint.NET 5's "Bilinear"/"Bicubic" widen the kernel when shrinking (its 2×2 version is listed as "Bilinear (Low Quality)"). Supersampling is the quality choice for shrinking. Recommended: keep the simple kernels in v1.0 (exact, testable), as written.
-4. **Editing the resolution.** This spec keeps the print size and recomputes the pixel size when the resolution changes (so 96 → 192 DPI doubles the pixels), and when the pixel size is edited the resolution is kept. Recommended: yes, as written (Paint.NET/Photoshop behavior with resampling on).
-5. **Remembering dialog settings.** Each opening starts at By percentage 100%, Bicubic, Maintain aspect ratio on; nothing is remembered. Paint.NET 5's Gamma Correction checkbox and its extra resamplers (Bicubic (Smooth), Adaptive, Lanczos, Fant, Bilinear (Low Quality)) are not offered (PRD scopes four modes). Recommended: yes, as written.
-6. **Initial print unit.** The print-size unit starts as centimetres when the status-bar unit (APP-5) is cm, otherwise inches. Recommended: yes, as written.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-61. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

@@ -208,12 +208,7 @@ Expected values below are computed by hand from the formulas in *Scope* and 0016
 
 ## Open questions
 
-Each one has the recommended answer already applied in this spec. The batch owner confirms it with the user and records it in PRD §5.3 T-16 / §12.
-
-1. **Sampling modes.** PRD T-16 describes only "replaces the secondary color with the primary color". Paint.NET 4/5 also has **Sampling: Once** (replace the color under the first click). Should PaintDotMac offer both, and which is the default? *Recommended (applied):* offer both ("Once", "Secondary Color"), default **Secondary Color**, matching the PRD wording and Paint.NET 3.5x behaviour.
-2. **Alpha handling.** Paint.NET 4/5 shift alpha like the color channels (`a + (fill.a − basis.a)`), so a semi-transparent primary makes recolored pixels more transparent. Paint.NET 3.36 always kept each pixel's alpha. Which one? *Recommended (applied):* Paint.NET 4/5 (shift all four channels). With opaque primary and secondary, both give the same result.
-3. **Antialiasing of the color-match edge.** Paint.NET 4/5 with Antialiasing on also feathers the boundary between matching and non-matching colors (`FeatheredMaskRenderer`, source not available). PaintDotMac's Antialiasing only smooths the brush edge, and the color match is binary (as in 3.36). Accept? *Recommended (applied):* yes, a binary match. A feathered match can be a later enhancement.
-4. **Pressure Sensitivity and tolerance metric.** Paint.NET's Recolor page lists Pressure Sensitivity (and Tolerance Alpha Mode). Should Recolor get 0055's Pressure Sensitivity popup (default Size), and use the Magic Wand's tolerance metric with no Tolerance Alpha Mode (as D-42/D-43 decided for the wand and bucket)? *Recommended (applied):* yes to both.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-83. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

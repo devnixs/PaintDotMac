@@ -255,11 +255,7 @@ Expected values below were hand-computed from the formulas above (and checked wi
 
 ## Open questions
 
-Decided as stated (recommended answers applied in this spec); please confirm and record in PRD.md §5.9/§12:
-
-1. **Glow and Soften Portrait fidelity: build them from PaintDotMac's own Gaussian Blur (0041's definition), Brightness / Contrast (0031, already 3.36-exact) and Overlay/Screen with the normative composition (0026/0027), rather than porting 3.36's chains bit-exactly; ranges/defaults from the 3.36 source (Glow Radius 1–20 default 6, Brightness and Contrast −100…100 default 10; Soften Portrait Softness 0–10 default 5, Lighting −20…20 default 0, Warmth 0–20 default 10), since the docs give names but no numbers.** Consequences: on opaque interiors results stay within 5 (Glow) / 3 (Soften Portrait) of 3.36 at defaults; at image edges they follow 0041's clamp-to-edge; semi-transparent content follows 0041's correct alpha instead of 3.36's double-alpha fade; GPU ±1 holds per blur candidate (exact rounding ties in the blur are accepted either way, because Contrast can amplify a 1-step blur difference up to 100×). Paint.NET 5's dialog couldn't be inspected — please compare ranges/defaults if you have it. Recommended: yes, as specified.
-2. **Red Eye Removal parameters: the docs name a single "Strength" control with no range or default, while the 3.36 source has "Tolerance" (0–100, default 70) and "Saturation percentage" (0–100, default 90) plus the hint "Hint: For best results, first use the selection tools to select each eye".** The mapping from Paint.NET 5's "Strength" to the 3.36 algorithm isn't documented. Recommended (applied): the 3.36 parameters, labels and hint, shown through a new optional schema `hint` line under "Saturation percentage"; no selection is required (no alert), as in Paint.NET.
-3. **Red Eye Removal arithmetic: exact integer form (`255·Δ ≥ 101·max`; red = `⌊(299R + 587G + 114B)·Saturation / 100000⌋`) instead of 3.36's double evaluation.** The saturation test is identical for every input; the new red value is 1 higher than 3.36 on a small set of inputs where the exact result is an integer and 3.36's doubles round just below it (e.g. (238,40,47) at 90 %: 90 vs 89). A GPU can't reproduce 3.36's doubles. Recommended: yes.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-91. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

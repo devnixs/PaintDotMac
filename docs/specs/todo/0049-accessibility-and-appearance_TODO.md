@@ -269,13 +269,7 @@ Rules: a lint finding is matched by its kind (`.contrast`-type rows exclude the 
 
 ## Open questions
 
-Recommended answers are applied in the spec above; the user should confirm or override each.
-
-1. **Canvas VoiceOver value.** Keep the canvas value as the image size `"800 × 600"` (0001/0003 contract, the integration tests depend on it) and put zoom, active layer, tool, and selection size into the accessibility help ("Zoom 100%. Layer: Background. Tool: Paintbrush."), or put all of that into the value? *Recommended: keep the value, add the help (applied).*
-2. **What Increase Contrast changes.** Paint.NET has no equivalent. *Recommended (applied): system semantic colors adapt on their own; additionally decorative strokes (thumbnail/swatch/wheel/slider/histogram borders, curve grid and diagonal) switch from separator/tertiary colors to `secondaryLabelColor`, the active color slot outline becomes `labelColor`, undone History rows double their tint (15 % → 30 %) and use `labelColor` text; line widths and on-image overlays (ants, handles) stay unchanged.*
-3. **Color wheel keyboard/VoiceOver interaction.** *Recommended (applied): the wheel is a VoiceOver adjustable element (increment/decrement = hue ±5°, wrapping) but is not in the Tab order; keyboard users edit hue/saturation with the Hue and Saturation sliders in the expanded (More ») Colors panel.*
-4. **Curves plot keyboard editing** (deferred here by 0034). Paint.NET has no keyboard editing of curve points. *Recommended (applied): none in v1.0; the plot is not focusable, exposes its points as its value ("Transfer Map, Luminosity: (0, 0), (255, 255)"), and the channel pop-up, checkboxes, and Reset are reachable by Tab.*
-5. **Keyboard model for the floating panels and lists.** *Recommended (applied): no new menu items or shortcuts; the standard macOS ⌃F6 ("Move focus to the floating window") moves focus into the panels, Escape returns to the document's canvas, ⌥⌘1–4 keep toggling visibility; in History and Layers, ↑/↓ move the focus ring between rows and Space/Return activates (jump to step / make layer active); Tab from a layer row reaches its visibility checkbox.*
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-75. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

@@ -191,13 +191,7 @@ There is no `Core` logic in this spec: an icon is a static resource, the About p
 
 ## Open questions
 
-Each one has the recommended answer **applied** in this spec; the batch owner confirms or changes it with the user and records it in PRD.md (§4/§6 NF-8/§12) before implementation.
-
-1. **Icon design.** Recommended: an original motif — a white paintbrush in front of a white rounded-square canvas frame on deep orange `#D9480F`, as an Icon Composer `.icon` (Liquid Glass on macOS 26, flattened fallback on macOS 15). Paint.NET's logo and trade dress are not used. Accept, or name a different motif/colour?
-2. **`.ora` document icon.** Recommended: no custom document icon in v1.0 (no `UTTypeIcons`/`CFBundleTypeIconFile`); macOS composes one from the app icon when PaintDotMac is the default handler. Add a dedicated `.ora` document icon (later spec) instead?
-3. **Version policy.** Recommended: `MARKETING_VERSION` semantic `X.Y.Z`, set to `1.0.0` by this spec (M7 = v1.0); `CURRENT_PROJECT_VERSION` a positive integer, stays `1`; both only in `project.yml`, bumped by hand by the user, never automatically; tests check only their shape. Keep `0.x` until the user declares v1.0 instead?
-4. **About panel text.** Recommended: copyright `© 2026 Thera Engineering` (matching the bundle ID and the author's other app), and no credits text. Add a credits line such as "Inspired by Paint.NET. Not affiliated with dotPDN LLC."?
-5. **NF-8 measurement.** Recommended: "30 MB" = 30,000,000 bytes (decimal, as Finder shows), measured as the summed logical size of all regular files in the **universal Release** `.app` (symlinks not counted, dSYM excluded), gated in `quality-gate.sh --release`. Use 30 MiB (31,457,280 bytes) or on-disk allocated size instead?
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-76. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

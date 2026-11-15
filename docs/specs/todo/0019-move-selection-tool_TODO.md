@@ -283,12 +283,7 @@ As a PaintDotMac user, with a selection drawn, I press M (or Shift+M) to get Mov
 
 ## Open questions
 
-These are decided as stated (following Paint.NET 3.36 / the 4.x docs) so the spec is implementable; the batch owner should confirm them and copy them into PRD §12. (Not questions: the step names "Move Selection" / "Scale Selection" / "Rotate Selection" follow the batch convention that history names use Paint.NET's spelling, and the arrow-key routing is an implementation detail covered by `functionKeyCharactersAreNotToolShortcuts`.)
-
-1. **One step per mouse-up and per arrow-key event** (auto-repeat included, as Paint.NET 3.36), and no "Finish Selection" step (it would change nothing, D-34). Recommended: yes.
-2. **No selection → Select All, then move** (Paint.NET 3.36 `OnMouseDown`). Recommended: yes (two undoable steps).
-3. **Moving the outline entirely off the canvas yields no selection** (D-40: an empty selection is no selection), recorded as an undoable step; the tool keeps the off-canvas frame so it can be dragged back until the tool is switched. Paint.NET keeps an "empty" off-canvas selection instead. Recommended: as specified.
-4. **Rotation corridor (left-drag just outside the frame, 20 pt) and ⌥ = scale about center** come from the Paint.NET 4.x docs; 3.36 had only right-drag rotation and no Alt scaling. Recommended: include both (both are in the current docs). The draggable rotation pivot (4.x) is out of scope.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-46. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

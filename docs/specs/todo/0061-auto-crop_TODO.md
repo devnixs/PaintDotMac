@@ -174,14 +174,7 @@ Expected values are hand-computed below or come from an independent naive oracle
 
 ## Open questions
 
-Recommended answers are applied in this spec; the user must confirm (they are product questions not answered by PRD §12).
-
-1. **Paint.NET parity and shortcut.** Paint.NET's current docs (Image menu, keyboard reference, change log, fetched 2026-11-08) do not list an Auto-Crop command or Ctrl+Alt+X, so "mirror Paint.NET 4.2+ Auto-Crop, Ctrl+Alt+X" could not be verified. Recommended: ship it as a PaintDotMac addition named **"Auto-Crop"** with **⌥⌘X** (free: no menu, single-key, or macOS-reserved conflict; pairs with Crop to Selection ⇧⌘X), `ShortcutTable` status `.macStandard`, Paint.NET column "—". If you know Paint.NET's binding is Ctrl+Alt+X, switch the row to `.matchesPaintNET` / "Ctrl + Alt + X" (same chord). Needs a PRD §5.12 row either way.
-2. **Which pixel defines the border colour.** Recommended: the **top-left pixel of the composite image**; trim the bounding box of everything that differs from it. Consequence: a border only on the right/bottom with content covering the top-left pixel is not trimmed (or the content block is treated as border). Alternative: GIMP's corner rule (use the top-left colour if it equals the top-right or bottom-left corner, else the bottom-right colour if it equals the top-right or bottom-left, else nothing to trim).
-3. **Tolerance.** Recommended: **exact match** (all four channels; any alpha-0 pixel matches an alpha-0 border), no dialog and no option — deterministic and right for screenshots/PNGs, but JPEG borders with compression noise won't trim. Alternative: a fixed tolerance using the Magic Wand's Paint.NET 3.36 metric (D-43), e.g. 10%.
-4. **Selection after Auto-Crop.** Recommended: keep it on the same pixels, clipped to the new canvas (0036's `repositioned`), `nil` when it lay entirely in the trimmed border — consistent with Crop to Selection (0022) and Canvas Size (0036). Alternative: always deselect.
-5. **Feedback when there is nothing to trim.** Recommended: the menu item stays enabled; the command does nothing (no step, no alert, no beep), like Crop to Selection after Select All. Alternative: `NSSound.beep()`.
-6. **Menu position.** Recommended: directly after Crop to Selection (both are crops). Alternative: after Canvas Size… or before Flatten.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-87. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

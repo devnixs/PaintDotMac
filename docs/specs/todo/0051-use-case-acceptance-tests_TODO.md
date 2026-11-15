@@ -252,11 +252,7 @@ Determinism controls, all mandatory:
 
 ## Open questions
 
-Recommended answers are already applied in this spec. The batch owner confirms them with the user and records them in PRD §12.
-
-1. **Are all NF-1…NF-9 rows P0?** The §6 table has no priority column. Recommended: yes. M7's scope is the "performance pass against the NF targets", §9 names NF-1…NF-3, and no NF row is marked later, so the coverage test treats every NF row as P0. (Alternative: add a `Pri` column to §6.)
-2. **Which non-ID P0 statements count as requirements?** Recommended: the bold `(P0)` labels (TOOL-*, FX-*, FMT-*, "Saving"), the "All adjustments **(P0)**" paragraph, and each P0 effect name in §5.9 get their own coverage keys. §5.12's shortcut table has no priority and is covered by 0045's own `prdTableHasNoUnmappedRows`, so it isn't duplicated here.
-3. **Use case 2 starts from a PNG "photo", not a JPEG.** A lossless input keeps every downstream oracle exact. Opening JPEGs is covered by 0002/0029, and the use case still ends with a JPEG export at a chosen quality. Recommended: yes. (Alternative: open a JPEG and verify only with tolerances from step 1 on.)
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-77. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

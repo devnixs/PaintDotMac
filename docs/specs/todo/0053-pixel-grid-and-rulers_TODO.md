@@ -247,13 +247,7 @@ Expected values below are hand-computed from the formulas in this spec and 0003'
 
 ## Open questions
 
-Recommended answers are applied throughout the spec; confirm or change them before implementation, and record the decision in PRD §5.2 CAN-5, §5.12, and §12.
-
-1. **Pixel Grid shortcut.** Paint.NET's current docs (ViewMenu, Toolbar, KeyboardMouseCommands pages) list **no** shortcut for Pixel Grid (the planning brief's "Ctrl + '" could not be verified in the docs). *Recommended (applied): ⌘' (Photoshop's Show Grid; free in 0045's table and not macOS-reserved).*
-2. **Rulers shortcut.** Paint.NET's docs list no shortcut for Rulers either; the commonly assumed Ctrl + R is Paint.NET's Resize Image, which PaintDotMac maps to ⌘R (PRD §5.12). *Recommended (applied): ⌥⌘R (free in the table, not reserved; Photoshop-style ⌘R is taken by Resize…).* Alternative: no shortcut.
-3. **Scope and persistence of the toggles.** PRD is silent. *Recommended (applied): app-wide (all windows follow, like the unit in APP-5), persisted in `settings.showPixelGrid` / `settings.showRulers`, both default off (Paint.NET's default), toggled only from the View menu (not in the Settings window).*
-4. **Grid look and threshold.** Paint.NET says only "not visible below 200 %". *Recommended (applied): visible at zoom ≥ 200 % as defined by CAN-6 (device pixels per image pixel, so on Retina 200 % = one image pixel per point); interior lines only (no line on the image's outer edges); exactly one device pixel; color per pixel black or white chosen by Rec. 709 luminance of what is underneath (threshold 127.5), at 50 % opacity, 100 % with Increase Contrast.*
-5. **Ruler details.** Paint.NET's docs give no metrics. *Recommended (applied): 20 pt thick with a corner square; 1-2-5 major steps at least 64 pt apart, minor ticks (10/4/5 per major, whole pixels only in px), medium ticks at half; bare numeric labels without a unit suffix, negative values outside the image, vertical labels rotated to read bottom-to-top; a 1-device-pixel pointer marker in the accent color; the selection's bounding range highlighted (Paint.NET's documented behavior); clicking a ruler does nothing (no guides).*
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-79. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

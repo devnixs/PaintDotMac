@@ -223,7 +223,7 @@ with `a = (10,0,0,255)`, `b = (20,0,0,255)`, `c = (30,0,0,255)`, `d = (40,0,0,25
 
 ## Open questions
 
-1. **Selection after Flip/Rotate.** The Paint.NET docs don't say what happens to the selection, and it could not be verified from its current behavior here (Paint.NET 3.36 may deselect, as 0035 assumed for Resize). This spec keeps the selection and transforms it with the image (exact mask permutation, outline mapped), and undo restores the original. The alternative is to deselect (as 0035 does for Resize Image). Recommended: transform it, as written — it is lossless here (unlike a resize) and keeps the user's work. Needs a PRD §5.5 IMG-4 / §12 entry.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-63. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

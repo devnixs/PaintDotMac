@@ -391,11 +391,8 @@ Shared test support (new):
 5. Painting a 300 px brush on a 6000×4000 layer while spills run in the background stays smooth (NF-1).
 
 ## Open questions
-1. **Disk quota default and whether Settings exposes it.** The PRD gives no disk limit. *Recommended (applied):* per document `4 × undo memory limit` (4 GiB at the default), plus never writing when it would leave less than 2 GiB free on the startup volume; no Settings control (the existing "Undo memory limit" drives both).
-2. **Settings footnote under "Undo memory limit:".** 0046's text ("the oldest history steps are removed") becomes inaccurate. *Recommended (applied):* "When the limit is reached, older history steps are moved to disk."
-3. **What the user sees when a spilled step can't be read** (file deleted by a cache cleaner, disk error). *Recommended (applied):* a warning sheet "Some history steps couldn't be read and were removed." / "The image wasn't changed. You can still undo the remaining steps." / OK; write failures (disk full) silently fall back to dropping, like H-5 today.
-4. **Progress sheet title for long History-panel jumps.** *Recommended (applied):* "Loading History", shown after 0.5 s with Cancel, reusing 0031's progress sheet.
-5. **Scratch folder name.** PRD H-4 says "the app's caches directory". *Recommended (applied):* `~/Library/Caches/PaintDotMac/History/<document UUID>/` (product name, as in the planning brief), rather than the bundle-ID folder `~/Library/Caches/com.thera-engineering.paintdotmac/`.
+
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-88. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 - Spilling selection masks and paths (S-4), and persisting history across launches or into `.ora`/autosave files (PRD has no requirement; 0047 recovers images only).

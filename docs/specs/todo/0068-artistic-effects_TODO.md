@@ -311,12 +311,7 @@ Expected values below were hand-computed from the formulas above (gray `(v,v,v,2
 
 ## Open questions
 
-Recommended answers are applied in the spec above.
-
-1. **Ink Sketch on transparent pixels: Paint.NET 3.36 always outputs opaque pixels (its ink layer is opaque), which in PaintDotMac would turn every transparent area (stored as `(0,0,0,0)`) solid black — Paint.NET's own transparent white turned solid white.** Recommended (applied): give the ink layer the **source pixel's alpha**, so transparent areas stay transparent and sparse layers stay sparse; opaque pixels are identical to 3.36. Alternative: literal 3.36 (whole layer becomes opaque, black where it was transparent).
-2. **Oil Painting is a bit-exact port of 3.36 (square window, intensity bins scaled by Coarseness, mode with ties to the lowest bin, straight per-bin averages including alpha, window clipped at the canvas edge), run on 0066's local-histogram compute kernel with a square window.** Note for the planner: the brief described Oil Painting as a `LocalHistogramEffect` mode — in 3.36 it is *not* a `LocalHistogramEffect` (it keeps its own intensity histogram with averages), but 0066's sliding-window compute kernel fits it, so it is added as a fifth mode there. Recommended: yes.
-3. **Ink Sketch and Pencil Sketch are built from PaintDotMac's own Glow / Gaussian Blur (0041/0065: clamp-to-edge, correct alpha, rounding to nearest) instead of bit-exact 3.36 chains; the ink convolution keeps 3.36's clipped (skipped) edge taps.** Consequences: identical to 3.36 on uniform opaque areas; elsewhere small blur differences, which Pencil Sketch's Color Dodge can amplify where the inverted blur is near white. Recommended: yes (consistent with 0041/0065).
-4. **Ranges, defaults and labels come from the 3.36 source because the docs give none** (Ink Outline 0–99 default 50, Coloring 0–100 default 50; Pencil tip size 1–20 default 2, Range −20–20 default 0; Brush size 1–8 default 3, Coarseness 3–255 default 50; labels "Ink Outline", "Coloring", "Pencil tip size", "Range", "Brush size", "Coarseness" — the docs use the same names). Paint.NET 5's dialog couldn't be inspected — please compare if you have it. Recommended: yes.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-94. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

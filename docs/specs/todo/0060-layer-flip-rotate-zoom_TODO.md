@@ -285,10 +285,7 @@ row 1: d e f
 
 ## Open questions
 
-1. **Which Rotate / Zoom controls?** Paint.NET 5's dialog also has a 3-D roll (Tilt 0–90°, Direction −180…180), Quality (supersampling), and Tiling (None / Repeat / Mirror); its pan offset range is ±10 (API) and Sampling offers Bilinear and Nearest Neighbor. **Recommended (applied):** Angle −180…180 (default 0), Pan as 0042's offset pad ±1 of the reference bounds (the pivot can move to the bounds' edge), Zoom 0.06…16 (default 1), Sampling Bilinear (default) / Bicubic / Nearest Neighbor; Tiling fixed to None (transparent); no Tilt/Direction, no Quality, no Shift-15° ring.
-2. **Selection behavior.** Paint.NET's Layers docs say the commands affect the active layer and say nothing about selections. **Recommended (applied):** Flip Horizontal / Flip Vertical / Rotate 180° ignore the selection and permute the whole layer (selection unchanged); Rotate / Zoom works like an effect: it samples the whole layer, pivots on the selection's bounding-box centre (canvas centre without a selection), and changes only selected pixels (FX-D coverage blend).
-3. **Names, and including Rotate 180°.** Paint.NET's Layers menu has Rotate 180° next to the flips; L-7 says "rotate". History names aren't in the docs. **Recommended (applied):** include Layers ▸ Rotate 180° (no shortcut); menu titles "Flip Horizontal", "Flip Vertical", "Rotate 180°", "Rotate / Zoom…"; history steps "Flip Layer Horizontal", "Flip Layer Vertical", "Rotate Layer 180°", "Rotate / Zoom Layer"; dialog title "Rotate / Zoom".
-4. **Dialog memory and Repeat.** **Recommended (applied):** the Rotate / Zoom dialog always opens at the defaults (a remembered 30° would compound on the next use), and it is not a ⌘F Repeat target (Repeat stays for Adjustments/Effects).
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-86. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

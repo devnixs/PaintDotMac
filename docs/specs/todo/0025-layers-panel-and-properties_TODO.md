@@ -256,8 +256,7 @@ Cross-cutting rules: every layer-property change goes through `UndoBridge` (live
 
 ## Open questions
 
-- **Visibility step names.** The Paint.NET docs don't name the history step for the visibility checkbox. This spec uses **"Hide Layer"** / **"Show Layer"** (recommended); alternatives are "Layer Visibility" or "Layer Properties". Confirm, or verify in Paint.NET 5 (toggle a checkbox and read the History window), then record the choice in the PRD (§5.4 L-5 / §12).
-- **Drag-reorder = one step named after its direction** ("Move Layer Up"/"Move Layer Down", even for a multi-position drag) — recommended and specified above; confirm and record in the PRD (§12).
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-52. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

@@ -362,13 +362,7 @@ Expected values come from Paint.NET's formula (transcribed above), hand calculat
 
 ## Open questions
 
-Decided as stated (recommended answers applied in this spec); please confirm and record in PRD.md §5.8/§5.9/§12:
-
-1. **Repeat (⌘F) covers adjustments too, with one shared "last applied" slot shown at the top of the Effects menu as "Repeat <name>".** PRD §5.8 requires "Repeat last" for adjustments, while Paint.NET's docs only describe repeating effects. Recommended: yes — one app-wide slot for both menus, item in the Effects menu only.
-2. **Effect parameters are remembered per effect for the app session only (in memory, app-wide, updated on OK only, not on Cancel); nothing is persisted across launches.** This mirrors Paint.NET. Recommended: yes.
-3. **Effects run on a hidden active layer** (no preview is visible until the layer is shown), as Paint.NET allows editing hidden layers. Recommended: yes.
-4. **Invert Colors (and every per-pixel adjustment) also transforms the color stored under fully transparent pixels**, so inverting a layer with transparent areas allocates those tiles as `(255,255,255,0)` (invisible, but they cost memory and file size). This is Paint.NET's per-pixel behaviour and keeps the GPU result equal to the oracle. Alternative: skip pixels with alpha 0. Recommended: keep Paint.NET's behaviour.
-5. **The progress sheet appears only when a run (no-dialog effect, Repeat, or OK before the preview finished) takes longer than 0.5 s**; the dialog itself shows a small busy indicator during preview. Recommended: yes.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-57. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

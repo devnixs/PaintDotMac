@@ -161,13 +161,7 @@ No PRD change in this spec; the open questions below record the product decision
 
 ## Open questions
 
-Decided as stated (recommended answers applied in this spec); please confirm and record in PRD.md §5.9/§12:
-
-1. **Emboss and Edge Detect output opaque pixels (alpha 255) and ignore the source alpha**, exactly like Paint.NET 3.36 (`FromBgra(…, 255)`), so applying them to a layer with transparent areas makes the whole layer (or the selected part) opaque — Emboss gray, Edge Detect black where flat. Alternative: keep each pixel's source alpha. Recommended: keep Paint.NET's behaviour (alpha 255).
-2. **Canvas-border pixels of Emboss and Edge Detect use clamped (edge-replicated) neighbours** (0031's `clampedToExtent`), instead of Paint.NET 3.36's skipped taps, which turn a flat image's outermost columns and rows black or white (e.g. Emboss at angle 0 makes the left column black and the right column white). Recommended: clamp (no border artefact; consistent with every other neighbourhood effect).
-3. **Pixelate uses Paint.NET 3.36's algorithm: each cell gets the alpha-weighted blend of its four corner pixels (not the mean of all cell pixels), cells anchored at the image's top-left, partial cells at the right/bottom edges, Cell size 1–100 default 2.** Paint.NET 5's extra "Scale Down"/"Scale Up" algorithm choices are not implemented (their option names and defaults are undocumented). Alternative: true cell average. Recommended: Paint.NET 3.36 corner blend, no Scale Down/Up options in v1.0.
-4. **Edge Detect is Paint.NET 3.36's angle-based Edge Detect (one "Angle" parameter, −180…180, default 45), not Paint.NET 5's redesigned Edge Detect** (Strength, Blurring, Algorithm Prewitt/Sobel (default Sobel), Overlay Edges — EffectsStylizeMenu.html documents these names but no ranges or defaults, so it cannot be specified from the docs per FX-E). Recommended: 3.36 angle version for v1.0.
-5. **Angle range is −180…180° for both** (Paint.NET 3.36 `DoubleProperty(Angle, default, −180, +180)`, 0031's `.angle` default range), shown with 2 decimals; the docs give no range. Alternative: 0…360. Recommended: −180…180.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-70. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

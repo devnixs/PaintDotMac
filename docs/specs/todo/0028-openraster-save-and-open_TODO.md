@@ -499,13 +499,7 @@ Expected values are hand-computed or come from the OpenRaster/PKWARE specs and e
 
 ## Open questions
 
-These are user-facing decisions that PRD §12 doesn't settle. The spec already applies the recommended answer to each, so it is implementable as written. Confirm or change each one.
-
-1. **Non-integer DPI on save.** OpenRaster defines `xres`/`yres` as `xsd:int`, so 72.5 DPI can't be stored exactly. **Recommendation (applied): write the DPI rounded to the nearest integer (minimum 1)**, keeping the file valid for Krita/GIMP. On read, decimals are still accepted. (The layer PNGs carry the exact pHYs, but they aren't used for the document DPI.)
-2. **Nested stacks (layer groups) on import.** PaintDotMac has no groups. **Recommendation (applied): flatten groups into plain layers.** Each child keeps its own blend mode, its opacity is multiplied by the group's opacities, a hidden group hides its children, and the group's own blend mode/isolation is ignored. The alternatives (composite each group into one layer, or refuse the file) either lose editability or block Krita users.
-3. **A layer whose PNG is missing or undecodable.** **Recommendation (applied): refuse the whole file** with "The image is damaged or incomplete." The alternative is to open with that layer empty and warn. Refusing is safer, because re-saving a silently emptied layer would lose data.
-
-Settled (stated as decisions in the body): default DPI 96 when `xres`/`yres` are missing (PRD APP-5 / D-7); UTI `org.openraster.ora` (matches Krita); `selected="true"` on the active layer, topmost `selected` wins on read; 0028 uses `NSDocument`'s built-in format popup and 0029 replaces it.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-54. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

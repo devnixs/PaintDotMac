@@ -265,13 +265,7 @@ Expected values below are hand-computed from the rules in this spec, never taken
 
 ## Open questions
 
-Decided as stated (recommended answers applied); the batch owner should confirm and record them in PRD §5.5 IMG-3 / §12.
-
-1. **Fill of the new area.** Paint.NET 5 adds a Fill dropdown (Transparent, Primary Color, Secondary Color, White, Black). This spec keeps the rule already decided for E-6 in 0021: the bottom layer's new area is the secondary color, other layers transparent, with no Fill control. Recommended: yes, as written (a Fill dropdown can be a v1.x addition).
-2. **Odd size differences with a centred anchor.** The offset is `(new − old) / 2` with truncation toward zero, so the odd pixel is always added to or removed from the right/bottom side (2→5 adds 1 left / 2 right; 5→2 removes 1 left / 2 right). Paint.NET's docs don't specify it. Recommended: yes, as written.
-3. **Selection after Canvas Size.** This spec keeps the selection on the same pixels (translated by the anchor offset, clipped to the new canvas, dropped if nothing remains), as 0022 does for Crop to Selection; 0035 clears it for Resize Image because the pixels are rescaled there. Paint.NET's docs say nothing. Recommended: keep it translated, as written.
-4. **Dialog defaults.** The dialog opens on "By absolute size" with the current pixel size, "Maintain aspect ratio" checked, anchor Middle, and remembers nothing between openings (Paint.NET's Canvas Size opens on absolute size with the anchor in the middle). Recommended: yes, as written.
-5. **DPI field.** As in 0035, the print-size/resolution group is shown and an edited resolution becomes the document's DPI (keeping the print size, so the pixel size changes); an unchanged resolution leaves the DPI exactly as it was. Recommended: yes, as written.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-62. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 

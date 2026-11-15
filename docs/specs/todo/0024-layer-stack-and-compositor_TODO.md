@@ -358,14 +358,7 @@ Expected values below are hand-computed from 0009's Normal formula (`mul255(a, b
 
 ## Open questions
 
-These have recommended answers that the spec already uses; the implementer can proceed with them. The orchestrator should confirm them with the user and record them in PRD §5.4/§12 (this spec doesn't edit the PRD).
-
-1. **Duplicate Layer name.** Paint.NET 3.36 names the copy "`<name>` copy"; the current docs say the duplicate is "named uniquely following the pattern described above (see Add New Layer)", which could mean "Layer N". **Recommended: "`<name>` copy"** (as the brief requested and as Paint.NET shows in practice).
-2. **Merge Layer Down with a hidden upper layer.** Paint.NET 3.36 merges it regardless of visibility. **Recommended: merge regardless** (the user explicitly asked to merge; the content isn't silently discarded). Alternative: treat a hidden upper as contributing nothing.
-3. **Flatten result name.** The brief says "Background"; Paint.NET flattens into the bottom layer, so the name is the bottom layer's ("Background" unless renamed). **Recommended: keep the bottom layer's name and id** — identical for every opened or new image.
-4. **Active layer after Delete Layer.** Docs are silent. **Recommended: the layer below (`max(0, i − 1)`)**, as Paint.NET does.
-5. **Interim PNG save of a layered image (until 0029).** **Recommended:** refuse with "This image has more than one layer." + "Choose Image > Flatten, then save again." rather than silently flattening (which would bypass FMT-A's confirmation).
-6. **Layer selection is not a history step** and doesn't mark the document edited (Paint.NET behavior); "Go to Layer Above/Below" carry no shortcut until 0045.
+None. All former open questions were approved by the user on 2026-11-15 ("accept all") and are recorded in PRD §12 as D-51. The recommendations quoted there are the binding behavior and are already written into this spec.
 
 ## Out of scope
 
