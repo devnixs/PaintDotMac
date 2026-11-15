@@ -369,6 +369,36 @@ struct ImageDecoderTests {
         #expect(fromCG == fromFile.surface)
     }
 
+    /// `surface(from:)` runs the same APP-10 limit check as `decode` (spec 0002 *Public API*).
+    @Test func surfaceFromCGImageEnforcesLimits() throws {
+        let image = TestImages.cgImage(width: 16, height: 16,
+                                       bytes: [UInt8](repeating: 0x40, count: 16 * 16 * 4))
+        #expect(throws: ImageCodecError.limitExceeded(
+            .exceedsMemoryCap(requiredBytes: 1_024, capBytes: 1_023))) {
+            try ImageDecoder.surface(from: image, limits: ImageLimits(memoryCapBytes: 1_023))
+        }
+        let surface = try ImageDecoder.surface(from: image, limits: ImageLimits(memoryCapBytes: 1_024))
+        #expect(surface.size == PixelSize(width: 16, height: 16))
+    }
+
+    /// Path S with a premultiplied source (step 8): an 8-bit Display P3 TIFF written from a
+    /// premultiplied buffer keeps its associated-alpha semantics; alpha-0 pixels must decode
+    /// to exactly `(0, 0, 0, 0)` no matter what color the premultiplied source stored under
+    /// them (invalid input here: red 120, green 60, blue 30 with alpha 0).
+    @Test func premultipliedWideGamutAlphaZeroPixelsDecodeToClear() throws {
+        let displayP3 = try #require(CGColorSpace(name: CGColorSpace.displayP3))
+        let bytes: [UInt8] = [255, 0, 0, 255, 120, 60, 30, 0]
+        let image = TestImages.cgImage(width: 2, height: 1, bytes: bytes,
+                                       colorSpace: displayP3, alphaInfo: .premultipliedLast)
+        let decoded = try decode(TestImages.encode(image, as: .tiff))
+        let red = decoded.surface.pixel(at: .zero)
+        #expect(Int(red.red) >= 250 && Int(red.green) <= 10 && Int(red.blue) <= 10,
+                "opaque P3 red converts to clipped sRGB red, got \(red)")
+        #expect(red.alpha == 255)
+        #expect(decoded.surface.pixel(at: PixelPoint(x: 1, y: 0)) == .clear,
+                "alpha-0 pixels of a premultiplied source decode to (0, 0, 0, 0)")
+    }
+
     @Test func pngChunkWalk() throws {
         let data = TestImages.encode(
             TestImages.cgImage(width: 8, height: 8,

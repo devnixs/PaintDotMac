@@ -330,6 +330,17 @@ struct TiledSurfaceTests {
         #expect(surface.allocatedTileCount == 0)
     }
 
+    @Test func tileCoordinateOrderingIsRowMajor() {
+        #expect(TileCoordinate(column: 1, row: 0) < TileCoordinate(column: 0, row: 1),
+                "a lower row sorts before a higher one regardless of column")
+        #expect(TileCoordinate(column: 0, row: 0) < TileCoordinate(column: 1, row: 0))
+        #expect(!(TileCoordinate(column: 0, row: 1) < TileCoordinate(column: 0, row: 1)))
+        #expect([TileCoordinate(column: 0, row: 1), TileCoordinate(column: 5, row: 0),
+                 TileCoordinate(column: 1, row: 0)].sorted()
+                == [TileCoordinate(column: 1, row: 0), TileCoordinate(column: 5, row: 0),
+                    TileCoordinate(column: 0, row: 1)])
+    }
+
     @Test func tileBasicOperations() {
         let color = ColorRGBA8(red: 1, green: 2, blue: 3, alpha: 4)
         var tile = Tile(filledWith: color)
