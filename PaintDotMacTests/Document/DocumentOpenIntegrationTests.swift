@@ -118,7 +118,50 @@ struct DocumentOpenIntegrationTests {
 
             #expect(harness.isEnabled(NSSelectorFromString("saveDocument:")) == false)
             #expect(harness.isEnabled(NSSelectorFromString("saveDocumentAs:")) == false)
+            #expect(harness.isEnabled(NSSelectorFromString("saveDocumentTo:")) == false)
+            #expect(harness.isEnabled(NSSelectorFromString("revertDocumentToSaved:")) == false)
+            #expect(harness.isEnabled(NSSelectorFromString("duplicateDocument:")) == false)
+            // Acceptance: while a document is open, Undo and every Edit action stay disabled
+            // (the placeholder canvas implements no edit actions) and Open… stays enabled.
+            for name in ["undo:", "cut:", "copy:", "paste:", "selectAll:"] {
+                #expect(harness.isEnabled(NSSelectorFromString(name)) == false,
+                        "\(name) must be disabled in 0001")
+            }
+            #expect(harness.isEnabled(#selector(NSDocumentController.openDocument(_:))))
+            #expect(harness.isEnabled(#selector(NSWindow.performClose(_:))))
             #expect(harness.target(for: #selector(NSWindow.performClose(_:))) === harness.window)
+        }
+    }
+
+    @Test func performCloseActionClosesUneditedDocument() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup() ; fixtures.removeAll() }
+
+            let url = try fixtures.makePNG(named: "perform-close.png", width: 16, height: 12,
+                                           rgba: (30, 40, 50, 255))
+            let harness = try await DocumentHarness.open(url)
+            // The ⌘W story end to end: the menu's performClose: (MainMenuTests.fileMenuItems
+            // pins the binding) goes to the window, and an unedited viewer document closes
+            // without any prompt.
+            harness.perform(#selector(NSWindow.performClose(_:)))
+            #expect(NSDocumentController.shared.documents.isEmpty)
+            #expect(harness.window.isVisible == false)
+        }
+    }
+
+    /// Edge case: opening the same file twice keeps NSDocumentController's standard behavior —
+    /// the already-open document is returned, and no second document is created.
+    @Test func openingSameFileTwiceYieldsOneDocument() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup() ; fixtures.removeAll() }
+
+            let url = try fixtures.makePNG(named: "twice.png", width: 24, height: 16, rgba: (5, 6, 7, 255))
+            let first = try await Self.open(url)
+            let second = try await Self.open(url)
+            #expect(second === first)
+            #expect(NSDocumentController.shared.documents.count == 1)
         }
     }
 

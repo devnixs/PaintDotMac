@@ -28,6 +28,13 @@ struct DocumentWindowControllerTests {
                 == CGSize(width: 1152, height: 720))
     }
 
+    /// Edge case: a 1×1 image still opens at the 480×360 minimum.
+    @Test func initialContentSizeOnePixelImageUsesMinimum() {
+        #expect(DocumentWindowController.initialContentSize(imageSize: CGSize(width: 1, height: 1),
+                                                            visibleFrameSize: screen)
+                == CGSize(width: 480, height: 360))
+    }
+
     @Test func initialContentSizeMixedAxes() {
         // x: max(1000, 480) = 1000 ≤ 1152 → 1000. y: max(200, 360) = 360 → 360.
         #expect(DocumentWindowController.initialContentSize(imageSize: CGSize(width: 1000, height: 200),

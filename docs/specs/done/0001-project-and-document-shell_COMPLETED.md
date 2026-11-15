@@ -464,5 +464,64 @@ Manual verification steps (never run by the agent; the user runs them when conve
 - [ ] 7. Corrupt file from Finder (`broken.png`): "couldn’t be opened" alert, app keeps running.
 - [ ] 8. Light and Dark mode: the placeholder background follows the window background color.
 
-Review: _(to be filled by the reviewer: criteria traced, mutations tried, issues found, final
-gate lines)_
+Review: 2026-11-15 (independent reviewer; Xcode 27.2 / macOS 27.2). Every acceptance criterion
+and edge case traced to a test asserting real outcomes (fixture pixel bytes, hand-computed
+formula values, literal menu-table rows, format-spec container layouts): project/bundle/document
+types → `SmokeTests.*` + the gate; no-untitled launch and keep-running → `AppDelegateTests`;
+PNG/JPEG open with size, title prefix, `canvas` value, one window, tabbing →
+`DocumentOpenIntegrationTests.opensPNG/JPEGThroughDocumentController`,
+`twoDocumentsShareTabbingIdentifier`, `PaintDocumentTests.reads*`; corrupt/truncated/empty/
+unsupported/missing files → `PaintDocumentTests.rejects*` + `ContainerCompletenessTests` +
+`corruptFileFailsWithoutDocument`/`missingFileFailsWithoutDocument`; ⌘W →
+`MainMenuTests.fileMenuItems` + `harnessFindsDocumentActions` + the added
+`performCloseActionClosesUneditedDocument` (drives the real `performClose:` action through the
+harness target); the menu table, shortcut uniqueness, Open Recent, and the Services/Window/Help
+wiring → `MainMenuTests.*`; disabled Save/Undo/Edit items and enabled Open… →
+`saveActionsAreDisabled` + `harnessFindsDocumentActions`; `autosavesInPlace` →
+`doesNotAutosaveInPlace`; test-host mode and preferences/frame isolation → `TestHostTests.*`;
+the size/rect formulas and the 1×1 edge → `initialContentSize*`, `imageRect*`,
+`drawsImageExactlyInsideImageRectOverOpaqueBackground` (added; exact fixture bytes read back from
+an sRGB bitmap inside/outside `imageRect`); the nil-image `makeWindowControllers` guard →
+`makeWindowControllersWithoutImageAddsNoController` (added); open-the-same-file-twice →
+`openingSameFileTwiceYieldsOneDocument` (added). AGENTS.md *Build and test* matches the mandated
+text. Nothing untested beyond what the spec assigns to the manual checklist (real windows/tabs/
+merge, the alert, Finder, signing/architectures).
+
+Tests added (21, all passing): `PaintDotMacTests/Core/ContainerCompletenessTests.swift` — 14
+unit tests for the new `Core` code with hand-built PNG/JPEG byte streams whose expectations come
+from the container formats (chunk framing/IEND; marker lengths, entropy-mode boundaries, EOI),
+plus real ImageIO-encoded files as a false-rejection guard; `rejectsJPEGWithNoFrames`;
+`makeWindowControllersWithoutImageAddsNoController`; `initialContentSizeOnePixelImageUsesMinimum`;
+`imageRectOnePixelImageCenters`; the pixel-exact draw test; `performCloseActionClosesUneditedDocument`;
+`openingSameFileTwiceYieldsOneDocument`; and `harnessFindsDocumentActions` extended to all five
+disabled save/revert/duplicate actions, Undo/Cut/Copy/Paste/Select All disabled, and Open…/Close
+enabled.
+
+Issue found and fixed: `ContainerCompleteness.isComplete` returned `false` for *every* input
+shorter than 8 bytes, contradicting its own contract ("a stream that is not PNG or JPEG reports
+`true`") and calling short-but-structurally-complete JPEG containers (e.g. `FF D8 FF D9`)
+incomplete at the container layer instead of letting ImageIO reject them. The blanket length
+guard and the `count >= 4` JPEG guard are removed; each walker's own signature/EOI checks are
+sufficient, ImageIO still refuses all such files (pinned by `rejectsJPEGWithNoFrames`), and no
+user-visible behavior changes. Crash/rule audit of the diff came up otherwise clean: no force
+unwraps, `try!`, or `precondition` in app sources (only the two spec-mandated
+`@available(*, unavailable) init(coder:)` `fatalError`s), `Core` imports Foundation only, the
+PNG/JPEG walks bounds-check every read and cannot overflow `Int` even at chunk length
+`0xFFFFFFFF`, documents are serialized through `TestRunGate`, and no test shows a window or
+touches the user's defaults or clipboard. Note: a `CGRect` cannot carry a negative size (its
+initializer normalizes one), so the "never negative sizes" edge needs no extra guard.
+
+Mutations tried, each caught by ≥1 test and restored (verified by `git diff`): flipping
+`PaintDocument.validateUserInterfaceItem`'s save-disable to `true` → `saveActionsAreDisabled` +
+`harnessFindsDocumentActions` fail (10 issues); deleting the SOS→entropy transition in the JPEG
+marker walk → `completeHandBuiltJPEG`, `imageIOEncodedFilesAreComplete`, `readsJPEG`,
+`readsJPEGDataDeclaredAsPNG` fail; dropping ⇧ from Save As… → `fileMenuItems` +
+`noDuplicateShortcuts` fail; changing the accessibility `×` to `x` → `accessibilityContract` +
+both open-integration tests fail; `applicationShouldOpenUntitledFile` → `true` →
+`AppDelegateTests` fails; window cap fraction 0.8 → 0.75 → `initialContentSizeCapsLargeImage`
+fails.
+
+Final quality gate (default run, no flags) — **GREEN**: `Core imports: OK`;
+`Test sources: headless`; `No compiler warnings.`; `tests: 82 passed, 0 failed, 0 skipped
+(of 82)`; `tests: no crash reports during the run`. `git status` after the gate lists source
+files only.

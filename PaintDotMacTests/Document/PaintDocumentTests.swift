@@ -148,6 +148,13 @@ struct PaintDocumentTests {
         try expectReadError(.fileReadCorruptFile, data: Data(), type: "public.png")
     }
 
+    /// SOI + EOI with nothing between: no image frames. `ContainerCompleteness` calls the
+    /// container complete; ImageIO finds no image, so the read must still be refused.
+    @Test func rejectsJPEGWithNoFrames() throws {
+        try expectReadError(.fileReadCorruptFile,
+                            data: Data([0xFF, 0xD8, 0xFF, 0xD9]), type: "public.jpeg")
+    }
+
     @Test func rejectsUnsupportedType() throws {
         let data = try encode(width: 8, height: 8, rgba: (1, 2, 3, 255), type: "public.png")
         try expectReadError(.fileReadUnknown, data: data, type: "com.compuserve.gif")
@@ -194,5 +201,12 @@ struct PaintDocumentTests {
         #expect(window.identifier == NSUserInterfaceItemIdentifier("documentWindow"))
         #expect(window.contentView is PlaceholderImageView)
         window.close()
+    }
+
+    /// Scope: "If `image` is nil, it adds no controller."
+    @Test func makeWindowControllersWithoutImageAddsNoController() {
+        let document = PaintDocument()
+        document.makeWindowControllers()
+        #expect(document.windowControllers.isEmpty)
     }
 }

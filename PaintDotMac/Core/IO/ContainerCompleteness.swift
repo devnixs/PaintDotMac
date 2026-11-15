@@ -20,7 +20,6 @@ enum ContainerCompleteness {
 
     /// True when `data` is a complete PNG/JPEG container, or is not PNG/JPEG at all.
     static func isComplete(_ data: Data) -> Bool {
-        guard data.count >= pngSignature.count else { return false }
         let bytes = [UInt8](data)
         if bytes.starts(with: pngSignature) { return isCompletePNG(bytes) }
         if bytes.starts(with: [0xFF, 0xD8]) { return isCompleteJPEG(bytes) }
@@ -49,7 +48,7 @@ enum ContainerCompleteness {
     /// scan must be terminated by `EOI` (stuffed `FF 00` pairs and restart markers skipped, as
     /// any decoder does).
     static func isCompleteJPEG(_ bytes: [UInt8]) -> Bool {
-        guard bytes.count >= 4, bytes[0] == 0xFF, bytes[1] == 0xD8 else { return false }
+        guard bytes.count >= 2, bytes[0] == 0xFF, bytes[1] == 0xD8 else { return false }
         var i = 2 // past SOI
         var inEntropy = false
         while i + 1 < bytes.count {

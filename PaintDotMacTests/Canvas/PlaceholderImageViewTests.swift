@@ -43,12 +43,22 @@ struct PlaceholderImageViewTests {
     }
 
     @Test func imageRectEmptyBounds() {
+        // Note: a CGRect cannot carry a negative size (its initializer normalizes one to a
+        // positive size), so width/height 0 are the only non-positive bounds representable.
         for bounds in [CGRect(x: 0, y: 0, width: 0, height: 100),
                        CGRect(x: 0, y: 0, width: 100, height: 0)] {
             let rect = PlaceholderImageView.imageRect(imageSize: CGSize(width: 64, height: 48), in: bounds)
             #expect(rect == .zero)
             #expect(![rect.origin.x, rect.origin.y, rect.size.width, rect.size.height].contains { $0.isNaN })
         }
+    }
+
+    /// Edge case: a 1×1 image is drawn at 1×1 pt, centered.
+    @Test func imageRectOnePixelImageCenters() {
+        // scale = 1; origin = (floor((480 − 1) / 2), floor((360 − 1) / 2)) = (239, 179).
+        #expect(PlaceholderImageView.imageRect(imageSize: CGSize(width: 1, height: 1),
+                                               in: CGRect(x: 0, y: 0, width: 480, height: 360))
+            == CGRect(x: 239, y: 179, width: 1, height: 1))
     }
 
     @Test func imageRectZeroImage() {
@@ -67,5 +77,47 @@ struct PlaceholderImageViewTests {
         #expect(view.accessibilityIdentifier() == "canvas")
         #expect(view.accessibilityLabel() == "Canvas")
         #expect(view.accessibilityValue() as? String == "64 × 48")
+    }
+
+    /// `draw` fills the view with the window background and draws the image exactly into
+    /// `imageRect`. Pixels are read back from an sRGB RGBA8 bitmap context, so the expected
+    /// bytes inside the image rect are the fixture's own color, exactly (opaque 1:1 draw,
+    /// sRGB → sRGB, no interpolation).
+    @Test func drawsImageExactlyInsideImageRectOverOpaqueBackground() throws {
+        let image = try FixtureFiles.solidImage(width: 16, height: 8, rgba: (200, 100, 50, 255))
+        let view = PlaceholderImageView(image: image)
+        view.frame = NSRect(x: 0, y: 0, width: 32, height: 32)
+        // Hand-computed: scale = 1; origin = (floor((32 − 16) / 2), floor((32 − 8) / 2)).
+        #expect(PlaceholderImageView.imageRect(imageSize: CGSize(width: 16, height: 8), in: view.bounds)
+            == CGRect(x: 8, y: 12, width: 16, height: 8))
+
+        var buffer = [UInt8](repeating: 0, count: 32 * 32 * 4)
+        let context = try #require(CGContext(
+            data: &buffer, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 32 * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let graphics = try #require(NSGraphicsContext(cgContext: context, flipped: false))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = graphics
+        view.draw(view.bounds)
+        NSGraphicsContext.restoreGraphicsState()
+
+        // The view is not flipped; CGContext data row 0 is the topmost row.
+        func pixel(x: Int, y: Int) -> [UInt8] {
+            let base = (31 - y) * 32 * 4 + x * 4
+            return Array(buffer[base ..< base + 4])
+        }
+
+        for point in [(16, 16), (8, 12), (23, 19), (8, 19), (23, 12)] {
+            #expect(pixel(x: point.0, y: point.1) == [200, 100, 50, 255],
+                    "(\(point.0), \(point.1)) lies inside imageRect and must show the image exactly")
+        }
+        for point in [(0, 0), (31, 31), (7, 16), (16, 11), (24, 16), (16, 20)] {
+            let p = pixel(x: point.0, y: point.1)
+            #expect(p[3] == 255, "(\(point.0), \(point.1)) must sit on the opaque background fill")
+            #expect(p != [200, 100, 50, 255],
+                    "(\(point.0), \(point.1)) lies outside imageRect and must not show the image")
+        }
     }
 }
