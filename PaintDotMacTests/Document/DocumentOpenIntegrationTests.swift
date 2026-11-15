@@ -18,7 +18,7 @@ struct DocumentOpenIntegrationTests {
                                            rgba: (200, 100, 50, 255))
             let document = try await Self.open(url)
             let paintDocument = try #require(document as? PaintDocument)
-            #expect(paintDocument.imagePixelSize == CGSize(width: 64, height: 48))
+            #expect(paintDocument.image.size == PixelSize(width: 64, height: 48))
             #expect(NSDocumentController.shared.documents.count == 1)
 
             paintDocument.makeWindowControllers()
@@ -44,7 +44,7 @@ struct DocumentOpenIntegrationTests {
                                             rgba: (10, 200, 90, 255))
             let document = try await Self.open(url)
             let paintDocument = try #require(document as? PaintDocument)
-            #expect(paintDocument.imagePixelSize == CGSize(width: 40, height: 30))
+            #expect(paintDocument.image.size == PixelSize(width: 40, height: 30))
             #expect(NSDocumentController.shared.documents.count == 1)
 
             paintDocument.makeWindowControllers()
@@ -66,9 +66,14 @@ struct DocumentOpenIntegrationTests {
             let url = try fixtures.makeFile(named: "corrupt.png", contents: Data("not an image".utf8))
             let result = await Self.openResult(url)
             #expect(result.document == nil)
-            let error = try #require(result.error, "opening a corrupt file must fail") as NSError
-            #expect(error.domain == NSCocoaErrorDomain)
-            #expect(error.code == CocoaError.Code.fileReadCorruptFile.rawValue)
+            let error = try #require(result.error, "opening a corrupt file must fail")
+            #expect(Self.codecError(in: error) == .unrecognizedFormat,
+                    "expected ImageCodecError.unrecognizedFormat, got \(error)")
+            // NSDocumentController wraps our error; its underlying error carries the text.
+            let codecError = (error as? ImageCodecError)
+                ?? (error as NSError).userInfo[NSUnderlyingErrorKey] as? ImageCodecError
+            #expect(codecError?.localizedDescription.contains("isn\u{2019}t a supported image") == true,
+                    "the alert text comes from ImageCodecError: \(error.localizedDescription)")
             #expect(NSDocumentController.shared.documents.isEmpty)
         }
     }
@@ -179,6 +184,11 @@ struct DocumentOpenIntegrationTests {
     }
 
     // MARK: - Helpers
+
+    /// The `ImageCodecError`, directly or as the document controller's underlying error.
+    static func codecError(in error: Error) -> ImageCodecError? {
+        (error as? ImageCodecError) ?? (error as NSError).userInfo[NSUnderlyingErrorKey] as? ImageCodecError
+    }
 
     /// Every test ends by closing documents (never through a path that can prompt) and checking
     /// that nothing became visible.

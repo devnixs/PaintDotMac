@@ -69,8 +69,9 @@ struct PlaceholderImageViewTests {
 
     /// The contract 0003's CanvasView must keep: identifier `canvas`, label `Canvas`, and the
     /// `"<width> × <height>"` value with U+00D7 and single spaces.
-    @Test func accessibilityContract() throws {
-        let image = try FixtureFiles.solidImage(width: 64, height: 48, rgba: (1, 2, 3, 255))
+    @Test func accessibilityContract() {
+        let image = LayeredImage.blank(size: PixelSize(width: 64, height: 48),
+                                       fill: ColorRGBA8(red: 1, green: 2, blue: 3))
         let view = PlaceholderImageView(image: image)
         #expect(view.isAccessibilityElement())
         #expect(view.accessibilityRole() == .image)
@@ -84,7 +85,8 @@ struct PlaceholderImageViewTests {
     /// bytes inside the image rect are the fixture's own color, exactly (opaque 1:1 draw,
     /// sRGB → sRGB, no interpolation).
     @Test func drawsImageExactlyInsideImageRectOverOpaqueBackground() throws {
-        let image = try FixtureFiles.solidImage(width: 16, height: 8, rgba: (200, 100, 50, 255))
+        let image = LayeredImage.blank(size: PixelSize(width: 16, height: 8),
+                                       fill: ColorRGBA8(red: 200, green: 100, blue: 50))
         let view = PlaceholderImageView(image: image)
         view.frame = NSRect(x: 0, y: 0, width: 32, height: 32)
         // Hand-computed: scale = 1; origin = (floor((32 − 16) / 2), floor((32 − 8) / 2)).

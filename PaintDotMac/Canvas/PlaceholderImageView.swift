@@ -1,24 +1,27 @@
 import AppKit
 import CoreGraphics
 
-/// Temporary stand-in for the canvas: draws the decoded image centered at native size, scaled
-/// down to fit. 0003 replaces it with the Metal `CanvasView`, which must keep the `canvas`
-/// accessibility identifier and the `"<width> × <height>"` value format, so VoiceOver and the
-/// integration tests keep working.
+/// Temporary stand-in for the canvas: draws the active layer of the document image centered
+/// at native size, scaled down to fit. 0003 replaces it with the Metal `CanvasView`, which
+/// must keep the `canvas` accessibility identifier and the `"<width> × <height>"` value
+/// format (the decoded size, `PixelSize.description`), so VoiceOver and the integration
+/// tests keep working.
 @MainActor
 final class PlaceholderImageView: NSView {
-    private let image: CGImage
+    private let image: LayeredImage
+    private let imageGraphics: CGImage?
 
     /// A view that accepts no first responder and implements no edit actions, so
     /// Cut/Copy/Paste/Select All stay disabled while a document is open.
-    init(image: CGImage) {
+    init(image: LayeredImage) {
         self.image = image
+        self.imageGraphics = image.activeLayer.surface.makeCGImage()
         super.init(frame: .zero)
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
         setAccessibilityIdentifier(Self.accessibilityIdentifierValue)
         setAccessibilityLabel("Canvas")
-        setAccessibilityValue(Self.accessibilityValue(imageSize: CGSize(width: image.width, height: image.height)))
+        setAccessibilityValue(image.size.description)
     }
 
     @available(*, unavailable)
@@ -29,11 +32,6 @@ final class PlaceholderImageView: NSView {
     // MARK: - Accessibility contract (kept by CanvasView in 0003)
 
     static let accessibilityIdentifierValue = "canvas"
-
-    /// The pixel size with U+00D7 and single spaces, for example `"64 × 48"`.
-    static func accessibilityValue(imageSize: CGSize) -> String {
-        "\(Int(imageSize.width)) × \(Int(imageSize.height))"
-    }
 
     override var acceptsFirstResponder: Bool { false }
 
@@ -47,18 +45,19 @@ final class PlaceholderImageView: NSView {
         context.setFillColor(NSColor.windowBackgroundColor.cgColor)
         context.fill(bounds)
 
-        let imageSize = CGSize(width: image.width, height: image.height)
+        guard let imageGraphics else { return }
+        let imageSize = CGSize(width: image.size.width, height: image.size.height)
         let rect = Self.imageRect(imageSize: imageSize, in: bounds)
         guard !rect.isEmpty else { return }
         context.interpolationQuality = rect.size == imageSize ? .none : .high
-        context.draw(image, in: rect)
+        context.draw(imageGraphics, in: rect)
     }
 
     // MARK: - Layout
 
-    /// Scales the image to fit `bounds`, never upscales, and centers it; the origin is floored,
-    /// the size is not rounded. Returns `.zero` for empty bounds or a degenerate image, and
-    /// never NaN or negative sizes.
+    /// Scales the image to fit `bounds`, never upscales, and centers it; the origin is
+    /// floored, the size is not rounded. Returns `.zero` for empty bounds or a degenerate
+    /// image, and never NaN or negative sizes.
     static func imageRect(imageSize: CGSize, in bounds: CGRect) -> CGRect {
         guard bounds.width > 0, bounds.height > 0, imageSize.width > 0, imageSize.height > 0 else {
             return .zero

@@ -50,7 +50,8 @@ struct DocumentWindowControllerTests {
     }
 
     @Test func windowSupportsTabbing() throws {
-        let image = try FixtureFiles.solidImage(width: 10, height: 10, rgba: (255, 0, 0, 255))
+        let image = LayeredImage.blank(size: PixelSize(width: 10, height: 10),
+                                       fill: ColorRGBA8(red: 255, green: 0, blue: 0))
         let controller = DocumentWindowController(image: image)
         let window = try #require(controller.window)
         #expect(window.tabbingMode == .automatic)

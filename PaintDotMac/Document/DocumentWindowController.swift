@@ -1,9 +1,8 @@
 import AppKit
 import CoreGraphics
 
-/// One window per document (APP-1). Built in code with no nib; 0002/0003 will change the
-/// parameter to the document model and replace the placeholder content view with the Metal
-/// `CanvasView`.
+/// One window per document (APP-1). Built in code with no nib; 0003 replaces the placeholder
+/// content view with the Metal `CanvasView`.
 @MainActor
 final class DocumentWindowController: NSWindowController {
     /// Native window tabs: `.automatic` follows the user's "Prefer tabs when opening documents"
@@ -19,9 +18,9 @@ final class DocumentWindowController: NSWindowController {
     private static let minimumContentSize = CGSize(width: 480, height: 360)
     private static let visibleFrameFraction: CGFloat = 0.8
 
-    init(image: CGImage) {
+    init(image: LayeredImage) {
         let contentSize = Self.initialContentSize(
-            imageSize: CGSize(width: image.width, height: image.height),
+            imageSize: CGSize(width: image.size.width, height: image.size.height),
             visibleFrameSize: NSScreen.main?.visibleFrame.size ?? CGSize(width: 1440, height: 900)
         )
         let window = NSWindow(

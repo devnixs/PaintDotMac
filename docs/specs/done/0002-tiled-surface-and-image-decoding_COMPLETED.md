@@ -460,3 +460,25 @@ Expected values come from hand calculation, the formulas above, or simple refere
 - Selection masks (0013), clipboard decoding (0021, which reuses `ImageDecoder.surface(from:)` and `TiledSurface.init(size:rgba8:bytesPerRow:)`), import as layer (0030).
 - Document types and UTIs for HEIC, TIFF, BMP, GIF, and WebP, and their export (0029). The decoder already reads them, but the app only offers PNG and JPEG (0001) until 0029.
 - OpenRaster (0028). 16-bit, float, or P3 working spaces (Q-2: RGBA8 only in v1).
+
+## Verification status
+
+- 2026-11-15 — quality gate `.agents/skills/spec-implementer/scripts/quality-gate.sh` printed **GREEN**:
+  - `tests: 173 passed, 0 failed, 0 skipped (of 173)`
+  - `tests: no crash reports during the run`
+  - Clean Debug build with no compiler warnings; Core import and headless-source checks OK.
+- Performance (Debug, PRD §6 NF-2 / NF-4 guards, `ImageDecoderPerformanceTests`):
+  - 24 MP (6,000 × 4,000) JPEG decode: `measure` average **0.122 s** (values 0.110–0.191 s; gate asserts < 3.0 s, the NF-2 open budget is 1 s).
+  - Tiled-surface region write + read of a 4,000 × 3,000 (48 MB) buffer: **0.079 s** (gate asserts < 1.5 s).
+- Implementation notes settled while implementing (within the spec's decisions):
+  - `vImageRotate90_ARGB8888`'s `clockwise` counts quarter-turns counter-clockwise in image space on this macOS; the orientation table was verified against hand-computed mappings.
+  - `vImageBuffer_InitWithCGImage` internally premultiplies even for straight `.last` sources (it zeroes the color under alpha 0 and destroys low-alpha pixels), so straight 8-bit sRGB sources take a byte-exact copy path and float sources are quantized from a Float32 buffer (Path E / Path F in `ImageDecoder.convert`).
+  - ImageIO withholds the dimensions of a PNG without IDAT, so `decode` falls back to parsing IHDR before the limit check (keeps `dimensionsOutOfRange`/`exceedsMemoryCap` ahead of decoding, APP-10).
+- Manual verification steps — not yet run by user:
+  - [ ] not yet run by user: 1. Open a portrait iPhone JPEG (EXIF orientation 6) — upright, matching Preview.
+  - [ ] not yet run by user: 2. Open a CMYK JPEG — colors match Preview side by side.
+  - [ ] not yet run by user: 3. Open a P3-tagged screenshot — colors match Preview, no mid-tone shift.
+  - [ ] not yet run by user: 4. Open a 24 MP+ photo — opens in about a second, no beachball; memory ≈ width × height × 4 + overhead.
+  - [ ] not yet run by user: 5. Open a truncated JPEG via File > Open — "damaged or incomplete" alert appears, app keeps running.
+
+Review: (to be filled by reviewer)

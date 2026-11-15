@@ -70,17 +70,15 @@ struct PaintDocumentTests {
         return document
     }
 
-    private func expectReadError(_ code: CocoaError.Code, data: Data, type: String) throws {
+    /// A rejected read throws the exact `ImageCodecError` and leaves the image unchanged
+    /// (still the 1×1 transparent image a fresh document holds).
+    private func expectReadError(_ error: ImageCodecError, data: Data, type: String) throws {
         let document = PaintDocument()
-        do {
+        let imageBefore = document.image
+        #expect(throws: error) {
             try document.read(from: data, ofType: type)
-            Issue.record("read(from:ofType:) accepted \(type) data it must reject")
-        } catch let error as CocoaError {
-            #expect(error.code == code)
-        } catch {
-            Issue.record("expected a CocoaError \(code), got \(error)")
         }
-        #expect(document.image == nil, "a rejected read must leave the image unset")
+        #expect(document.image == imageBefore, "a rejected read must leave the image unchanged")
     }
 
     // MARK: - Successful reads
@@ -88,26 +86,26 @@ struct PaintDocumentTests {
     @Test func readsPNG() throws {
         let data = try encode(width: 64, height: 48, rgba: (10, 20, 30, 255), type: "public.png")
         let document = try read(data, as: "public.png")
-        #expect(document.imagePixelSize == CGSize(width: 64, height: 48))
+        #expect(document.image.size == PixelSize(width: 64, height: 48))
     }
 
     @Test func readsJPEG() throws {
         let data = try encode(width: 40, height: 30, rgba: (200, 120, 40, 255), type: "public.jpeg")
         let document = try read(data, as: "public.jpeg")
-        #expect(document.imagePixelSize == CGSize(width: 40, height: 30))
+        #expect(document.image.size == PixelSize(width: 40, height: 30))
     }
 
     @Test func readsOnePixel() throws {
         let data = try encode(width: 1, height: 1, rgba: (0, 0, 0, 255), type: "public.png")
         let document = try read(data, as: "public.png")
-        #expect(document.imagePixelSize == CGSize(width: 1, height: 1))
+        #expect(document.image.size == PixelSize(width: 1, height: 1))
     }
 
     /// Content is decoded by sniffing, not by extension.
     @Test func readsJPEGDataDeclaredAsPNG() throws {
         let data = try encode(width: 40, height: 30, rgba: (200, 120, 40, 255), type: "public.jpeg")
         let document = try read(data, as: "public.png")
-        #expect(document.imagePixelSize == CGSize(width: 40, height: 30))
+        #expect(document.image.size == PixelSize(width: 40, height: 30))
     }
 
     /// Proves the decoded image is the file's content, not just its size: the pixel round-trips
@@ -115,49 +113,50 @@ struct PaintDocumentTests {
     @Test func pngPixelRoundTrip() throws {
         let data = try encode(width: 8, height: 8, rgba: (200, 100, 50, 255), type: "public.png")
         let document = try read(data, as: "public.png")
-        let image = try #require(document.image)
-
-        let context = try #require(CGContext(
-            data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ))
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        let base = try #require(context.data)
-        let pixel = (0..<4).map { base.load(fromByteOffset: $0, as: UInt8.self) }
-        #expect(pixel == [200, 100, 50, 255], "decoded pixel at (0, 0) is \(pixel)")
+        let pixel = document.image.layers[0].surface.pixel(at: .zero)
+        #expect(pixel == ColorRGBA8(red: 200, green: 100, blue: 50, alpha: 255),
+                "decoded pixel at (0, 0) is \(pixel)")
     }
 
     // MARK: - Rejections (never a crash)
 
     @Test func rejectsGarbage() throws {
-        try expectReadError(.fileReadCorruptFile, data: Data("not an image".utf8), type: "public.png")
+        try expectReadError(.unrecognizedFormat, data: Data("not an image".utf8), type: "public.png")
     }
 
     @Test func rejectsTruncatedPNG() throws {
         let data = try gradientPNGData(side: 256)
-        try expectReadError(.fileReadCorruptFile, data: data.prefix(data.count / 2), type: "public.png")
+        try expectReadError(.corrupt, data: data.prefix(data.count / 2), type: "public.png")
     }
 
     @Test func rejectsTruncatedJPEG() throws {
         let data = try encode(width: 256, height: 256, rgba: (90, 140, 190, 255), type: "public.jpeg")
-        try expectReadError(.fileReadCorruptFile, data: data.prefix(data.count / 2), type: "public.jpeg")
+        try expectReadError(.corrupt, data: data.prefix(data.count / 2), type: "public.jpeg")
     }
 
     @Test func rejectsEmptyData() throws {
-        try expectReadError(.fileReadCorruptFile, data: Data(), type: "public.png")
+        try expectReadError(.unrecognizedFormat, data: Data(), type: "public.png")
     }
 
-    /// SOI + EOI with nothing between: no image frames. `ContainerCompleteness` calls the
-    /// container complete; ImageIO finds no image, so the read must still be refused.
+    /// SOI + EOI with nothing between: no image frames.
     @Test func rejectsJPEGWithNoFrames() throws {
-        try expectReadError(.fileReadCorruptFile,
+        try expectReadError(.unrecognizedFormat,
                             data: Data([0xFF, 0xD8, 0xFF, 0xD9]), type: "public.jpeg")
     }
 
     @Test func rejectsUnsupportedType() throws {
         let data = try encode(width: 8, height: 8, rgba: (1, 2, 3, 255), type: "public.png")
-        try expectReadError(.fileReadUnknown, data: data, type: "com.compuserve.gif")
+        let document = PaintDocument()
+        #expect(throws: CocoaError.self) {
+            do {
+                try document.read(from: data, ofType: "com.compuserve.gif")
+            } catch let error as CocoaError {
+                #expect(error.code == .fileReadUnknown)
+                throw error
+            }
+        }
+        #expect(document.image.size == PixelSize(width: 1, height: 1),
+                "a rejected read must leave the image unchanged")
     }
 
     // MARK: - Document configuration
@@ -176,7 +175,7 @@ struct PaintDocumentTests {
         for name in ["saveDocument:", "saveDocumentAs:", "saveDocumentTo:",
                      "revertDocumentToSaved:", "duplicateDocument:"] {
             let item = NSMenuItem(title: name, action: NSSelectorFromString(name), keyEquivalent: "")
-            #expect(document.validateUserInterfaceItem(item) == false, "\(name) must stay disabled in 0001")
+            #expect(document.validateUserInterfaceItem(item) == false, "\(name) must stay disabled until 0005")
         }
     }
 
@@ -203,10 +202,16 @@ struct PaintDocumentTests {
         window.close()
     }
 
-    /// Scope: "If `image` is nil, it adds no controller."
-    @Test func makeWindowControllersWithoutImageAddsNoController() {
+    /// A document that hasn't read a file holds the 1×1 transparent placeholder image and can
+    /// still build its window (until 0005 adds New Image).
+    @Test func unreadDocumentHoldsBlankOnePixelImage() {
         let document = PaintDocument()
+        #expect(document.image.size == PixelSize(width: 1, height: 1))
+        #expect(document.image.layers.count == 1)
+        #expect(document.image.layers[0].name == "Background")
+        #expect(document.image.layers[0].surface.pixel(at: .zero) == .clear)
         document.makeWindowControllers()
-        #expect(document.windowControllers.isEmpty)
+        #expect(document.windowControllers.count == 1)
+        (document.windowControllers.first?.window)?.close()
     }
 }
