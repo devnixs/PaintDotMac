@@ -29,6 +29,21 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation {
     /// The window's zoom/pan controller (0004); `nil` when Metal is unavailable (no canvas).
     private(set) var navigation: CanvasNavigation?
 
+    /// `nonisolated` because AppKit's save path calls this off the main thread (its
+    /// file-coordinator queue), where a MainActor entry check would trap; the window-title
+    /// work itself always runs on the main thread.
+    override nonisolated func synchronizeWindowTitleWithDocumentName() {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { synchronizeWindowTitleWithDocumentNameOnMain() }
+        } else {
+            DispatchQueue.main.async { self.synchronizeWindowTitleWithDocumentNameOnMain() }
+        }
+    }
+
+    @MainActor private func synchronizeWindowTitleWithDocumentNameOnMain() {
+        super.synchronizeWindowTitleWithDocumentName()
+    }
+
     init(image: LayeredImage) {
         let backingScale = NSScreen.main?.backingScaleFactor ?? 1
         let contentSize = Self.initialContentSize(

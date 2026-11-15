@@ -121,11 +121,12 @@ struct DocumentOpenIntegrationTests {
             let url = try fixtures.makePNG(named: "actions.png", width: 32, height: 24, rgba: (7, 8, 9, 255))
             let harness = try await DocumentHarness.open(url)
 
-            #expect(harness.isEnabled(NSSelectorFromString("saveDocument:")) == false)
-            #expect(harness.isEnabled(NSSelectorFromString("saveDocumentAs:")) == false)
-            #expect(harness.isEnabled(NSSelectorFromString("saveDocumentTo:")) == false)
-            #expect(harness.isEnabled(NSSelectorFromString("revertDocumentToSaved:")) == false)
-            #expect(harness.isEnabled(NSSelectorFromString("duplicateDocument:")) == false)
+            // 0005: 0001's PaintDocument override that disabled the save actions is gone —
+            // Save and Save As… are enabled for an open document (the File menu items
+            // `MainMenuTests.fileMenuItems` pins). saveTo/revert/duplicate follow standard
+            // `NSDocument` validation now; no File menu item uses them in M0.
+            #expect(harness.isEnabled(NSSelectorFromString("saveDocument:")))
+            #expect(harness.isEnabled(NSSelectorFromString("saveDocumentAs:")))
             // Acceptance: while a document is open, Undo and every Edit action stay disabled
             // (the placeholder canvas implements no edit actions) and Open… stays enabled.
             for name in ["undo:", "cut:", "copy:", "paste:", "selectAll:"] {

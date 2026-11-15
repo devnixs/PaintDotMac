@@ -89,7 +89,7 @@ struct MainMenuTests {
 
     @Test func fileMenuItems() throws {
         try expectRows(MainMenu.fileMenuIdentifier, [
-            Row(title: "New…", key: "n", modifiers: [.command], action: nil),
+            Row(title: "New…", key: "n", modifiers: [.command], action: "newDocument:"),
             Row(title: "Open…", key: "o", modifiers: [.command], action: "openDocument:"),
             Row(title: "Open Recent", key: "", modifiers: [], action: "submenuAction:"),
             .separator,
@@ -97,6 +97,11 @@ struct MainMenuTests {
             Row(title: "Save", key: "s", modifiers: [.command], action: "saveDocument:"),
             Row(title: "Save As…", key: "s", modifiers: [.command, .shift], action: "saveDocumentAs:"),
         ])
+        // 0005 accessibility identifiers.
+        let identifiers = try submenu(MainMenu.fileMenuIdentifier).items.compactMap(\.identifier?.rawValue)
+        #expect(identifiers.contains("menu.file.new"))
+        #expect(identifiers.contains("menu.file.save"))
+        #expect(identifiers.contains("menu.file.saveAs"))
     }
 
     @Test func editMenuItems() throws {
@@ -144,11 +149,9 @@ struct MainMenuTests {
     }
 
     @Test func placeholdersHaveNoAction() throws {
-        // 0046 and 0005 update this test when they wire these items up.
+        // 0005 wired New… to newDocument(_:); only Settings… is still a placeholder (0046).
         let settings = try submenu(MainMenu.appMenuIdentifier).items.first { $0.title == "Settings…" }
         #expect(settings?.action == nil)
-        let newItem = try submenu(MainMenu.fileMenuIdentifier).items.first { $0.title == "New…" }
-        #expect(newItem?.action == nil)
     }
 
     @Test func openRecentContainsClearMenu() throws {

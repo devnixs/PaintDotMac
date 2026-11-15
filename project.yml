@@ -54,17 +54,20 @@ targets:
         NSPrincipalClass: NSApplication
         LSApplicationCategoryType: public.app-category.graphics-design
         NSHumanReadableCopyright: ""
+        # PNG is listed first so NSDocumentController.defaultType is public.png (0005: new
+        # documents are PNG until 0028 makes them .ora). Both are Editor now; writability is
+        # decided by PaintDocument.writableTypes(for:), which 0029 widens to JPEG.
         CFBundleDocumentTypes:
           - CFBundleTypeName: "PNG image"
             LSItemContentTypes:
               - public.png
-            CFBundleTypeRole: Viewer
+            CFBundleTypeRole: Editor
             LSHandlerRank: Alternate
             NSDocumentClass: $(PRODUCT_MODULE_NAME).PaintDocument
           - CFBundleTypeName: "JPEG image"
             LSItemContentTypes:
               - public.jpeg
-            CFBundleTypeRole: Viewer
+            CFBundleTypeRole: Editor
             LSHandlerRank: Alternate
             NSDocumentClass: $(PRODUCT_MODULE_NAME).PaintDocument
 

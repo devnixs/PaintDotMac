@@ -9,6 +9,10 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // `NSDocumentController.init` registers the receiver as the shared controller when
+        // none exists yet, so creating it here — before anything touches
+        // `NSDocumentController.shared` — makes our subclass the shared one (spec 0005).
+        _ = PaintDocumentController()
         MainMenu.install(in: NSApp)
     }
 

@@ -137,3 +137,27 @@ extension FixtureFiles {
         return try makeFile(named: name, contents: TestImages.encode(image, as: type, properties: properties))
     }
 }
+
+// MARK: - Saved-file reading (spec 0005)
+
+extension FixtureFiles {
+    /// A saved PNG read back: pixel size, straight RGBA bytes (0002's `ImageDecoder` keeps
+    /// straight values and the color under alpha 0), DPI, and the embedded profile name.
+    static func decodePNG(at url: URL) throws -> (width: Int, height: Int, pixels: [UInt8],
+                                                  dpi: Double, profileName: String?) {
+        let data = try Data(contentsOf: url)
+        let decoded = try ImageDecoder.decode(data)
+        return (decoded.surface.size.width, decoded.surface.size.height,
+                decoded.surface.readPixels(in: decoded.surface.bounds),
+                decoded.dpi, profileName(of: data))
+    }
+
+    /// The `kCGImagePropertyProfileName` ImageIO reports for the first image in `data`.
+    static func profileName(of data: Data) -> String? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let cfProperties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil),
+              let properties = cfProperties as? [CFString: Any]
+        else { return nil }
+        return properties[kCGImagePropertyProfileName] as? String
+    }
+}

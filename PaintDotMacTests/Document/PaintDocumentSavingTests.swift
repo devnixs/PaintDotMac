@@ -1,0 +1,194 @@
+import AppKit
+import CoreGraphics
+import Foundation
+import ImageIO
+import Testing
+@testable import PaintDotMac
+
+/// Document-level save tests (spec 0005): documents built in code, never shown; writes go to
+/// throwaway URLs under the system temporary directory.
+@MainActor
+@Suite(.serialized)
+struct PaintDocumentSavingTests {
+    private func pngData(width: Int, height: Int, dpi: Double? = nil,
+                         pixel: @escaping (Int, Int) -> ColorRGBA8) throws -> Data {
+        let image = TestImages.cgImage(width: width, height: height,
+                                       bytes: TestImages.rgbaBytes(width: width, height: height, pixel))
+        var properties: [CFString: Any] = [:]
+        if let dpi {
+            properties[kCGImagePropertyDPIWidth] = dpi
+            properties[kCGImagePropertyDPIHeight] = dpi
+        }
+        return TestImages.encode(image, as: .png, properties: properties)
+    }
+
+    private func jpegData(width: Int, height: Int) throws -> Data {
+        let image = TestImages.cgImage(width: width, height: height,
+                                       bytes: TestImages.rgbaBytes(width: width, height: height) { x, y in
+                                           ColorRGBA8(red: UInt8(x % 256), green: UInt8(y % 256), blue: 128)
+                                       })
+        return TestImages.encode(image, as: .jpeg,
+                                 properties: [kCGImageDestinationLossyCompressionQuality: 0.9])
+    }
+
+    /// Reads a document the way `NSDocument` does (without a file on disk).
+    private func readDocument(_ data: Data, as type: String) throws -> PaintDocument {
+        let document = PaintDocument()
+        try document.read(from: data, ofType: type)
+        return document
+    }
+
+    /// The deterministic semi-transparent + alpha-0 pattern used by the round-trip fixtures.
+    private static func mixedPixel(_ x: Int, _ y: Int) -> ColorRGBA8 {
+        let alpha: UInt8 = (x + y) % 7 == 0 ? 0 : UInt8((x &* 3 &+ y) % 256)
+        return ColorRGBA8(red: UInt8(x % 256), green: UInt8(255 &- y % 256), blue: UInt8((x &+ y) % 256), alpha: alpha)
+    }
+
+    // MARK: - Configuration
+
+    /// Interim rules 4: autosavesInPlace is off (permanent) and no autosave type exists
+    /// before 0047.
+    @Test func autosaveSettings() {
+        #expect(PaintDocument.autosavesInPlace == false)
+        #expect(PaintDocument().autosavingFileType == nil)
+    }
+
+    /// 0001's disabling override is gone: `NSDocument`'s standard validation applies.
+    @Test func saveActionsAreEnabled() throws {
+        let document = try readDocument(pngData(width: 8, height: 8) { _, _ in .white }, as: "public.png")
+        for name in ["saveDocument:", "saveDocumentAs:"] {
+            let item = NSMenuItem(title: name, action: NSSelectorFromString(name), keyEquivalent: "")
+            #expect(document.validateUserInterfaceItem(item) == true, "\(name) must be enabled")
+        }
+    }
+
+    @Test func writableTypesArePNGOnly() throws {
+        let pngDocument = try readDocument(pngData(width: 8, height: 8) { _, _ in .white }, as: "public.png")
+        let jpegDocument = try readDocument(jpegData(width: 8, height: 8), as: "public.jpeg")
+        for document in [pngDocument, jpegDocument] {
+            for operation in [NSDocument.SaveOperationType.saveOperation,
+                              .saveAsOperation, .saveToOperation] {
+                #expect(document.writableTypes(for: operation) == ["public.png"],
+                        "operation \(operation.rawValue)")
+            }
+        }
+    }
+
+    @Test func fileNameExtension() throws {
+        let document = try readDocument(pngData(width: 8, height: 8) { _, _ in .white }, as: "public.png")
+        #expect(document.fileNameExtension(forType: "public.png",
+                                           saveOperation: .saveOperation) == "png")
+    }
+
+    // MARK: - data(ofType:)
+
+    /// A 300 DPI fixture with semi-transparent and alpha-0 pixels re-encodes byte-exact, and
+    /// the file carries pHYs 11811 ±1.
+    @Test func dataOfTypePNGRoundTrips() throws {
+        let source = try pngData(width: 300, height: 200, dpi: 300, pixel: Self.mixedPixel)
+        let document = try readDocument(source, as: "public.png")
+        let saved = try document.data(ofType: "public.png")
+
+        let decoded = try ImageDecoder.decode(saved)
+        TestImages.expectPixels(decoded.surface, match: Self.mixedPixel)
+        let phys = try #require(PNGChunks.chunks(in: saved, named: "pHYs").first)
+        let ppm = Int(phys.data[0]) << 24 | Int(phys.data[1]) << 16 | Int(phys.data[2]) << 8 | Int(phys.data[3])
+        #expect(abs(ppm - 11_811) <= 1, "pHYs X is \(ppm)")
+    }
+
+    /// JPEG arrives in 0029; the write throws the typed error so `NSDocument` alerts.
+    @Test func dataOfTypeJPEGThrows() throws {
+        let document = try readDocument(jpegData(width: 8, height: 8), as: "public.jpeg")
+        #expect(throws: ImageCodecError.unsupportedWriteFormat(.jpeg)) {
+            try document.data(ofType: "public.jpeg")
+        }
+    }
+
+    /// FMT-B/D-24: a Display P3 source converts to sRGB on open (0002) and saves with an
+    /// sRGB profile, never P3.
+    @Test func displayP3InputSavesAsSRGB() throws {
+        let p3 = try #require(CGColorSpace(name: CGColorSpace.displayP3))
+        let image = TestImages.cgImage(
+            width: 8, height: 8,
+            bytes: TestImages.rgbaBytes(width: 8, height: 8) { _, _ in ColorRGBA8(red: 200, green: 30, blue: 90) },
+            colorSpace: p3)
+        let document = try readDocument(TestImages.encode(image, as: .png), as: "public.png")
+        let saved = try document.data(ofType: "public.png")
+        let profileName = try #require(FixtureFiles.profileName(of: saved))
+        #expect(profileName.contains("sRGB"), "profile is \(profileName)")
+        #expect(!profileName.contains("P3"), "profile is \(profileName)")
+    }
+
+    // MARK: - Saving files
+
+    @Test func saveInPlaceRewritesPNG() async throws {
+        let data = try pngData(width: 64, height: 48, dpi: 300, pixel: Self.mixedPixel)
+        let url = try TestImages.temporaryFile(named: "in-place.png", contents: data)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let document = try readDocument(data, as: "public.png")
+
+        // The path `saveDocument(_:)` takes for a PNG document: `.writeInPlace`, no panel.
+        try await saveDocument(document, to: url, ofType: "public.png", for: .saveOperation)
+
+        let decoded = try FixtureFiles.decodePNG(at: url)
+        #expect(decoded.width == 64, "decoded file lost its pixels")
+        #expect(decoded.height == 48)
+        let original = try ImageDecoder.decode(data)
+        #expect(decoded.pixels == original.surface.readPixels(in: original.surface.bounds))
+        #expect(document.isDocumentEdited == false)
+    }
+
+    /// Interim rule 3: a document created through New is edited until a save clears it.
+    @Test func newDocumentIsEditedUntilSaved() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PaintDotMacTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("Untitled.png")
+
+        let document = PaintDocument()
+        document.image = NewImageRequest(size: PixelSize(width: 16, height: 12), dpi: 96).makeImage()
+        document.updateChangeCount(.changeDone)  // what PaintDocumentController.newDocument does
+        #expect(document.isDocumentEdited == true)
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try await saveDocument(document, to: url, ofType: "public.png", for: .saveAsOperation)
+
+        #expect(document.isDocumentEdited == false)
+        #expect(document.fileURL == url)
+        #expect(document.fileType == "public.png")
+    }
+
+    /// A JPEG-backed document's ⌘S maps to Save As… (the panel itself is covered by
+    /// `SaveIntegrationTests.jpegSavePreparesPNGPanel`).
+    @Test func jpegDocumentSaveActionIsSaveAs() throws {
+        let document = try readDocument(jpegData(width: 8, height: 8), as: "public.jpeg")
+        document.fileType = "public.jpeg"  // what opening a file sets
+        let fileType = try #require(document.fileType)
+        #expect(FileFormat.saveAction(for: FileFormat(typeIdentifier: fileType))
+                == .saveAs(offering: [.png], suggested: .png))
+    }
+
+    /// An unwritable folder: the completion reports an error, no file appears, and the
+    /// document keeps its URL.
+    @Test func writeToReadOnlyDirectoryFails() async throws {
+        let fileManager = FileManager.default
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PaintDotMacTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try fileManager.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer {
+            try? fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+            try? fileManager.removeItem(at: directory)
+        }
+
+        let document = try readDocument(pngData(width: 8, height: 8) { _, _ in .white }, as: "public.png")
+        let url = directory.appendingPathComponent("nope.png")
+        await #expect(throws: (any Error).self) {
+            try await saveDocument(document, to: url, ofType: "public.png", for: .saveOperation)
+        }
+        #expect(!fileManager.fileExists(atPath: url.path), "a partial file was written")
+        #expect(document.fileURL == nil, "the document adopted a URL it could not write")
+    }
+}

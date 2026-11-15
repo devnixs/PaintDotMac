@@ -21,6 +21,10 @@ enum MainMenu {
     static let helpMenuIdentifier = NSUserInterfaceItemIdentifier("menu.help")
     static let servicesItemIdentifier = NSUserInterfaceItemIdentifier("menu.app.services")
     static let openRecentItemIdentifier = NSUserInterfaceItemIdentifier("menu.file.openRecent")
+    // File > New / Save / Save As (0005).
+    static let fileNewItemIdentifier = NSUserInterfaceItemIdentifier("menu.file.new")
+    static let fileSaveItemIdentifier = NSUserInterfaceItemIdentifier("menu.file.save")
+    static let fileSaveAsItemIdentifier = NSUserInterfaceItemIdentifier("menu.file.saveAs")
     // Zoom items (0004); stable identifiers so 0045 can audit the shortcut table.
     static let zoomInItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomIn")
     static let zoomOutItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomOut")
@@ -92,7 +96,10 @@ enum MainMenu {
 
     private static func fileMenu() -> NSMenu {
         let menu = NSMenu(title: "File")
-        menu.addItem(makeItem("New…", key: "n", modifiers: .command)) // placeholder → 0005 New Image dialog
+        let newItem = makeItem("New…", key: "n", modifiers: .command,
+                               action: #selector(NSDocumentController.newDocument(_:)))
+        newItem.identifier = fileNewItemIdentifier
+        menu.addItem(newItem)
         menu.addItem(makeItem("Open…", key: "o", modifiers: .command,
                               action: #selector(NSDocumentController.openDocument(_:))))
         // AppKit fills the Open Recent submenu automatically because it contains the
@@ -102,8 +109,12 @@ enum MainMenu {
         menu.addItem(submenuItem("Open Recent", identifier: openRecentItemIdentifier, submenu: openRecent))
         menu.addItem(.separator())
         menu.addItem(makeItem("Close", key: "w", modifiers: .command, action: #selector(NSWindow.performClose(_:))))
-        menu.addItem(makeItem("Save", key: "s", modifiers: .command, action: saveDocumentAction))
-        menu.addItem(makeItem("Save As…", key: "s", modifiers: [.command, .shift], action: saveDocumentAsAction))
+        let saveItem = makeItem("Save", key: "s", modifiers: .command, action: saveDocumentAction)
+        saveItem.identifier = fileSaveItemIdentifier
+        menu.addItem(saveItem)
+        let saveAsItem = makeItem("Save As…", key: "s", modifiers: [.command, .shift], action: saveDocumentAsAction)
+        saveAsItem.identifier = fileSaveAsItemIdentifier
+        menu.addItem(saveAsItem)
         return menu
     }
 

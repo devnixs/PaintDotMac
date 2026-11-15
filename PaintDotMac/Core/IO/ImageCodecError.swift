@@ -9,11 +9,18 @@ enum ImageCodecError: Error, Equatable, Sendable, LocalizedError {
     case corrupt
     /// APP-10: the size was refused.
     case limitExceeded(ImageLimitError)
+    /// 0005: the document's format can't be written yet (JPEG until 0029).
+    case unsupportedWriteFormat(FileFormat)
+    /// 0005: the encoder or ImageIO refused to produce the file.
+    case encodingFailed
 
     var errorDescription: String? {
         switch self {
         case .unrecognizedFormat: "The file isn\u{2019}t a supported image."
         case .corrupt: "The image is damaged or incomplete."
+        case .unsupportedWriteFormat(let format):
+            "PaintDotMac can\u{2019}t save images in the \(format.displayName) format yet."
+        case .encodingFailed: "The image couldn\u{2019}t be saved."
         case .limitExceeded(.dimensionsOutOfRange(let width, let height)) where width < 1 || height < 1:
             "The image has no pixels."
         default:
@@ -38,16 +45,12 @@ enum ImageCodecError: Error, Equatable, Sendable, LocalizedError {
         case .limitExceeded(.exceedsMemoryCap(let requiredBytes, let capBytes)):
             return "Opening it needs \(Self.byteCount(requiredBytes)) of memory, "
                 + "but the limit is \(Self.byteCount(capBytes))."
+        case .unsupportedWriteFormat, .encodingFailed:
+            return nil
         }
     }
 
-    /// Thousands separators that don't depend on the machine's region settings.
-    private static func decimal(_ value: Int) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US")
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
-    }
+    private static func decimal(_ value: Int) -> String { ValueFormatting.decimal(value) }
 
     private static func byteCount(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)

@@ -21,17 +21,19 @@ struct SmokeTests {
         #expect(ProcessInfo.processInfo.environment["APP_SANDBOX_CONTAINER_ID"] == nil)
     }
 
+    /// 0005: PNG and JPEG are `Editor` types and PNG is listed first, so
+    /// `NSDocumentController.defaultType` is `public.png` (new documents are PNG until 0028).
     @Test func documentTypesMapPNGAndJPEGToPaintDocument() throws {
         let info = try #require(Bundle.main.infoDictionary)
         let entries = try #require(info["CFBundleDocumentTypes"] as? [[String: Any]])
         #expect(entries.count == 2)
 
         let contentTypes = entries.map { $0["LSItemContentTypes"] as? [String] }
-        #expect(contentTypes == [["public.png"], ["public.jpeg"]])
+        #expect(contentTypes == [["public.png"], ["public.jpeg"]], "PNG must be listed first")
 
         for entry in entries {
-            #expect(entry["CFBundleTypeRole"] as? String == "Viewer")
-            #expect(entry["LSHandlerRank"] as? String == "Alternate")
+            #expect(entry["CFBundleTypeRole"] as? String == "Editor")
+            #expect(entry["LSHandlerRank"] as? String == "Alternate")  // 0028 renames this test
             let className = try #require(entry["NSDocumentClass"] as? String)
             // Proves the $(PRODUCT_MODULE_NAME) expansion worked and resolves to our class.
             #expect(NSClassFromString(className) === (PaintDocument.self as AnyClass))

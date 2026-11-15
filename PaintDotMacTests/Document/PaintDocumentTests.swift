@@ -169,25 +169,9 @@ struct PaintDocumentTests {
         #expect(PaintDocument.readableTypes == ["public.png", "public.jpeg"])
     }
 
-    @Test func saveActionsAreDisabled() throws {
-        let data = try encode(width: 8, height: 8, rgba: (1, 2, 3, 255), type: "public.png")
-        let document = try read(data, as: "public.png")
-        for name in ["saveDocument:", "saveDocumentAs:", "saveDocumentTo:",
-                     "revertDocumentToSaved:", "duplicateDocument:"] {
-            let item = NSMenuItem(title: name, action: NSSelectorFromString(name), keyEquivalent: "")
-            #expect(document.validateUserInterfaceItem(item) == false, "\(name) must stay disabled until 0005")
-        }
-    }
-
-    @Test func writingThrows() throws {
-        let document = PaintDocument()
-        do {
-            _ = try document.data(ofType: "public.png")
-            Issue.record("data(ofType:) must throw until 0005 lands")
-        } catch let error as CocoaError {
-            #expect(error.code == .fileWriteUnknown)
-        }
-    }
+    // `saveActionsAreDisabled` and `writingThrows` were 0001's; 0005 enabled saving and
+    // writing — the replacements live in `PaintDocumentSavingTests`
+    // (`saveActionsAreEnabled`, `dataOfTypePNGRoundTrips`, `dataOfTypeJPEGThrows`).
 
     @Test func makeWindowControllersCreatesOneDocumentWindow() throws {
         let data = try encode(width: 64, height: 48, rgba: (10, 20, 30, 255), type: "public.png")

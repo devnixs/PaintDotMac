@@ -288,3 +288,26 @@ Expected values come from the PRD, the PNG specification (pHYs unit 1 = metre; p
 - Print size and units in the New dialog, "Maintain aspect ratio", and the memory-size estimate (Paint.NET extras that APP-9 doesn't require).
 - Asynchronous/background saving and save progress → 0048 if needed.
 - Settings for defaults (APP-8) → 0046.
+
+## Verification status
+
+- 2026-11-15 — `.agents/skills/spec-implementer/scripts/quality-gate.sh` printed **GREEN**:
+  - `tests: 404 passed, 0 failed, 0 skipped (of 404)`
+  - `tests: no crash reports during the run`
+  - Clean build with no compiler warnings; Core imports OK; test sources headless. Wall time: 160.17 seconds.
+- Performance: not applicable (no NF-1–NF-4 path touched).
+- Implementation note: in the windowless test host, AppKit finishes programmatic saves on its
+  file-coordinator queue; the headless test support (`saveDocument` in
+  `PaintDotMacTests/Support/ProgrammaticSave.swift`) detaches window controllers around the
+  save so AppKit's finisher never touches a never-shown window off the main thread, and
+  `DocumentWindowController.synchronizeWindowTitleWithDocumentName()` is `nonisolated` and
+  re-hops to the main thread so the real app cannot trap there.
+- Manual verification steps (never run automatically; the user has not run these yet):
+  - [ ] not yet run by user — 1. Light and dark mode: the New Image dialog's labels ("Width:", "Height:", "pixels", "Resolution:", "pixels/inch") line up; Tab moves Width → Height → Resolution → buttons; Return = OK, Esc = Cancel.
+  - [ ] not yet run by user — 2. Copy a region with ⌃⇧⌘4, then press ⌘N in PaintDotMac → the dialog shows the screenshot's pixel size.
+  - [ ] not yet run by user — 3. Save a new image and a re-saved semi-transparent PNG, open both in Preview → colors look the same as in PaintDotMac, transparency is intact, and Preview's Inspector shows 96 (or the source) DPI and the sRGB IEC61966-2.1 profile.
+  - [ ] not yet run by user — 4. Save As into a read-only folder (for example `/System` or a folder with write permission removed in Finder) → a standard "couldn't be saved" alert appears, and the document stays open and edited.
+  - [ ] not yet run by user — 5. Open a JPEG, press ⌘S → a save sheet appears named "photo.png" offering only PNG; cancel it → the window title is still the JPEG, and the JPEG's modification date in Finder is unchanged. Press ⌘S again and save → the title becomes the PNG; a further ⌘S saves with no sheet.
+  - [ ] not yet run by user — 6. ⌘N, Return, then ⌘W → a "Do you want to save…" sheet with Save…, Don't Save, and Cancel: Cancel keeps the window; Don't Save closes it without writing a file; Save… runs the save panel and writes a PNG. ⌘N, Return, then ⌘Q → the same prompt; Cancel keeps the app running. Open an unmodified PNG and press ⌘W → it closes with no prompt.
+
+Review:

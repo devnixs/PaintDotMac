@@ -252,3 +252,48 @@ extension DocumentHarness {
         deliver(event)
     }
 }
+
+// MARK: - New Image (spec 0005)
+
+extension DocumentHarness {
+    /// Performs the File > New… user story in-process: installs the scripted presenter, a
+    /// recording alert presenter, the private pasteboard, and `showsWindows = false` on the
+    /// shared `PaintDocumentController`, calls `newDocument(nil)`, and restores the seams.
+    /// Returns `nil` (and creates no document) when the flow was cancelled or never accepted;
+    /// the window is built but never ordered onto the screen.
+    @MainActor
+    static func newImage(presenter: NewImagePresenting,
+                         pasteboard: NSPasteboard,
+                         alerts: RecordingAlertPresenter = RecordingAlertPresenter()) -> DocumentHarness? {
+        guard let controller = NSDocumentController.shared as? PaintDocumentController else {
+            Issue.record("the shared document controller is not a PaintDocumentController")
+            return nil
+        }
+        let before = Set(NSDocumentController.shared.documents.map { ObjectIdentifier($0) })
+        let original = (controller.pasteboard, controller.newImagePresenter,
+                        controller.alertPresenter, controller.showsWindows)
+        defer {
+            (controller.pasteboard, controller.newImagePresenter,
+             controller.alertPresenter, controller.showsWindows) = original
+            pasteboard.releaseGlobally()
+        }
+        controller.pasteboard = pasteboard
+        controller.newImagePresenter = presenter
+        controller.alertPresenter = alerts
+        controller.showsWindows = false
+        controller.newDocument(nil)
+
+        guard let created = NSDocumentController.shared.documents.first(
+            where: { !before.contains(ObjectIdentifier($0)) }
+        ) as? PaintDocument else { return nil }
+        if created.windowControllers.isEmpty {
+            created.makeWindowControllers()
+        }
+        guard let windowController = created.windowControllers.first as? DocumentWindowController,
+              let window = windowController.window else {
+            Issue.record("the new document has no document window controller")
+            return nil
+        }
+        return DocumentHarness(document: created, windowController: windowController, window: window)
+    }
+}
