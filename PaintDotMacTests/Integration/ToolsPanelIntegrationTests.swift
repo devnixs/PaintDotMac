@@ -129,6 +129,46 @@ struct ToolsPanelIntegrationTests {
         }
     }
 
+    /// The PRD §5.12 "no text field has focus" rule must hold on its own: a focused text
+    /// field inside the key *document* window suppresses tool keys even though the
+    /// window-kind rule would let them through (the `shortcutsIgnoredInTextField` window is
+    /// `.other`, so its suppression could ride on the window rule alone). Handing first
+    /// responder back to the canvas — the options bar's `onEndEditing` story — restores them.
+    @Test func shortcutsIgnoredInDocumentWindowTextField() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openFixture(fixtures, named: "tools-panel.png")
+            defer { finish(harness) }
+
+            let openedWithPan = harness.appModel.activeToolID
+            #expect(harness.shortcut("h"))
+            #expect(openedWithPan == .pan)
+
+            let window = harness.window
+            let identifier = window.identifier?.rawValue
+            let documentIdentifier = DocumentWindowController.windowIdentifier.rawValue
+            #expect(identifier == documentIdentifier)
+            let field = NSTextField(frame: NSRect(x: 10, y: 10, width: 150, height: 24))
+            window.contentView?.addSubview(field)
+            window.makeFirstResponder(field)  // installs the shared field editor
+            let suppressed = harness.shortcut("z", in: window)
+            #expect(!suppressed,
+                    "a focused field editor in the key document window suppresses tool keys")
+            let duringField = harness.appModel.activeToolID
+            #expect(duringField == .pan)
+
+            // Back to the canvas (what `onEndEditing` does): the CanvasView is deliberately
+            // not text input, and closing the window no longer tears down one that owns the
+            // field editor (`shortcutsIgnoredInTextField`'s crash postmortem).
+            window.makeFirstResponder(harness.canvasView)
+            let afterCanvas = harness.shortcut("z", in: window)
+            #expect(afterCanvas)
+            let toolAfterCanvas = harness.appModel.activeToolID
+            #expect(toolAfterCanvas == .zoom)
+        }
+    }
+
     @Test func shortcutsIgnoredInTextField() async throws {
         try await TestRunGate.withLock {
             let fixtures = try FixtureFiles()

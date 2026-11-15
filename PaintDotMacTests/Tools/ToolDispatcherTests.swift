@@ -83,8 +83,10 @@ struct ToolDispatcherTests {
         let entries = f.log.all
         let commitIndex = entries.firstIndex(of: "pan:commit")
         let activateIndex = entries.firstIndex(of: "zoom:activate")
-        #expect(commitIndex != nil && activateIndex != nil)
-        #expect(commitIndex! < activateIndex!)
+        #expect(commitIndex != nil && activateIndex != nil, "log: \(entries)")
+        if let commitIndex, let activateIndex {
+            #expect(commitIndex < activateIndex)
+        }
     }
 
     @Test func previousToolTracked() {

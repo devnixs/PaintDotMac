@@ -547,8 +547,50 @@ Expected values below are worked out by hand from the rules above and 0004's pre
   - [ ] not yet run by user — 6. Tooltips: hover each tool → "Zoom (Z)", "Pan (H)".
   - [ ] not yet run by user — 7. Two documents as tabs: switching tabs keeps the selected tool; the options bar is in both.
   - [ ] not yet run by user — 8. Dark mode: Tools panel selection highlight, options bar, and placeholder text are legible. VoiceOver reads "Zoom, selected, button".
-- Review: 2026-11-15, awaiting independent re-review of the implementation commit. Pay
-  particular attention to the two crash fixes above (the `CanvasUniforms` layout invariant
-  and the field-editor close hazard documented in `shortcutsIgnoredInTextField`) and to
-  the become-main/close notification wiring that replaced the never-registered
-  `NSWindowDelegate` methods (`windowMainObserver`/`windowCloseObserver`).
+- Review: 2026-11-15 (independent). Traced every acceptance criterion and edge case to its
+  test; the expected values checked by hand against D-13/D-35/D-36, the 0004 preset list,
+  and the worked geometry. One real gap found and closed; no production bug found.
+  - **Claims verified.** (a) `CanvasUniforms`: layout recomputed by hand — the 18 members
+    occupy 104 bytes (16-aligned), C rounds the struct to 112, so a
+    `setVertexBytes(length: MemoryLayout.stride)` copy read 8 bytes past a
+    `MemoryLayout.size`-sized temporary; `_padding: (Float, Float)` occupies exactly the
+    C layout's implicit trailing pad — the MSL struct has no member at offsets 104–111, so
+    it is never read. Removing `_padding` flips only `uniformStructHasNoTrailingStridePadding`
+    (the goldens stay green — the invariant test is the right discriminator).
+    (b) The field-editor fix: both assertions are intact and still prove production
+    suppression; the stash-vs-close change is setup-only. But the original scenario's window
+    is `.other`, so suppression there could ride on the window-kind rule alone — mutating
+    `CanvasInputRouter.hasTextInputFocus` to `false` survived the whole suite. Added
+    `shortcutsIgnoredInDocumentWindowTextField`: a focused field editor inside the **key
+    document window** suppresses tool keys, and handing first responder back to the canvas
+    (the options bar's `onEndEditing` story) restores them — it now kills that mutation and
+    closes the window only after the field editor resigned, exercising the postmortem's
+    hazard end-to-end (clean, incl. under ASan).
+    (c) The `NotificationObserverBox` replacement: removing the `didBecomeMain` registration
+    fails `windowMainAndClosePathsDriveTheActiveSession` (re-run verified); the close side is
+    doubly covered (the same test's retire assertion +
+    `closingTheLastDocumentWindowHidesThePanelsWithoutManualRefresh`).
+  - **Mutations (7), all caught:** cycle window `<` → `≤` (`cycleWindowBoundary`);
+    `rectangleZoom` min-side `1/zoom` → `0` (`zeroHeightRectangle`); `shouldShow` dropping the
+    document-window clause (`hiddenWithoutDocumentWindows`, `panelsHiddenWithoutDocuments`);
+    `hasTextInputFocus` → always false (new test only — the found gap); `tool.` → `tools.`
+    key prefix (`defaultsKeyFormat`, `roundTripTypes`, `rangeClampsOnReadAndWrite`,
+    `persistsAcrossInstances`, `onChangeAndRevision`); `_padding` removed (uniform invariant);
+    become-main observer not registered (session test). All reverted (`git diff` clean).
+  - **Test diagnostics:** a failing `#expect(harness.shortcut("z", in: window))` makes Swift
+    Testing reflect into the captured live `NSWindow` (the whole AppKit/document graph — a
+    1.6 GB description was observed; the runner stalled ~3 min until xcodebuild killed it).
+    The new test hoists such values into plain locals (the `MainMenuTests` convention), and
+    `switchCommitsPendingEdit`'s force-unwrapped `firstIndex` results became `if let` so a
+    future failure records an issue instead of trapping the host.
+  - **Crash/rule sweep:** no force unwraps or `try!` in app sources; Core imports clean; the
+    registry/dispatcher `preconditionFailure`s are completeness guards unreachable from user
+    paths; observer boxes cancel in `deinit`, handler closures capture weakly; the
+    AppModel ↔ dispatcher ↔ session strong path is broken by the close path's
+    `setActiveSession(nil)` (the model holds the session weakly). The flaky-prone combo
+    (ToolsPanel+ZoomPan+Panels, 18 tests incl. the new one) passes under AddressSanitizer
+    (`build-for-testing -enableAddressSanitizer YES`, then `test-without-building`) with zero
+    sanitizer reports.
+  - **Quality gate after the fixes: GREEN** — clean Debug build with no compiler warnings,
+    Core imports OK, test sources headless, `tests: 558 passed, 0 failed, 0 skipped (of 558)`,
+    `tests: no crash reports during the run` (190.72 s).
