@@ -310,4 +310,43 @@ Expected values come from the PRD, the PNG specification (pHYs unit 1 = metre; p
   - [ ] not yet run by user — 5. Open a JPEG, press ⌘S → a save sheet appears named "photo.png" offering only PNG; cancel it → the window title is still the JPEG, and the JPEG's modification date in Finder is unchanged. Press ⌘S again and save → the title becomes the PNG; a further ⌘S saves with no sheet.
   - [ ] not yet run by user — 6. ⌘N, Return, then ⌘W → a "Do you want to save…" sheet with Save…, Don't Save, and Cancel: Cancel keeps the window; Don't Save closes it without writing a file; Save… runs the save panel and writes a PNG. ⌘N, Return, then ⌘Q → the same prompt; Cancel keeps the app running. Open an unmodified PNG and press ⌘W → it closes with no prompt.
 
-Review:
+Review: 2026-11-15, independent re-review of 9d0302d. Every acceptance criterion and edge case
+traced to a test with independent expectations (PNG-spec ppm values, hand-computed pixel
+formulas, exact alert strings, bundle-info fixtures). Gaps found and fixed (all tests added,
+no expectation relaxed): (1) ⌘S routing (`PaintDocument.save(_:)`, the Swift name of
+`saveDocument:`) had no test that the JPEG document actually goes to `saveAs(_:)` and the PNG
+document to `super` — added `saveDocumentRoutesJPEGThroughSaveAs` (records `saveAs(_:)` on a
+subclass; `PaintDocument` un-`final`ized for exactly that; the PNG check runs first so a
+broken build fails before AppKit's error alert can gate the run); (2) `data(ofType:)`'s
+unknown-type `encodingFailed` throw — added `dataOfTypeUnknownTypeThrows`; (3) the `nonisolated`
+off-main `data(ofType:)` snapshot hop — added `dataOfTypeFromBackgroundQueue` (encodes on a
+background queue, asserts byte-exact pixels); (4) the `nonisolated` window-title re-hop — added
+`windowTitleSynchronizesFromBackgroundQueue` (off-main call must not trap and must land the
+renamed file on the window; without the hop the run crashes with the MainActor entry trap);
+(5) Save As naming for an untitled document — added `prepareSavePanelUntitled` ("Untitled.png",
+PNG only); (6) width/height rejection set extended with an `Int`-overflowing digit string.
+Mutations tried, each restored and verified with `git diff`: pHYs DPI property → constant 96
+caught (`writesPHYsForDPI`, 9 issues); `CGImageAlphaInfo.last` → `.premultipliedLast` caught
+(byte-exact, all-alpha, and straight-alpha round trips); `dpiRange` upper bound 10,000 →
+100,000 caught (`resolutionInvalid`, `messagesExact`, `constants`); width/height upper-bound
+check removed caught (`widthInvalid`/`heightInvalid` + `newImageRejectsInvalidWidth`);
+`.changeDone` → `.changeCleared` caught (`newImageIsEditedUntilSaved`); `.jpeg canWrite` → true
+caught (`capabilities`, `saveActionForJPEGIsSaveAs`, `saveActionUntitled` — and the resulting
+JPEG ⌘S regression surfaces as a modal error panel, i.e. the exact bug the rule prevents);
+`save(_:)` routing branch inverted caught (new routing test, PNG side fails cleanly);
+`data(ofType:)` unknown type → `.png` fallback caught (new unknown-type test); the title-sync
+main-thread hop removed caught (test host crashes with the MainActor trap the override
+prevents). Two mutations survived but are unobservable: mutating or deleting the
+`kCGImagePropertyPNGXPixelsPerMeter` value leaves the written bytes unchanged — ImageIO derives
+pHYs from `kCGImagePropertyDPIWidth/Height` — and the pHYs output itself is pinned
+byte-accurately by `writesPHYsForDPI`, so both properties are kept per spec with the encoder's
+explicit ppm as a forward-proof. Also verified: no `try!`/force-unwrap/new `precondition` in
+the diff; both off-main entry points re-hop to main (the `data(ofType:)` `main.sync` is safe
+because AppKit's async save never blocks the main thread waiting on the save queue); the
+`ProgrammaticSave` window-controller detach hides nothing — `isDocumentEdited` is document
+state (asserted in `newImageIsEditedUntilSaved`, `reSaveOpenedPNG`, `saveInPlaceRewritesPNG`)
+and the window title is now asserted off-main; no test shows a window, sheet, or alert, no
+real clipboard or preferences touched, no UI-test hooks or target.
+Reviewer gate re-run after the fixes: **GREEN** — `tests: 409 passed, 0 failed, 0 skipped (of
+409)`, `tests: no crash reports during the run`, clean build with no compiler warnings, Core
+imports OK, test sources headless (158.48 s).

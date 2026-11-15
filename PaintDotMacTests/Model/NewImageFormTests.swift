@@ -27,7 +27,10 @@ struct NewImageFormTests {
 
     // MARK: - Width and height
 
-    private static let rejectedTexts: [String] = ["", "0", "65536", "-5", "12.5", "abc", "1,024", "1e3"]
+    /// "99999999999999999999999" is digits-only but overflows `Int` — the conversion must
+    /// fail cleanly, never trap.
+    private static let rejectedTexts: [String] = ["", "0", "65536", "-5", "12.5", "abc", "1,024", "1e3",
+                                                  "99999999999999999999999"]
 
     @Test(arguments: rejectedTexts) func widthInvalid(_ text: String) {
         #expect(form(text, "600", "96").validate(limits: .standard)

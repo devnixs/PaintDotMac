@@ -80,6 +80,17 @@ struct PaintDocumentSavingTests {
                                            saveOperation: .saveOperation) == "png")
     }
 
+    /// Save As… for an untitled (new) document names the file "Untitled.png" and offers only
+    /// PNG; with no fileURL the folder is left to `NSSavePanel`.
+    @Test func prepareSavePanelUntitled() throws {
+        let document = PaintDocument()
+        document.image = NewImageRequest(size: PixelSize(width: 16, height: 12), dpi: 96).makeImage()
+        let panel = NSSavePanel()
+        #expect(document.prepareSavePanel(panel))
+        #expect(panel.nameFieldStringValue == "Untitled.png")
+        #expect(panel.allowedContentTypes == [.png])
+    }
+
     // MARK: - data(ofType:)
 
     /// A 300 DPI fixture with semi-transparent and alpha-0 pixels re-encodes byte-exact, and
@@ -102,6 +113,79 @@ struct PaintDocumentSavingTests {
         #expect(throws: ImageCodecError.unsupportedWriteFormat(.jpeg)) {
             try document.data(ofType: "public.jpeg")
         }
+    }
+
+    /// An unknown type identifier (`.ora` before 0028, a garbage string) throws
+    /// `ImageCodecError.encodingFailed` (spec *Scope*, `data(ofType:)`), never
+    /// `NSDocument`'s base-class behavior.
+    @Test func dataOfTypeUnknownTypeThrows() throws {
+        let document = try readDocument(pngData(width: 8, height: 8) { _, _ in .white }, as: "public.png")
+        for name in ["public.tiff", "com.example.unknown"] {
+            #expect(throws: ImageCodecError.encodingFailed, "\(name) must be refused") {
+                try document.data(ofType: name)
+            }
+        }
+    }
+
+    /// `data(ofType:)` is `nonisolated` because AppKit may encode on a background save
+    /// queue; the model snapshot re-hops to the main thread and the returned bytes are the
+    /// same as the main-thread call.
+    @Test func dataOfTypeFromBackgroundQueue() async throws {
+        let document = try readDocument(
+            pngData(width: 8, height: 6, dpi: 300, pixel: Self.mixedPixel), as: "public.png")
+        nonisolated(unsafe) let snapshotSource = document
+        let saved = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Data, Error>) in
+            DispatchQueue.global().async {
+                continuation.resume(with: Result { try snapshotSource.data(ofType: "public.png") })
+            }
+        }
+        let decoded = try ImageDecoder.decode(saved)
+        TestImages.expectPixels(decoded.surface, match: Self.mixedPixel)
+    }
+
+    // MARK: - ⌘S routing (interim rule 2)
+
+    /// Records `saveAs(_:)` instead of running the panel (a panel can never run in a test).
+    final class RecordingSaveAsDocument: PaintDocument {
+        private(set) var saveAsCalls = 0
+        override func saveAs(_ sender: Any?) { saveAsCalls += 1 }
+    }
+
+    /// ⌘S on a JPEG-backed document behaves exactly like File > Save As… (interim rule 2,
+    /// PRD §5.11): `save(_:)` (the Swift name of `saveDocument:`) routes to `saveAs(_:)`
+    /// and never writes the JPEG URL. ⌘S on a file-backed PNG goes to `super` (write in
+    /// place, no Save As). The PNG check runs first: on a build whose routing is broken,
+    /// the JPEG `super` path ends in AppKit's error alert, which must never gate the run.
+    @Test func saveDocumentRoutesJPEGThroughSaveAs() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("PaintDotMacTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // A PNG-backed document goes to `super` (in place, no panel): `saveAs` is not called.
+        let pngBytes = try pngData(width: 8, height: 8) { _, _ in .white }
+        let pngURL = directory.appendingPathComponent("photo.png")
+        try pngBytes.write(to: pngURL)
+        let pngDocument = RecordingSaveAsDocument()
+        try pngDocument.read(from: pngBytes, ofType: "public.png")
+        pngDocument.fileURL = pngURL
+        pngDocument.fileType = "public.png"
+        pngDocument.save(nil)
+        #expect(pngDocument.saveAsCalls == 0, "⌘S on a PNG must write in place")
+
+        let jpegBytes = try jpegData(width: 8, height: 8)
+        let jpegURL = directory.appendingPathComponent("photo.jpg")
+        try jpegBytes.write(to: jpegURL)
+        let jpegDocument = RecordingSaveAsDocument()
+        try jpegDocument.read(from: jpegBytes, ofType: "public.jpeg")
+        jpegDocument.fileURL = jpegURL
+        jpegDocument.fileType = "public.jpeg"
+        jpegDocument.save(nil)
+        #expect(jpegDocument.saveAsCalls == 1, "⌘S on a JPEG must open Save As…")
+        #expect(try Data(contentsOf: jpegURL) == jpegBytes, "the JPEG on disk changed")
+        // Give AppKit's write a moment to land before the temp directory is removed.
+        try await Task.sleep(for: .milliseconds(100))
     }
 
     /// FMT-B/D-24: a Display P3 source converts to sRGB on open (0002) and saves with an

@@ -2,7 +2,9 @@ import AppKit
 
 /// The document (PRD §4 Document model, APP-1). Reads PNG/JPEG; 0005 adds PNG writing (F-2)
 /// and the §5.11 "Saving" rules. 0028 adds `.ora`; 0029 completes the writable formats.
-final class PaintDocument: NSDocument {
+/// Not `final`: the headless tests subclass it to record `saveAs(_:)` routing (the save
+/// panel itself can never run in a test).
+class PaintDocument: NSDocument {
     /// `autosavesInPlace` is off, so a JPEG is never silently re-encoded (PRD §5.11 Saving, D-6).
     override class var autosavesInPlace: Bool { false }
 

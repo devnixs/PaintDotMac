@@ -182,4 +182,33 @@ struct SaveIntegrationTests {
             #expect(try Data(contentsOf: jpegURL) == jpegBytesBefore)
         }
     }
+
+    /// `DocumentWindowController.synchronizeWindowTitleWithDocumentName()` is `nonisolated`
+    /// because AppKit's file-coordinator save finisher can call it on a background queue
+    /// (`ProgrammaticSave.swift` documents the windowless-host case). The off-main call must
+    /// not trap and must land the document's current file name on the window via the main
+    /// thread — this is the regression test for the MainActor-entry-check fix.
+    @Test func windowTitleSynchronizesFromBackgroundQueue() async throws {
+        try await TestRunGate.withLock {
+            defer { cleanup() }
+            let fixtures = try FixtureFiles()
+            defer { fixtures.removeAll() }
+            let url = try fixtures.makePNG(named: "titled.png", width: 16, height: 12,
+                                           rgba: (1, 2, 3, 255))
+            let harness = try await DocumentHarness.open(url)
+            let renamed = fixtures.directory.appendingPathComponent("renamed.png")
+            harness.document.fileURL = renamed
+            nonisolated(unsafe) let windowController = harness.windowController
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global().async {
+                    windowController.synchronizeWindowTitleWithDocumentName()
+                    continuation.resume()
+                }
+            }
+            // The re-hop runs on the main queue; suspending this test lets it drain.
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(harness.window.representedURL == renamed,
+                    "an off-main title sync must re-hop to the main thread and update the window")
+        }
+    }
 }
