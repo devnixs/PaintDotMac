@@ -230,6 +230,21 @@ extension DocumentHarness {
                           zoomModifiers: modifiers.contains(.command), atView: viewPoint)
     }
 
+    /// Pinch zoom around a canvas-view point (0004, CAN-2). macOS vends no public factory
+    /// for `.magnify` events, so — exactly like `scroll` — this drives
+    /// `CanvasNavigation.magnify` with the same values the real
+    /// `CanvasView.magnify(with:)` override forwards from `NSEvent.magnification` and
+    /// `locationInWindow` (AGENTS.md *Headless testing*).
+    func pinch(magnification: Double, at view: CGPoint? = nil) {
+        let canvas = canvasView
+        guard let navigation = canvas.navigation else {
+            Issue.record("the canvas has no navigation")
+            return
+        }
+        let viewPoint = view ?? CGPoint(x: canvas.bounds.midX, y: canvas.bounds.midY)
+        navigation.magnify(magnification: magnification, atView: viewPoint)
+    }
+
     private func sendMouse(_ type: NSEvent.EventType, atView point: CGPoint,
                            to deliver: (NSEvent) -> Void) {
         let canvas = canvasView

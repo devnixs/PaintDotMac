@@ -41,9 +41,13 @@ enum MeasurementUnit: String, CaseIterable, Sendable {
             return String(pixels)
         case .inches, .centimeters:
             let scaled = (value * 100).rounded(.toNearestOrAwayFromZero)
-            // A pathological DPI (e.g. 1e-300) can overflow the division; show the raw
-            // pixel count rather than trap or print "inf".
-            guard scaled.isFinite else { return String(pixels) }
+            // A pathological DPI (a `LayeredImage` may carry any finite positive DPI, e.g.
+            // 1e-15 from a malformed file) or an extreme cursor coordinate makes `scaled`
+            // infinite or a finite Double beyond `Int`'s range; the conversion must never
+            // trap — show the raw pixel count rather than crash or print "inf".
+            guard scaled.isFinite, scaled >= -9.0e18, scaled <= 9.0e18 else {
+                return String(pixels)
+            }
             guard scaled != 0 else { return "0.00" }
             let sign = scaled < 0 ? "-" : ""
             let magnitude = Int(scaled.signorm())

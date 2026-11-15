@@ -68,6 +68,19 @@ struct MeasurementUnitTests {
         #expect(MeasurementUnit.inches.format(pixels: 96, dpi: 0) == "1.00")
     }
 
+    @Test func pathologicalDPIAndExtremePixelsNeverTrap() {
+        // `LayeredImage` may legally carry any finite positive DPI (0002); a tiny one makes
+        // the centesimal value a finite Double beyond `Int`'s range, and a huge pixel count
+        // (the clamped cursor bound, 0003) does the same. The formatter falls back to the
+        // raw pixel count instead of trapping in the `Int` conversion (review fix).
+        #expect(MeasurementUnit.inches.format(pixels: 4000, dpi: 1e-15) == "4000")
+        #expect(MeasurementUnit.centimeters.format(pixels: 4000, dpi: 1e-300) == "4000")
+        #expect(MeasurementUnit.inches.format(pixels: Int.max, dpi: 96) == String(Int.max))
+        // Ordinary small DPIs still take the digit path (the guard does not over-trigger):
+        // 4000/1e-10 = 4e13 in → ·100 = 4e15 centesimal, well inside `Int`.
+        #expect(MeasurementUnit.inches.format(pixels: 4000, dpi: 1e-10) == "40000000000000.00")
+    }
+
     @Test func decimalSeparatorIsLocaleIndependent() {
         // The strings must never contain "," (the app is English-only; "," separates the
         // cursor coordinates). Equality with the expected hand values already proves it.

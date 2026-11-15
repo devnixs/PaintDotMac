@@ -97,6 +97,29 @@ struct StatusBarModelTests {
         #expect(model.selectionSizeText == "10 × 20")
     }
 
+    @Test func pathologicalDPIShowsFallback() throws {
+        // A `LayeredImage`-legal but pathological DPI (finite, > 0) must not trap the
+        // status-bar strings. The image size (800 px → 8×10¹⁹ centesimal, beyond `Int`)
+        // falls back to the raw pixel count; the cursor (12 px → 1.2×10¹⁸ centesimal,
+        // still inside `Int`) keeps the digit path (review fix).
+        let suite = try makeSuite()
+        defer { removeSuite(suite.name) }
+        let model = makeModel(dpi: 1e-15, defaults: suite.defaults, center: NotificationCenter())
+        model.selectUnit(.inches)
+        #expect(model.unit == .inches)
+        #expect(model.imageSizeText == "800 × 600")
+        // 12 px → 1.2×10¹⁸ centesimal, still inside `Int`: the digit path runs on huge
+        // values without trapping (the digits themselves are floating-point fuzz).
+        model.setCursor(canvasPoint: CGPoint(x: 12.7, y: 3.2))
+        let parts = model.cursorText.split(separator: ", ")
+        #expect(parts.count == 2, "cursor text \(model.cursorText)")
+        for part in parts {
+            let halves = part.split(separator: ".")
+            #expect(halves.count == 2 && halves[1].count == 2
+                    && halves[0].allSatisfy(\.isNumber), "cursor text \(model.cursorText)")
+        }
+    }
+
     @Test func zoomUpdates() throws {
         let suite = try makeSuite()
         defer { removeSuite(suite.name) }

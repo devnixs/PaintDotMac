@@ -269,6 +269,35 @@ struct ZoomPanStatusBarIntegrationTests {
         }
     }
 
+    @Test func pinchZoomsAroundPointer() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            resetUnit()
+
+            let harness = try await openFixture(fixtures, name: "pinch.png",
+                                                width: 4000, height: 2000)
+            let canvas = harness.canvasView
+            harness.perform(#selector(DocumentWindowController.actualSize(_:)))
+            // Anchor away from the view center: the canvas point under the pointer must
+            // stay there through the pinch (CAN-2; the hand check is the anchor rule).
+            let anchor = CGPoint(x: canvas.bounds.minX + 120, y: canvas.bounds.minY + 90)
+            let anchorCanvas = canvas.transform.viewToCanvas(anchor)
+            harness.pinch(magnification: 0.5, at: anchor)
+            #expect(harness.statusBar.zoomText == "150%")
+            let moved = canvas.transform.canvasToView(anchorCanvas)
+            let slack = 0.5 / canvas.transform.backingScale + 1e-9
+            #expect(abs(moved.x - anchor.x) <= slack, "anchor drifted to \(moved)")
+            #expect(abs(moved.y - anchor.y) <= slack, "anchor drifted to \(moved)")
+            // Every input path clamps to CAN-1's 3200 % — pinch included.
+            harness.pinch(magnification: 1000, at: anchor)
+            #expect(harness.statusBar.zoomText == "3200%")
+            harness.pinch(magnification: -0.5, at: anchor)
+            #expect(harness.statusBar.zoomText == "1600%")
+            cleanup()
+        }
+    }
+
     @Test func scrollPans() async throws {
         try await TestRunGate.withLock {
             let fixtures = try FixtureFiles()
@@ -312,6 +341,9 @@ struct ZoomPanStatusBarIntegrationTests {
             let dragged = CGPoint(x: start.x + 100, y: start.y)  // +100 view points in x
             canvas.mouseDragged(with: harness.mouse(.leftMouseDragged,
                                                     at: canvas.convert(dragged, to: nil)))
+            // `mouseDragged` tracks the cursor for the status bar too (spec pointer
+            // tracking: mouseMoved AND mouseDragged set the cursor field).
+            #expect(harness.statusBar.cursorPixel != nil)
             canvas.mouseUp(with: harness.mouse(.leftMouseUp, at: canvas.convert(dragged, to: nil)))
             #expect(navigation.spacePan.phase == .armed)  // Space still held
             harness.keyUp(" ", keyCode: CanvasNavigation.spaceKeyCode)
@@ -323,6 +355,61 @@ struct ZoomPanStatusBarIntegrationTests {
             let expected = 100 * before.backingScale / before.zoom
             #expect(abs((before.center.x - after.center.x) - expected) <= 1)
             #expect(after.zoom == before.zoom)
+            cleanup()
+        }
+    }
+
+    @Test func spaceWithModifierDoesNotPan() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            resetUnit()
+
+            let harness = try await openFixture(fixtures, name: "spacemod.png",
+                                                width: 4000, height: 2000)
+            let canvas = harness.canvasView
+            harness.perform(#selector(DocumentWindowController.actualSize(_:)))
+            let navigation = try #require(harness.windowController.navigation)
+            let before = canvas.transform
+
+            // Space with ⌘/⌥/⌃ is a system shortcut, never the temporary pan — the gate
+            // is `CanvasNavigation.keyDown`'s modifier check (spec edge case, driven here
+            // through the real `CanvasView.keyDown` override with synthesized events).
+            for modifiers in [NSEvent.ModifierFlags.command, .option, .control] {
+                harness.keyDown(" ", keyCode: CanvasNavigation.spaceKeyCode, modifiers: modifiers)
+                #expect(navigation.spacePan.phase == .idle, "Space+\(modifiers) armed the pan")
+                // Un-armed, the next mouse down must not pan either.
+                let start = CGPoint(x: canvas.bounds.midX, y: canvas.bounds.midY)
+                canvas.mouseDown(with: harness.mouse(.leftMouseDown,
+                                                     at: canvas.convert(start, to: nil)))
+                #expect(navigation.spacePan.phase == .idle)
+                canvas.mouseUp(with: harness.mouse(.leftMouseUp,
+                                                   at: canvas.convert(start, to: nil)))
+                harness.keyUp(" ", keyCode: CanvasNavigation.spaceKeyCode, modifiers: modifiers)
+                #expect(navigation.spacePan.phase == .idle)
+            }
+            #expect(canvas.transform == before, "a modified Space press moved the canvas")
+            cleanup()
+        }
+    }
+
+    @Test func losingKeyFocusResetsSpacePan() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            resetUnit()
+
+            let harness = try await openFixture(fixtures, name: "resign.png",
+                                                width: 4000, height: 2000)
+            let navigation = try #require(harness.windowController.navigation)
+            harness.keyDown(" ", keyCode: CanvasNavigation.spaceKeyCode)
+            #expect(navigation.spacePan.phase == .armed)
+            // The canvas window resigns key (⌘-Tab away): the pan state must never stay
+            // armed — the observer is `CanvasNavigation`'s `didResignKeyNotification`.
+            NotificationCenter.default.post(name: NSWindow.didResignKeyNotification,
+                                            object: harness.window)
+            await waitUntil { navigation.spacePan.phase == .idle }
+            #expect(navigation.spacePan.phase == .idle)
             cleanup()
         }
     }
@@ -435,7 +522,7 @@ struct ZoomPanStatusBarIntegrationTests {
     }
 
     @Test func zoomItemsHaveNoTargetWithoutDocument() async throws {
-        try await TestRunGate.withLock {
+        await TestRunGate.withLock {
             HeadlessAssertions.closeAllDocuments()
             for selector in [MainMenu.zoomInAction, MainMenu.zoomOutAction,
                              MainMenu.zoomToWindowAction, MainMenu.actualSizeAction] {
