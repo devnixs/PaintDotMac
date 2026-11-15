@@ -308,3 +308,21 @@ Expected values come from hand calculation or the formulas in this spec (via the
 - Multiple layers, layer blend modes, and the Metal compositor with ±1 CPU parity → **0024** (`MetalCompositor`, `Blend.metal`), which replaces the single-layer draw path while keeping this spec's transform, checkerboard, sampling, and tiling behavior.
 - Selection marching ants and other overlays → **0013+**; pixel grid and rulers (CAN-5, P1) → **0053**.
 - Checkerboard style as a user setting → **0046** (APP-8). Performance tuning for very large dense images (GPU mip generation, upload throttling, intermediate caching) → **0048**.
+
+## Verification status
+
+- Date: 2026-11-15. Quality gate (`.agents/skills/spec-implementer/scripts/quality-gate.sh`): **GREEN** — clean Debug build with no Swift or Metal warnings; `tests: 257 passed, 0 failed, 0 skipped (of 257)`; `tests: no crash reports during the run`. It never launches the app; no window is shown by any test.
+- Performance (PRD §6 NF-2 partial, this spec's scope; Debug build, the author's M-series Mac, `CanvasRenderPerformanceTests`, 24 MP = 6000×4000, target 2560×1600 at fit zoom):
+  - `testColdFrame24MP`: worst first frame **59 ms** (budget 1 s) — CPU premultiply + iterative box mips run tile-parallel in bounded waves.
+  - `testWarmFrame24MP`: pan frames with no uploads averaged **3.6 ms** (60 fps target 16 ms, gross-regression limit 48 ms); every warm frame asserted `tilesUploadedLastFrame == 0`.
+  - NF-2 impact: canvas redraws are upload-free once warm (tiles cached per mip base level) and strictly on-demand (`isPaused`, `enableSetNeedsDisplay`). The 10-layer 4K part of NF-2 is measured in 0024 and 0048; NF-1 in 0009/0048.
+- Manual verification steps (not yet run by user):
+  - [ ] not yet run by user — 1. Open a Retina screenshot (⇧⌘4 a window) on a Retina display: it opens at 100 % (if it fits) and is pixel-identical in sharpness to the original window — text has no blur or doubling.
+  - [ ] not yet run by user — 2. Open a PNG with transparency (e.g. an app icon exported as PNG): a white/light-gray 8-pt checkerboard shows through; semi-transparent edges blend smoothly into it.
+  - [ ] not yet run by user — 3. Open a large photo (e.g. 6000×4000): it opens zoomed to fit, centered, smooth (no jaggies or moiré on fine detail such as fabric or brick), with no visible lines at 256-px tile boundaries.
+  - [ ] not yet run by user — 4. Drag the window between a Retina and a non-Retina display (if available): the image redraws sharply on each, without a flash of stale content; the zoom value stays the same.
+  - [ ] not yet run by user — 5. Switch System Settings > Appearance between Light and Dark: the area around the image changes with the system; the checkerboard does not.
+  - [ ] not yet run by user — 6. Resize the window: the image stays centered (when smaller than the view) and the redraw is smooth.
+  - [ ] not yet run by user — 7. Temporarily set `transform.setZoom(8)` in a debug build (or use 0004's zoom once it exists) on a photo: pixels are hard-edged squares.
+
+Review:

@@ -34,6 +34,8 @@ targets:
       - path: PaintDotMac
         excludes:
           - Info.plist
+    dependencies:
+      - sdk: MetalKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thera-engineering.paintdotmac
