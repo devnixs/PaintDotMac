@@ -114,6 +114,19 @@ struct CanvasTransformTests {
         #expect(percent(0.125) == 13)  // 12.5 rounds away from zero
     }
 
+    /// `drawableSize` is `Int((view · backingScale).rounded())` — hand values for fractional
+    /// point sizes (the product is rounded to the nearest device pixel, not truncated).
+    @Test func drawableSizeRoundsFractionalPoints() {
+        let t = transform(image: PixelSize(width: 10, height: 10),
+                          view: CGSize(width: 3.3, height: 7.9), scale: 2)
+        #expect(t.drawableSize.width == 7)    // 6.6 → 7
+        #expect(t.drawableSize.height == 16)  // 15.8 → 16
+        let oneX = transform(image: PixelSize(width: 10, height: 10),
+                             view: CGSize(width: 1000.4, height: 999.5), scale: 1)
+        #expect(oneX.drawableSize.width == 1000)  // 1000.4 → 1000
+        #expect(oneX.drawableSize.height == 1000) // 999.5 → 1000 (ties away from zero)
+    }
+
     // MARK: - Pixel-aligned origin (CAN-6)
 
     @Test func originIsPixelAligned1x() {

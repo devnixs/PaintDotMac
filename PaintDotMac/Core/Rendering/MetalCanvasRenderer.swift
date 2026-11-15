@@ -70,6 +70,10 @@ final class MetalCanvasRenderer {
         let texture: MTLTexture
         /// `nil` after a full refresh ("base level forgotten") until the tile is re-uploaded.
         var baseLevel: Int?
+        /// Bytes the texture actually occupies (all mip levels of the level it was allocated
+        /// at) — kept even when `baseLevel` is forgotten, so `residentTextureBytes` and the
+        /// budget eviction never lose track of a stale-but-still-allocated texture.
+        let allocatedBytes: Int
         var isStale: Bool
         var lastDrawnFrame: UInt64
     }
@@ -408,8 +412,9 @@ final class MetalCanvasRenderer {
         if let previous = resident[coordinate] {
             retired.append((texture: previous.texture, frame: frameNumber))
         }
-        resident[coordinate] = Resident(texture: texture, baseLevel: level, isStale: false,
-                                        lastDrawnFrame: frameNumber)
+        resident[coordinate] = Resident(texture: texture, baseLevel: level,
+                                        allocatedBytes: Self.textureBytes(baseLevel: level),
+                                        isStale: false, lastDrawnFrame: frameNumber)
         return true
     }
 
@@ -489,7 +494,7 @@ final class MetalCanvasRenderer {
         for (coordinate, entry) in resident.sorted(by: { $0.value.lastDrawnFrame < $1.value.lastDrawnFrame }) {
             guard bytes > textureBudgetBytes else { break }
             guard !visibleSet.contains(coordinate) else { continue }
-            bytes -= Self.textureBytes(baseLevel: entry.baseLevel)
+            bytes -= entry.allocatedBytes
             resident.removeValue(forKey: coordinate)
             retired.append((texture: entry.texture, frame: frameIndex))
         }
@@ -499,9 +504,9 @@ final class MetalCanvasRenderer {
         retired.removeAll { $0.frame <= frame }
     }
 
-    /// Texture bytes of one tile: Σ (256 >> k)² · 4 for every level from the base level.
-    private static func textureBytes(baseLevel: Int?) -> Int {
-        guard let baseLevel else { return 0 }
+    /// Texture bytes of one tile allocated at `baseLevel`: Σ (256 >> k)² · 4 for every
+    /// level from `baseLevel` to the last one the chain carries.
+    private static func textureBytes(baseLevel: Int) -> Int {
         var side = TiledSurface.tileSize >> baseLevel
         var bytes = 0
         for _ in baseLevel...CanvasSampling.maximumLevel {
@@ -512,7 +517,7 @@ final class MetalCanvasRenderer {
     }
 
     private func residentByteCount() -> Int {
-        resident.values.reduce(0) { $0 + Self.textureBytes(baseLevel: $1.baseLevel) }
+        resident.values.reduce(0) { $0 + $1.allocatedBytes }
     }
 
     private func refreshStatistics(uploaded: Int, level: Int) {

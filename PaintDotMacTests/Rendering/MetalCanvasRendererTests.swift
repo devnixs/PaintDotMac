@@ -508,6 +508,39 @@ struct MetalCanvasRendererTests {
         assertMatchesOracle(output, image: image, canvasTransform: canvasTransform, "old pixels restored")
     }
 
+    /// A lineage break (here: an older `generation`) marks every resident tile stale and
+    /// forgets its base level. Tiles outside the view stay resident-but-stale — their GPU
+    /// memory is still allocated, so `residentTextureBytes` and the budget must keep
+    /// counting the real texture sizes, not zero.
+    @Test func staleResidentsKeepAccountedBytes() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let fullTileBytes = (256 * 256 + 128 * 128 + 64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 4 * 4) * 4
+        let renderer = try makeRenderer(device)
+        let image = LayeredImage.blank(size: PixelSize(width: 1024, height: 1024), fill: .black)
+        // Frame 1: tiles (0,0)…(1,1) resident at base level 0.
+        let fourTiles = transform(image: PixelSize(width: 1024, height: 1024), drawable: (512, 512), scale: 1,
+                                  zoom: 1, center: CGPoint(x: 256, y: 256))
+        _ = try render(image: image, canvasTransform: fourTiles, renderer: renderer, device: device)
+        #expect(renderer.statistics.residentTextureBytes == 4 * fullTileBytes)
+        // Advance the surface's generation, then pan to a one-tile view.
+        var newer = image
+        newer.layers[0].surface.setPixel(.white, at: PixelPoint(x: 5, y: 5))
+        newer.layers[0].surface.setPixel(.white, at: PixelPoint(x: 300, y: 5))
+        let oneTile = transform(image: PixelSize(width: 1024, height: 1024), drawable: (256, 256), scale: 1,
+                                zoom: 1, center: CGPoint(x: 128, y: 128))
+        _ = try render(image: newer, canvasTransform: oneTile, renderer: renderer, device: device)
+        #expect(renderer.statistics.residentTileCount == 4)
+        #expect(renderer.statistics.residentTextureBytes == 4 * fullTileBytes)
+        // Render the older copy: generation went backwards → all four marked stale and
+        // their base levels forgotten; only the visible tile (0,0) re-uploads. The other
+        // three keep their allocated (base-level-0 sized) textures resident.
+        _ = try render(image: image, canvasTransform: oneTile, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 1)
+        #expect(renderer.statistics.residentTileCount == 4)
+        #expect(renderer.statistics.residentTextureBytes == 4 * fullTileBytes,
+                "stale-but-resident textures must stay counted at their allocated size")
+    }
+
     @Test func invalidateAllReuploadsVisibleTiles() throws {
         let device = try MetalTestTarget.makeDevice()
         let renderer = try makeRenderer(device)
@@ -570,6 +603,27 @@ struct MetalCanvasRendererTests {
         }
     }
 
+    /// Moving the window between a 1× and a 2× display keeps the zoom and the tiles: the
+    /// same drawable size at the same zoom shows the same tiles, so the scale change itself
+    /// must not upload (or invalidate) anything — only `viewSize` changes.
+    @Test func backingScaleChangeKeepsTextures() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        let image = opaque(0x5CA1, width: 1024, height: 1024)
+        // 512 device pixels: 512 pt at 1×, 256 pt at 2× — same zoom, center and drawable.
+        let at1x = transform(image: PixelSize(width: 1024, height: 1024), drawable: (512, 512), scale: 1,
+                             zoom: 0.5, center: CGPoint(x: 512, y: 512))
+        let at2x = transform(image: PixelSize(width: 1024, height: 1024), drawable: (512, 512), scale: 2,
+                             zoom: 0.5, center: CGPoint(x: 512, y: 512))
+        #expect(at1x.drawableSize == at2x.drawableSize)
+        _ = try render(image: image, canvasTransform: at1x, renderer: renderer, device: device)
+        let uploadsAfter1x = renderer.statistics.tilesUploadedLastFrame
+        #expect(uploadsAfter1x > 0)
+        let output = try render(image: image, canvasTransform: at2x, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 0, "backing-scale change re-uploads nothing")
+        assertMatchesOracle(output, image: image, canvasTransform: at2x, "2× frame after 1×")
+    }
+
     @Test func evictsNonVisibleTilesOverBudget() throws {
         let device = try MetalTestTarget.makeDevice()
         let fullTileBytes = (256 * 256 + 128 * 128 + 64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 4 * 4) * 4
@@ -585,6 +639,15 @@ struct MetalCanvasRendererTests {
             #expect(renderer.statistics.residentTextureBytes <= 3 * fullTileBytes, "row \(row)")
             // Budget ≥ one tile, so the visible set alone never exceeds it.
         }
+        // Eviction is least-recently-**drawn**: after rows 0…3, the four different tiles
+        // need four budgets of one — row 0 (drawn first, never again) is the one evicted,
+        // and rows 1 and 2 stay resident.
+        #expect(renderer.statistics.baseLevel(of: TileCoordinate(column: 0, row: 0)) == nil,
+                "the least recently drawn tile is evicted first")
+        #expect(renderer.statistics.baseLevel(of: TileCoordinate(column: 0, row: 1)) != nil)
+        #expect(renderer.statistics.baseLevel(of: TileCoordinate(column: 0, row: 2)) != nil)
+        #expect(renderer.statistics.baseLevel(of: TileCoordinate(column: 0, row: 3)) != nil)
+        #expect(renderer.statistics.residentTileCount == 3)
     }
 
     // MARK: - Extremes

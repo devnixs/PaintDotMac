@@ -15,6 +15,8 @@ struct TileMipmapperTests {
         (ColorRGBA8(red: 10, green: 20, blue: 30, alpha: 1), ColorRGBA8(red: 0, green: 0, blue: 0, alpha: 1)),
         // (255·1 + 127)/255 = 1.49 → 1.
         (ColorRGBA8(red: 255, green: 255, blue: 255, alpha: 1), ColorRGBA8(red: 1, green: 1, blue: 1, alpha: 1)),
+        // (127 + 127)/255 = 0; (128 + 127)/255 = 1 — pins the +127 rounding.
+        (ColorRGBA8(red: 127, green: 128, blue: 129, alpha: 1), ColorRGBA8(red: 0, green: 1, blue: 1, alpha: 1)),
     ])
     func premultiplyHandValues(_ input: ColorRGBA8, _ expected: ColorRGBA8) {
         #expect(TileMipmapper.premultiplied(input) == expected)
@@ -23,6 +25,24 @@ struct TileMipmapperTests {
     @Test func premultiplyZeroesTransparent() {
         // Stored RGB under alpha 0 never survives: (255·0 + 127)/255 = 0.
         #expect(TileMipmapper.premultiplied(ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 0)) == .clear)
+    }
+
+    /// `paddedPremultipliedTile` runs the renderer's byte kernel (`srcPrepass`), not the
+    /// scalar `premultiplied` — pin its semi-transparent results to the same hand values,
+    /// including the row that mixes opaque and semi-transparent pixels.
+    @Test func paddedTilePremultipliesSemiTransparent() {
+        var source = [ColorRGBA8](repeating: .clear, count: 256 * 256)
+        source[0] = ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 128)      // (128, 0, 0, 128)
+        // (127·1 + 127)/255 = 0, (128·1 + 127)/255 = (129·1 + 127)/255 = 1 — discriminates
+        // the +127 rounding against +0 or +128.
+        source[1] = ColorRGBA8(red: 127, green: 128, blue: 129, alpha: 1)    // (0, 1, 1, 1)
+        source[2] = ColorRGBA8(red: 200, green: 100, blue: 50, alpha: 255)   // opaque → identity
+        source[3] = ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 0)        // → clear
+        let result = TileMipmapper.paddedPremultipliedTile(from: source, validWidth: 4, validHeight: 1)
+        #expect(result[0] == ColorRGBA8(red: 128, green: 0, blue: 0, alpha: 128))
+        #expect(result[1] == ColorRGBA8(red: 0, green: 1, blue: 1, alpha: 1))
+        #expect(result[2] == ColorRGBA8(red: 200, green: 100, blue: 50, alpha: 255))
+        #expect(result[3] == .clear)
     }
 
     // MARK: - box downsample

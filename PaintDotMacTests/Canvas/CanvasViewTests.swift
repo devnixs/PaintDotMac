@@ -53,4 +53,30 @@ struct CanvasViewTests {
         // View space is bottom-left origin, as CanvasTransform documents.
         #expect(view.isFlipped == false)
     }
+
+    /// A view created without a Metal device is not available, records a failure for the
+    /// window controller to log, and never crashes when asked to draw (the window
+    /// controller shows the `canvas.unavailable` label instead of this view).
+    @Test func metalUnavailableWithoutDevice() throws {
+        let view = CanvasView(frame: NSRect(x: 0, y: 0, width: 100, height: 80), device: nil)
+        #expect(!view.isMetalAvailable)
+        #expect(view.metalFailure != nil)
+        view.image = LayeredImage.blank(size: PixelSize(width: 10, height: 10), fill: .black)
+        view.draw()   // must do nothing, not crash
+    }
+
+    /// Backing properties changing (window dragged between displays) keeps the zoom and the
+    /// center and only re-resolves the backing scale (edge case "Backing-scale change").
+    @Test func backingPropertiesChangeKeepsZoom() throws {
+        let view = CanvasView(frame: NSRect(x: 0, y: 0, width: 1000, height: 800))
+        view.image = LayeredImage.blank(size: PixelSize(width: 4000, height: 3000), fill: .black)
+        let before = view.transform
+        #expect(before.zoom == 0.25)
+        view.viewDidChangeBackingProperties()
+        #expect(view.transform.zoom == before.zoom)
+        #expect(view.transform.center == before.center)
+        // No window → scale stays 1; the point of the test is that nothing else changed.
+        #expect(view.transform.backingScale == 1)
+        #expect(view.transform.viewSize == before.viewSize)
+    }
 }
