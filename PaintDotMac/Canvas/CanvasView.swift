@@ -40,6 +40,10 @@ final class CanvasView: MTKView {
     /// views (unit tests) — navigation events then fall through to the responder chain.
     weak var navigation: CanvasNavigation?
 
+    /// The window's input router (0006): replaces the direct 0004 forwarding below while
+    /// keeping that order. Nil for bare views — the 0004 path stays.
+    weak var inputRouter: CanvasInputRouter?
+
     /// Non-nil when the Metal device and renderer came up. The window controller shows the
     /// `canvas.unavailable` label instead of this view when false.
     private(set) var isMetalAvailable = false
@@ -140,39 +144,118 @@ final class CanvasView: MTKView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if let inputRouter {
+            guard !inputRouter.keyDown(with: event) else { return }
+            super.keyDown(with: event)
+            return
+        }
         guard navigation?.keyDown(event) != true else { return }  // Space consumed
         super.keyDown(with: event)  // other keys go up the responder chain
     }
 
     override func keyUp(with event: NSEvent) {
+        if let inputRouter {
+            guard !inputRouter.keyUp(with: event) else { return }
+            super.keyUp(with: event)
+            return
+        }
         guard navigation?.keyUp(event) != true else { return }
         super.keyUp(with: event)
     }
 
+    /// 0006: Control-click never shows a context menu — it arrives at the tool as
+    /// secondary (spec button mapping rule).
+    override func menu(for event: NSEvent) -> NSMenu? { nil }
+
+    /// Text typed while a tool captures the keyboard (0040) reaches the dispatcher.
+    override func insertText(_ insertString: Any) {
+        if let inputRouter, let string = insertString as? String {
+            inputRouter.insertText(string)
+            return
+        }
+        super.insertText(insertString)
+    }
+
     override func mouseDown(with event: NSEvent) {
+        if let inputRouter {
+            inputRouter.mouseDown(with: event)
+            return
+        }
         let pans = navigation?.mouseDown(atView: pointInThis(from: event)) ?? false
         if !pans { super.mouseDown(with: event) }  // 0006 routes this to the active tool
     }
 
     override func mouseDragged(with event: NSEvent) {
+        if let inputRouter {
+            inputRouter.mouseDragged(with: event)
+            return
+        }
         navigation?.mouseDragged(toView: pointInThis(from: event))
         if navigation?.spacePan.isPanning != true { super.mouseDragged(with: event) }
     }
 
     override func mouseUp(with event: NSEvent) {
+        if let inputRouter {
+            inputRouter.mouseUp(with: event)
+            return
+        }
         if navigation?.spacePan.isPanning != true { super.mouseUp(with: event) }
         navigation?.mouseUp()
     }
 
+    override func rightMouseDown(with event: NSEvent) {
+        guard let inputRouter else { super.rightMouseDown(with: event); return }
+        inputRouter.rightMouseDown(with: event)
+    }
+
+    override func rightMouseDragged(with event: NSEvent) {
+        guard let inputRouter else { super.rightMouseDragged(with: event); return }
+        inputRouter.rightMouseDragged(with: event)
+    }
+
+    override func rightMouseUp(with event: NSEvent) {
+        guard let inputRouter else { super.rightMouseUp(with: event); return }
+        inputRouter.rightMouseUp(with: event)
+    }
+
+    override func otherMouseDown(with event: NSEvent) {
+        guard let inputRouter else { super.otherMouseDown(with: event); return }
+        inputRouter.otherMouseDown(with: event)
+    }
+
+    override func otherMouseDragged(with event: NSEvent) {
+        guard let inputRouter else { super.otherMouseDragged(with: event); return }
+        inputRouter.otherMouseDragged(with: event)
+    }
+
+    override func otherMouseUp(with event: NSEvent) {
+        guard let inputRouter else { super.otherMouseUp(with: event); return }
+        inputRouter.otherMouseUp(with: event)
+    }
+
     override func mouseMoved(with event: NSEvent) {
+        if let inputRouter {
+            inputRouter.mouseMoved(with: event)
+            return
+        }
         navigation?.cursorMoved(toView: pointInThis(from: event))
     }
 
     override func mouseExited(with event: NSEvent) {
+        inputRouter?.mouseExited(with: event)
         navigation?.cursorExited()
     }
 
+    override func flagsChanged(with event: NSEvent) {
+        guard let inputRouter else { super.flagsChanged(with: event); return }
+        inputRouter.flagsChanged(with: event)
+    }
+
     override func cursorUpdate(with event: NSEvent) {
+        if let inputRouter {
+            inputRouter.cursorUpdate(with: event)
+            return
+        }
         if let navigation { navigation.updateCursor() } else { super.cursorUpdate(with: event) }
     }
 

@@ -731,4 +731,14 @@ struct MetalCanvasRendererTests {
             )
         }
     }
+
+    /// The uniforms struct must have `size == stride`: `setVertexBytes` copies `stride`
+    /// bytes from a stack temporary that is only `size` bytes, and before the explicit
+    /// trailing padding every frame read 8 bytes past its own stack slot (AddressSanitizer
+    /// caught the out-of-bounds read inside the AGX driver). Removing `_padding` from
+    /// `CanvasUniforms` fails this test.
+    @Test func uniformStructHasNoTrailingStridePadding() {
+        #expect(MetalCanvasRenderer.uniformLayoutIsSound,
+                "CanvasUniforms size/stride mismatch makes setVertexBytes read past the stack slot")
+    }
 }

@@ -30,6 +30,9 @@ enum MainMenu {
     static let zoomOutItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomOut")
     static let zoomToWindowItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomToWindow")
     static let actualSizeItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.actualSize")
+    /// Panel toggle action (0006); each item's `representedObject` carries the `PanelKind`
+    /// raw value and its identifier is `menu.window.panel.<kind>`.
+    static let togglePanelAction = NSSelectorFromString("togglePanel:")
 
     /// The View menu's zoom actions (0004), sent first-responder-style to
     /// `DocumentWindowController`.
@@ -162,10 +165,21 @@ enum MainMenu {
         return menu
     }
 
+    /// Minimize, Zoom, —, the four panel toggles ⌥⌘1–4 (APP-2, PRD §5.12), —, Bring All to
+    /// Front. AppKit appends its tab items to this menu by itself.
     private static func windowMenu() -> NSMenu {
         let menu = NSMenu(title: "Window")
         menu.addItem(makeItem("Minimize", key: "m", modifiers: .command, action: #selector(NSWindow.performMiniaturize(_:))))
         menu.addItem(makeItem("Zoom", action: #selector(NSWindow.performZoom(_:))))
+        menu.addItem(.separator())
+        for kind in PanelKind.allCases {
+            let item = makeItem(kind.title, key: kind.menuKeyEquivalent,
+                                modifiers: PanelKind.menuKeyEquivalentModifiers,
+                                action: togglePanelAction)
+            item.identifier = kind.menuItemIdentifier
+            item.representedObject = kind.rawValue
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         menu.addItem(makeItem("Bring All to Front", action: #selector(NSApplication.arrangeInFront(_:))))
         return menu

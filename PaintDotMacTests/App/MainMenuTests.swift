@@ -140,8 +140,29 @@ struct MainMenuTests {
             Row(title: "Minimize", key: "m", modifiers: [.command], action: "performMiniaturize:"),
             Row(title: "Zoom", key: "", modifiers: [], action: "performZoom:"),
             .separator,
+            Row(title: "Tools", key: "1", modifiers: [.command, .option], action: "togglePanel:"),
+            Row(title: "History", key: "2", modifiers: [.command, .option], action: "togglePanel:"),
+            Row(title: "Layers", key: "3", modifiers: [.command, .option], action: "togglePanel:"),
+            Row(title: "Colors", key: "4", modifiers: [.command, .option], action: "togglePanel:"),
+            .separator,
             Row(title: "Bring All to Front", key: "", modifiers: [], action: "arrangeInFront:"),
         ])
+    }
+
+    /// The four panel toggles (0006): identifiers, `representedObject`, and ⌥⌘1–4.
+    @Test func windowMenuHasPanelToggles() throws {
+        let menu = try submenu(MainMenu.windowMenuIdentifier)
+        for (kind, key) in zip(PanelKind.allCases, ["1", "2", "3", "4"]) {
+            let item = try #require(
+                menu.items.first { $0.identifier == kind.menuItemIdentifier },
+                "Window menu has no item \(kind.menuItemIdentifier.rawValue)")
+            #expect(item.title == kind.title)
+            #expect(item.keyEquivalent == key)
+            #expect(item.keyEquivalentModifierMask.intersection([.command, .option, .shift, .control])
+                        == [.command, .option])
+            #expect(item.action == MainMenu.togglePanelAction)
+            #expect(item.representedObject as? String == kind.rawValue)
+        }
     }
 
     @Test func helpMenuIsEmpty() throws {

@@ -504,3 +504,51 @@ Expected values below are worked out by hand from the rules above and 0004's pre
 - Paint.NET's common-actions toolbar row, pixel grid and rulers toggles (0053), and Paint.NET's "Tool" drop-down shortcut Alt+T.
 - Moving shortcuts into `ShortcutTable` and `docs/shortcuts.md` (0045).
 - Tablet pressure (`ToolEvent.pressure` stays 1.0; TOOL-D, 0055).
+
+## Verification status
+
+2026-11-15. Implemented end-to-end; not yet reviewed.
+
+- **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` **GREEN twice**
+  — `tests: 557 passed, 0 failed, 0 skipped (of 557)`, `tests: no crash reports during the run`,
+  clean Debug build with no compiler warnings, Core imports OK, test sources headless
+  (189.49 s and 186.59 s). The gate's `.disabled(` line in `ToolOptionsBar` is a SwiftUI
+  control modifier, not a skipped test.
+- **Crash postmortem (the flaky test-host `objc_release` crashes):** two independent
+  causes. (1) `MetalCanvasRenderer` passed `&uniforms, length: MemoryLayout<CanvasUniforms>.stride`
+  (112 bytes) to `setVertexBytes`/`setFragmentBytes` while the Swift stack temporary was
+  only `MemoryLayout.size` (104) bytes — every frame read 8 bytes past its own stack slot
+  (AddressSanitizer, now working on macOS 27.2 / Xcode 27.2, caught the out-of-bounds read
+  inside the AGX driver's `memcpy`). Fixed with an explicit `_padding` filler making
+  `size == stride` (matching the C struct's implicit trailing pad, which the MSL side
+  already had); `uniformStructHasNoTrailingStridePadding` fails if the filler is removed
+  (mutation-verified). (2) The crash itself was isolated by per-test binary search to
+  `shortcutsIgnoredInTextField`: it closed an offscreen window that still owned the
+  **shared field editor**, corrupting AppKit's responder/autorelease state and crashing a
+  later suite's process with a garbage autorelease-pool entry (3/3 crashes with the close,
+  0/3 without it; the test now retains the window instead of closing it — it is never
+  ordered front, so headlessness is unaffected; 8/8 clean on the previously
+  deterministic `ToolsPanel+ZoomPan` pair, then the full gate green twice). The production
+  app never closes a never-on-screen window that owns the field editor; the hazard lives
+  in the test's setup, not in the shipped close path.
+- **Performance:** none measured, by design — this spec adds per-event routing and an
+  overlay that draws only while a tool sets it; per-frame rendering cost is unchanged
+  from 0003 (`CanvasRenderPerformanceTests` runs in the gate and passes). NF-2's 60 fps
+  pan/zoom target is measured in 0048.
+- **Sanitizers note:** AGENTS.md's "sanitizers unavailable" remark (macOS 26.6 / Xcode
+  26.3) is stale on this machine — `-enableAddressSanitizer YES` runs and is what found
+  cause (1). The gate itself still does not depend on sanitizers.
+- Manual verification steps (not yet run by user):
+  - [ ] not yet run by user — 1. Cursors: with the Zoom tool, the canvas shows the zoom-in magnifier; holding Option switches to zoom-out and back on release (without moving the mouse). Pan tool: open hand, closed hand while dragging. Holding Space with the Zoom tool shows 0004's hand and pans; releasing restores the magnifier.
+  - [ ] not yet run by user — 2. Zoom rectangle: dashed black/white rectangle visible on light and dark images; zoomed result is centered on the rectangle (except at image edges).
+  - [ ] not yet run by user — 3. Middle mouse button (a three-button mouse) drags pan the canvas with any tool.
+  - [ ] not yet run by user — 4. Panels: on first launch Tools is top-left, History top-right, Layers bottom-right, Colors bottom-left of the main screen; move and resize them, quit, relaunch → same frames. They float above document windows, hide when switching to another app, come back on return, and appear over a full-screen document window.
+  - [ ] not yet run by user — 5. Click a Tools panel button, then press Z/H: the tool changes (the document window stays key, its title bar stays active).
+  - [ ] not yet run by user — 6. Tooltips: hover each tool → "Zoom (Z)", "Pan (H)".
+  - [ ] not yet run by user — 7. Two documents as tabs: switching tabs keeps the selected tool; the options bar is in both.
+  - [ ] not yet run by user — 8. Dark mode: Tools panel selection highlight, options bar, and placeholder text are legible. VoiceOver reads "Zoom, selected, button".
+- Review: 2026-11-15, awaiting independent re-review of the implementation commit. Pay
+  particular attention to the two crash fixes above (the `CanvasUniforms` layout invariant
+  and the field-editor close hazard documented in `shortcutsIgnoredInTextField`) and to
+  the become-main/close notification wiring that replaced the never-registered
+  `NSWindowDelegate` methods (`windowMainObserver`/`windowCloseObserver`).

@@ -13,10 +13,34 @@ final class DocumentHarness {
     /// Built, never ordered onto the screen.
     var window: NSWindow
 
-    private init(document: PaintDocument, windowController: DocumentWindowController, window: NSWindow) {
+    /// The per-harness `AppModel` (0006) on a throwaway suite, installed as the window's
+    /// tool model so `shortcut`, `clickCanvas`, and `dragCanvas` drive the same dispatcher.
+    let appModel: AppModel
+    private let appModelSuiteName: String?
+
+    private init(document: PaintDocument, windowController: DocumentWindowController,
+                 window: NSWindow, appModel: AppModel, appModelSuiteName: String?) {
         self.document = document
         self.windowController = windowController
         self.window = window
+        self.appModel = appModel
+        self.appModelSuiteName = appModelSuiteName
+    }
+
+    /// Removes the harness's `AppModel` defaults suite (integration cleanup; mirrors what a
+    /// relaunch on a fresh machine starts from).
+    func discardAppModelSuite() {
+        guard let appModelSuiteName else { return }
+        UserDefaults(suiteName: appModelSuiteName)?.removePersistentDomain(forName: appModelSuiteName)
+    }
+
+    /// A fresh-suite `AppModel` (never the user's preferences, AGENTS.md).
+    private static func makeAppModel() -> (AppModel, String?) {
+        let suiteName = "DocumentHarness.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return (AppModel(), nil)
+        }
+        return (AppModel(defaults: defaults), suiteName)
     }
 
     /// Opens through `NSDocumentController.shared` with `display: false` — which makes AppKit
@@ -39,7 +63,10 @@ final class DocumentHarness {
         guard let windowController = paintDocument.windowControllers.first as? DocumentWindowController,
               let window = windowController.window
         else { throw CocoaError(.fileReadUnknown) }
-        return DocumentHarness(document: paintDocument, windowController: windowController, window: window)
+        let (appModel, suiteName) = makeAppModel()
+        windowController.appModel = appModel
+        return DocumentHarness(document: paintDocument, windowController: windowController,
+                               window: window, appModel: appModel, appModelSuiteName: suiteName)
     }
 
     /// Mirrors AppKit's action lookup without a key window: the window's first responder and its
@@ -253,6 +280,88 @@ extension DocumentHarness {
     }
 }
 
+// MARK: - Tools (spec 0006)
+
+/// Which physical button `clickCanvas`/`dragCanvas` synthesize.
+enum CanvasPointerButton {
+    case left
+    case right
+}
+
+extension DocumentHarness {
+    /// Sends a synthesized keyDown through the app's one shortcut entry point
+    /// (`CanvasInputRouter.handleShortcutKeyDown`) with `appModel`; `in:` overrides the
+    /// key window (headless runs have none).
+    @discardableResult
+    func shortcut(_ characters: String, modifiers: NSEvent.ModifierFlags = [],
+                  in keyWindow: NSWindow? = nil) -> Bool {
+        let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers,
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: (keyWindow ?? window).windowNumber, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters,
+            isARepeat: false, keyCode: 0
+        )
+        guard let event else {
+            Issue.record("could not synthesize a keyDown event")
+            return false
+        }
+        return CanvasInputRouter.handleShortcutKeyDown(event, model: appModel, keyWindow: keyWindow ?? window)
+    }
+
+    private func deliver(_ type: NSEvent.EventType, atView point: CGPoint,
+                         modifiers: NSEvent.ModifierFlags,
+                         to deliverEvent: (NSEvent) -> Void) {
+        let canvas = canvasView
+        let event = mouse(type, at: canvas.convert(point, to: nil), modifiers: modifiers)
+        deliverEvent(event)
+    }
+
+    /// A synthesized press (down+up) on the canvas at a canvas-view point, delivered to
+    /// `CanvasView`'s overrides — which route through `CanvasInputRouter`.
+    func clickCanvas(at point: CGPoint, button: CanvasPointerButton = .left,
+                     modifiers: NSEvent.ModifierFlags = []) {
+        let canvas = canvasView
+        switch button {
+        case .left:
+            deliver(.leftMouseDown, atView: point, modifiers: modifiers) {
+                canvas.mouseDown(with: $0)
+            }
+            deliver(.leftMouseUp, atView: point, modifiers: modifiers) {
+                canvas.mouseUp(with: $0)
+            }
+        case .right:
+            deliver(.rightMouseDown, atView: point, modifiers: modifiers) {
+                canvas.rightMouseDown(with: $0)
+            }
+            deliver(.rightMouseUp, atView: point, modifiers: modifiers) {
+                canvas.rightMouseUp(with: $0)
+            }
+        }
+    }
+
+    /// A synthesized drag on the canvas: down, `steps` drags, up.
+    func dragCanvas(from start: CGPoint, to end: CGPoint, steps: Int = 4,
+                    button: CanvasPointerButton = .left,
+                    modifiers: NSEvent.ModifierFlags = []) {
+        let canvas = canvasView
+        let downType: NSEvent.EventType = button == .left ? .leftMouseDown : .rightMouseDown
+        let dragType: NSEvent.EventType = button == .left ? .leftMouseDragged : .rightMouseDragged
+        let upType: NSEvent.EventType = button == .left ? .leftMouseUp : .rightMouseUp
+        let down: (NSEvent) -> Void = button == .left ? canvas.mouseDown(with:) : canvas.rightMouseDown(with:)
+        let drag: (NSEvent) -> Void = button == .left ? canvas.mouseDragged(with:) : canvas.rightMouseDragged(with:)
+        let up: (NSEvent) -> Void = button == .left ? canvas.mouseUp(with:) : canvas.rightMouseUp(with:)
+        deliver(downType, atView: start, modifiers: modifiers, to: down)
+        for step in 1...max(1, steps) {
+            let fraction = CGFloat(step) / CGFloat(max(1, steps))
+            let point = CGPoint(x: start.x + (end.x - start.x) * fraction,
+                                y: start.y + (end.y - start.y) * fraction)
+            deliver(dragType, atView: point, modifiers: modifiers, to: drag)
+        }
+        deliver(upType, atView: end, modifiers: modifiers, to: up)
+    }
+}
+
 // MARK: - New Image (spec 0005)
 
 extension DocumentHarness {
@@ -294,6 +403,9 @@ extension DocumentHarness {
             Issue.record("the new document has no document window controller")
             return nil
         }
-        return DocumentHarness(document: created, windowController: windowController, window: window)
+        let (appModel, suiteName) = makeAppModel()
+        windowController.appModel = appModel
+        return DocumentHarness(document: created, windowController: windowController,
+                               window: window, appModel: appModel, appModelSuiteName: suiteName)
     }
 }

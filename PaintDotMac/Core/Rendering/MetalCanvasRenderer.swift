@@ -45,6 +45,14 @@ final class MetalCanvasRenderer {
     static let maximumIntermediateDimension = 16_384
 
     /// Mirrors `CanvasUniforms` in `Canvas.metal` — keep both in sync.
+    ///
+    /// `setVertexBytes`/`setFragmentBytes` copy `MemoryLayout.stride` (112) bytes from the
+    /// value, but a Swift stack temporary is only `MemoryLayout.size` bytes; without the
+    /// explicit trailing filler (`_padding`, matching the C struct's implicit trailing pad,
+    /// which Swift does not round to the 16-byte alignment) every frame read 8 bytes past
+    /// its own stack slot. AddressSanitizer caught that out-of-bounds read inside the AGX
+    /// driver's `setVertexBytes` memcpy — it is the root cause of the flaky `objc_release`
+    /// test-host crashes. `uniformLayoutIsSound` refuses the mismatched layouts.
     private struct CanvasUniforms {
         var quadRect: simd_float4
         var intermediateOriginDevice: simd_float2
@@ -64,6 +72,15 @@ final class MetalCanvasRenderer {
         var checkerDarkG: Float
         var checkerDarkB: Float
         var checkerDarkA: Float
+        /// Aligns `size` with `stride` (the C layout's 112-byte rounded size). Never read
+        /// by the shader; the MSL struct's implicit pad sits at the same offset.
+        var _padding: (Float, Float) = (0, 0)
+    }
+
+    /// True only when a `setVertexBytes(&uniforms, length: stride, …)` read stays inside
+    /// the value's own allocation (the bug condition above).
+    static var uniformLayoutIsSound: Bool {
+        MemoryLayout<CanvasUniforms>.size == MemoryLayout<CanvasUniforms>.stride
     }
 
     private struct Resident {

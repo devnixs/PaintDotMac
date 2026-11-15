@@ -41,7 +41,9 @@ final class CanvasNavigation {
 
     // MARK: - Transform access
 
-    private var transform: CanvasTransform? { canvasView?.transform }
+    /// The transform 0004 last assigned to `CanvasView`; 0006's `CanvasNavigating`
+    /// conformance (extension file) exposes it to tools.
+    var currentTransform: CanvasTransform? { canvasView?.transform }
 
     private var viewCenter: CGPoint {
         guard let view = canvasView else { return .zero }
@@ -54,29 +56,31 @@ final class CanvasNavigation {
 
     // MARK: - Zoom commands (View menu)
 
-    var canZoomIn: Bool { ZoomLevels.canZoomIn(from: transform?.zoom ?? 1) }
-    var canZoomOut: Bool { ZoomLevels.canZoomOut(from: transform?.zoom ?? 1) }
+    var canZoomIn: Bool { ZoomLevels.canZoomIn(from: currentTransform?.zoom ?? 1) }
+    var canZoomOut: Bool { ZoomLevels.canZoomOut(from: currentTransform?.zoom ?? 1) }
 
     func zoomIn() {
-        guard let transform, let target = ZoomLevels.nextLarger(than: transform.zoom) else { return }
+        guard let transform = currentTransform,
+              let target = ZoomLevels.nextLarger(than: transform.zoom) else { return }
         setZoom(target, anchoredAtView: viewCenter)
     }
 
     func zoomOut() {
-        guard let transform, let target = ZoomLevels.nextSmaller(than: transform.zoom) else { return }
+        guard let transform = currentTransform,
+              let target = ZoomLevels.nextSmaller(than: transform.zoom) else { return }
         setZoom(target, anchoredAtView: viewCenter)
     }
 
     func actualSize() { setZoom(1.0, anchoredAtView: viewCenter) }
 
     func zoomToWindow() {
-        guard let transform else { return }
+        guard let transform = currentTransform else { return }
         apply(transform.fittedToWindow())
     }
 
     /// The shared zoom entry point (0006's Zoom tool and 0014's Zoom to Selection use it).
     func setZoom(_ zoom: Double, anchoredAtView point: CGPoint) {
-        guard let transform else { return }
+        guard let transform = currentTransform else { return }
         apply(transform.zoomed(to: zoom, anchoredAt: point))
     }
 
@@ -84,7 +88,7 @@ final class CanvasNavigation {
 
     /// Pinch: zoom around the pointer (CAN-2). `magnification` is `NSEvent.magnification`.
     func magnify(magnification: Double, atView point: CGPoint) {
-        guard let transform else { return }
+        guard let transform = currentTransform else { return }
         let target = ZoomLevels.zoom(transform.zoom, magnifiedBy: magnification)
         apply(transform.zoomed(to: target, anchoredAt: point))
     }
@@ -94,7 +98,7 @@ final class CanvasNavigation {
     /// applied by AppKit), `isPrecise` is `NSEvent.hasPreciseScrollingDeltas`.
     func scroll(deltaX: Double, deltaY: Double, isPrecise: Bool,
                 zoomModifiers: Bool, atView point: CGPoint) {
-        guard let transform else { return }
+        guard let transform = currentTransform else { return }
         if zoomModifiers {
             let target = ZoomLevels.zoom(transform.zoom, scrolledBy: deltaY, isPrecise: isPrecise)
             apply(transform.zoomed(to: target, anchoredAt: point))
@@ -155,7 +159,7 @@ final class CanvasNavigation {
     func beginPan(atView point: CGPoint) { panLastViewPoint = point }
 
     func continuePan(toView point: CGPoint) {
-        guard let last = panLastViewPoint, let transform else {
+        guard let last = panLastViewPoint, let transform = currentTransform else {
             panLastViewPoint = point
             return
         }
@@ -187,13 +191,13 @@ final class CanvasNavigation {
     func cursorExited() { statusBar?.cursorPixel = nil }
 
     private func updateCursorPosition(atView point: CGPoint) {
-        guard let transform else { return }
+        guard let transform = currentTransform else { return }
         statusBar?.setCursor(canvasPoint: transform.viewToCanvas(point))
     }
 
     /// Window resize (live included): keep the zoom and the view-center point, re-clamp.
     func viewResized(to size: CGSize) {
-        guard let transform else { return }
+        guard let transform = currentTransform else { return }
         apply(transform.resized(to: size))
     }
 }
