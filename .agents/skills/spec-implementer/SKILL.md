@@ -2,8 +2,8 @@
 name: spec-implementer
 description: >
   Work through the backlog of specs in docs/specs/todo/ and implement them one at a time, each in
-  its own sub-agent, end to end: Swift code, unit/golden/integration/UI tests, the full quality
-  gate (clean build with zero warnings, every test, launch smoke test) with fixes, an independent
+  its own sub-agent, end to end: Swift code, headless unit/golden/integration tests (never UI
+  tests), the full quality gate (clean build with zero warnings, every test) with fixes, an independent
   review sub-agent that hunts for untested behavior and crashes, PRD/AGENTS.md updates, a
   manual-verification checklist, then commit on main and move the spec into docs/specs/done/.
   After the batch, run the gate with sanitizers and a Release build. Use this whenever the user
@@ -34,13 +34,20 @@ nothing crashes. Green is defined by one command, the **quality gate**:
 ```
 
 It regenerates the project, checks that `Core` has no UI imports, makes a **clean** Debug build
-that fails on any compiler warning, runs **every** test in the scheme (unit, golden-image,
-integration, and XCUITest UI tests) and fails on any failed or skipped test or a missing UI test
-run, then launches the built app empty, with a PNG, and with a JPEG, and fails if it exits or
-leaves a crash report. `--sanitizers` adds Address/Undefined Behavior Sanitizer and Thread
-Sanitizer runs, and `--release` adds a clean Release build with its own smoke test. A long gate is
-fine; the user prefers a slow, thorough suite that runs unattended over a fast one that misses
-things.
+that fails on any compiler warning, runs **every** headless test (unit, golden-image, and
+integration tests in `PaintDotMacTests`) and fails on any failed or skipped test or on a crash
+report written during the run. `--sanitizers` adds Address/Undefined Behavior Sanitizer and Thread
+Sanitizer runs, and `--release` adds a clean Release build (built and signature-checked, never
+launched). A long gate is fine; the user prefers a slow, thorough suite that runs unattended over a
+fast one that misses things.
+
+**Headless only.** The user works on other projects while the batch runs, and a crash must never
+leave windows behind. So nothing in this workflow may open a window, launch the app, or drive the
+mouse or keyboard: no XCUITest, no UI test target, no launch hooks, no launch smoke test, and no
+running the app "to check". Follow `AGENTS.md` *Headless testing*; the gate fails on violations.
+If a spec still asks for a UI test or a launch hook, implement the equivalent headless integration
+test instead (or a manual verification step if it truly can't be tested in-process) and note the
+substitution in the Verification status.
 
 On top of the gate, every spec gets an **independent review**: a second sub-agent with fresh eyes
 checks that each acceptance criterion has a test that would fail if the feature broke, runs
@@ -51,8 +58,8 @@ own homework is not enough.
 
 Every spec ends with a full gate run and a commit on `main`. Specs are numbered in dependency
 order: later ones build on the types, files, and targets that earlier ones create. Built in
-parallel, they would race on `project.yml`, the generated project, `build/`, the UI test runner
-(which drives the real mouse and keyboard), and the same branch, and you couldn't tell which change
+parallel, they would race on `project.yml`, the generated project, `build/`, the hosted test runs,
+and the same branch, and you couldn't tell which change
 broke what. Running them strictly in order means each sub-agent starts from a clean, green `main`
 that already contains the previous spec's work, so every failure can be traced to one spec and the
 history stays bisectable. **Never parallelize.** Finish, review, and check one spec before starting
@@ -61,13 +68,14 @@ the next.
 ## Implementations take a long time, so be patient
 
 One spec can keep a sub-agent busy for well over an hour: Swift and Metal code, many tests, clean
-`xcodebuild` builds, UI test runs, and fixing whatever turns up. The review takes a while too. That
+`xcodebuild` builds, test runs, and fixing whatever turns up. The review takes a while too. That
 is normal, not a hang. **Don't abandon, interrupt, or declare a sub-agent failed before at least 45
 minutes of real work.** A quiet sub-agent that is building or testing is working, not stuck.
 
 ## What can't be verified here
 
-UI tests and the launch smoke test cover a lot, but some things still need a person: how the
+Headless integration tests cover a lot, but some things still need a person: the app actually
+launching and showing windows, window tabs, sheets and alerts, Finder and Dock integration, how the
 canvas looks (Retina sharpness, marching ants, dark mode), trackpad pinch and two-finger pan feel,
 tablet pressure, `NSColorSampler`, and perceived smoothness. A spec is "done" for this skill when
 the gate is green, the review passed, and its remaining manual steps are written down for the
@@ -92,13 +100,8 @@ these are their decisions, not yours:
 - **Tooling:** `xcodebuild` (Xcode with the macOS SDK), `jq`, and, if the project uses or the
   foundation spec chooses XcodeGen, `xcodegen` must be on `PATH`. If something is missing, ask the
   user to install it (for example `brew install xcodegen`). Don't install tools on your own.
-- **UI tests:** XCUITest on macOS needs Developer Mode (`DevToolsSecurity -status` must say
-  enabled; the user enables it once with `sudo DevToolsSecurity -enable`) and, on the first run,
-  the user approving the test runner's Accessibility/automation prompt. If Developer Mode is off,
-  ask the user to enable it before starting. Also tell them that UI tests take over the mouse and
-  keyboard and the gate opens app windows, so they shouldn't use the Mac while the batch runs.
-  Only if the user says UI tests can't run on this Mac, run the gate with `--skip-ui` for the whole
-  batch and state that loudly in every report.
+- **No UI tests.** Developer Mode and the Accessibility permission are not needed: the gate is
+  headless and never opens a window, so the user can keep working while the batch runs.
 
 ### 2. Determine the queue
 
@@ -149,18 +152,16 @@ If anything is missing or red, fix it yourself before starting the next spec. Do
 5. Continue only when the spec has been moved, the tree is clean, and the gate is green.
 
 For build-environment problems (a hung `xcodebuild`, a stale generated project, a locked build
-database, a UI test runner stuck from a previous run): kill leftover `xcodebuild` and app
-processes, re-run `xcodegen generate` if the project uses it, delete `build/DerivedData*` if
-necessary, then run again. A UI test that fails because the Accessibility prompt is waiting for
-approval is a blocker for the user, not a code bug.
+database, a test host stuck from a previous run): kill leftover `xcodebuild` and test-host
+processes started from `build/DerivedData*`, re-run `xcodegen generate` if the project uses it,
+delete `build/DerivedData*` if necessary, then run again.
 
 **Stop and ask the user** only when the work can't continue without them:
 - a product decision that `PRD.md`, Paint.NET's documentation, and the spec don't settle
   (`AGENTS.md`: ask, don't guess);
 - a new dependency, a minimum macOS change, a native file format change, a signing or entitlement
   change, or another change `AGENTS.md` says to ask about;
-- missing tools, credentials, or permissions (including Developer Mode and the Accessibility
-  prompt for UI tests).
+- missing tools, credentials, or permissions.
 
 When you halt, leave the blocked spec in `todo/` and stop the batch, because later specs probably
 depend on it. Once the user answers, update the PRD and the spec, then resume the same spec (send
@@ -170,7 +171,7 @@ answer).
 ### 5. Report progress as you go
 
 After each spec closes, post a one-line status, for example
-`✅ 0007-paintbrush: gate green (214 tests, 9 UI), review fixed 2 gaps, committed a1b2c3d (local), 3 manual checks pending`.
+`✅ 0007-paintbrush: gate green (214 tests), review fixed 2 gaps, committed a1b2c3d (local), 3 manual checks pending`.
 
 ### 6. Close the batch: deep gate and a Release build
 
@@ -182,7 +183,8 @@ gate one last time with everything on:
 ```
 
 This adds the unit tests under Address + Undefined Behavior Sanitizer and under Thread Sanitizer,
-plus a clean Release build that is smoke-tested and copied to `build/PaintDotMac.app`. Fix every
+plus a clean Release build that is signature-checked (not launched) and copied to
+`build/PaintDotMac.app`. Fix every
 finding the same way as step 4 (sanitizer reports are real bugs, not noise) and commit the fixes.
 If the batch halted on a blocker, still run this on what shipped, and say so.
 
@@ -269,32 +271,35 @@ Do the work in this order:
 2. IMPLEMENT the spec's Scope & changes so every Acceptance criterion is met and every listed Edge
    case behaves as specified.
 
-3. WRITE THE UI TESTS (PaintDotMacUITests) the Test plan lists: launch the app with a fixture
-   through the project's test launch hook, perform the user story through menus, shortcuts,
-   panels, and canvas drags, and assert through accessibility identifiers/values (history rows,
-   layer rows, status bar) and, where pixels matter, by exporting and checking the file. Use
-   waitForExistence instead of sleeps. A UI test that passes when the feature is missing is
-   worthless: check that each one fails if you comment out the feature's entry point, then
-   restore it.
+3. WRITE THE HEADLESS INTEGRATION TESTS the Test plan lists (in PaintDotMacTests; never a UI test
+   target, never launching the app). Perform the user story in-process: build the document, window
+   controller, panels, and views offscreen; invoke menu actions on explicit targets; send
+   synthesized NSEvents to keyDown/mouseDown/mouseDragged; drive the SwiftUI panels through their
+   view models; inject presenters for alerts, sheets, and save panels; and assert on document
+   state, history, accessibility values, and, where pixels matter, the exported file. Never show a
+   window, sheet, or alert (AGENTS.md "Headless testing"), and end window-building tests with
+   HeadlessAssertions.noVisibleWindows(). An integration test that passes when the feature is
+   missing is worthless: check that each one fails if you comment out the feature's entry point,
+   then restore it.
 
 4. MAKE EVERYTHING PASS. Iterate with narrow runs (see AGENTS.md, e.g.
    -only-testing:PaintDotMacTests/<Suite>), then run the full quality gate from the repo root:
      .agents/skills/spec-implementer/scripts/quality-gate.sh
-   It does a clean build that fails on warnings, runs every test (unit, golden, integration, UI)
-   and fails on any failed or skipped test, and launch-smoke-tests the app with a PNG and a JPEG.
+   It does a clean build that fails on warnings, runs every headless test (unit, golden,
+   integration) and fails on any failed or skipped test or a crash report. It never launches the
+   app; don't launch it yourself either.
    Logs are in build/gate/. Fix every failure, whether this spec caused it or it was already
    there. NEVER make a test pass by weakening its assertion, deleting it, skipping or disabling it,
    widening a tolerance beyond ±1, or re-recording a golden without the oracle. Don't call it green
    unless the gate printed GREEN. If a run hangs or collides, kill leftover xcodebuild and app
-   processes, regenerate the project, delete build/DerivedData* if needed, and run again. If UI
-   tests can't run because of a system permission prompt or Developer Mode, that's a blocker.
-   (Only if this brief says the batch runs with --skip-ui, pass --skip-ui.)
+   processes, regenerate the project, delete build/DerivedData* if needed, and run again.
 
 5. PERFORMANCE: if the spec touches the canvas, compositing, or history, run the performance tests
    the spec prescribes and record the numbers against PRD §6 (NF-1 to NF-4).
 
 6. MANUAL STEPS: finalize the spec's Manual verification steps so they match what you actually
-   built, and keep them to what truly can't be automated. Never claim them as verified.
+   built, and keep them to what truly can't be checked headlessly (real windows, tabs, sheets,
+   Finder/Dock, appearance, hardware). Never claim them as verified.
 
 7. UPDATE DOCS in the same change. If you settled a behavior detail that the PRD should record (only
    within what the spec already decided), update PRD.md. If the project layout, commands, or
@@ -305,7 +310,7 @@ Do the work in this order:
 8. MOVE THE SPEC to done, keeping its history and following the naming convention:
      git mv docs/specs/todo/<name>_TODO.md docs/specs/done/<name>_COMPLETED.md
    Then append a "## Verification status" section to it: the date, the gate's summary lines (test
-   counts, UI tests, launch smoke), performance numbers if any, and each manual verification step
+   counts, crash-report check), performance numbers if any, and each manual verification step
    as "- [ ] not yet run by user". Leave a "Review:" line for the reviewer to fill in.
 
 9. COMMIT on main. Don't create a branch or open a PR. Use the conventional commit style from
@@ -316,7 +321,7 @@ Do the work in this order:
    say so.
 
 Report back: what you implemented, the files you created or changed, the tests you added (by
-kind: unit, property, golden, integration, UI, performance), the final gate summary lines (say
+kind: unit, property, golden, integration, performance), the final gate summary lines (say
 plainly whether it printed GREEN), any PRD/AGENTS.md edits, the commit hash and whether it was
 pushed, confirmation that the spec now lives in docs/specs/done/, anything you were unsure about,
 and the manual verification checklist the user still needs to run.
@@ -363,12 +368,14 @@ Read the spec, AGENTS.md, and PRD.md (the source of truth) first. Then:
    pixel changes that bypass history, UI imports in Core, hand-written effect dialogs, hardcoded
    values that belong in a schema or settings, missing undo. Fix them and add a test for each.
 
-4. CHECK THE UI TESTS drive the real user story, and that the launch hook and accessibility
-   identifiers they rely on are in place. Add a UI test if a user-visible behavior has none.
+4. CHECK THE INTEGRATION TESTS drive the real user story in-process (through the same actions,
+   responders, and view models the UI uses) and that every user-visible behavior has one. Add one
+   where it's missing. Confirm no test shows a window, sheet, or alert or launches the app, and that
+   no -UITest* launch hook or UI test target crept in.
 
 5. RUN THE FULL QUALITY GATE from the repo root and get it to GREEN:
      .agents/skills/spec-implementer/scripts/quality-gate.sh
-   (Only pass --skip-ui if this brief says the batch runs that way.) Never weaken, skip, or delete
+   Never weaken, skip, or delete
    a test, widen a tolerance, or re-record a golden without an independent oracle to get there.
 
 6. RECORD AND COMMIT. Fill in the "Review:" line in the spec's Verification status (mutations
@@ -393,14 +400,13 @@ to ask about.
   met, it still writes any missing tests, runs the full gate, moves the spec with its Verification
   status, and commits. The reviewer still runs. Filing it correctly is part of the job.
 - **The first spec creates the project.** Before the Xcode project exists, the gate can't run. The
-  foundation spec creates the project, the three targets, and the UI test launch hook, and its own
-  gate run is the first real one. If the first spec in the queue *isn't* the foundation and there's
+  foundation spec creates the project, the app and test targets, and the windowless test-host
+  mode, and its own gate run is the first real one. If the first spec in the queue *isn't* the foundation and there's
   no project, stop and tell the user: the backlog is missing its foundation spec (the spec-writer
   skill can add one).
-- **Gate names.** The gate expects scheme `PaintDotMac`, targets `PaintDotMacTests` and
-  `PaintDotMacUITests`, and `PaintDotMac/Core`. If the foundation spec chose other names, set the
-  `SCHEME`, `UNIT_TARGET`, `UI_TARGET`, and `CORE_DIR` environment variables, and record that in
-  `AGENTS.md`.
+- **Gate names.** The gate expects scheme `PaintDotMac`, target `PaintDotMacTests`, and
+  `PaintDotMac/Core`. If the foundation spec chose other names, set the `SCHEME`, `UNIT_TARGET`,
+  and `CORE_DIR` environment variables, and record that in `AGENTS.md`.
 - **Don't squash the batch into one commit.** Each spec gets its own implementer commit(s) and
   review commit, so each spec maps to one reviewable, bisectable change in the history.
 - **Recover on your own.** A failed, incomplete, or colliding build is not a reason to pause the

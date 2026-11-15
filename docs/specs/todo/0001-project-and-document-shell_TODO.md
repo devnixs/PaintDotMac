@@ -10,18 +10,17 @@ The repository has no application code, no Xcode project, and no `.gitignore` (o
 
 What this spec delivers:
 
-- **The project** (PRD §4, D-3). `project.yml` is the source of truth for XcodeGen. It defines scheme `PaintDotMac` with targets `PaintDotMac` (app), `PaintDotMacTests` (Swift Testing, hosted in the app), and `PaintDotMacUITests` (XCUITest). The bundle ID is `com.thera-engineering.paintdotmac`, the minimum OS is macOS 15, and the code uses Swift 6 strict concurrency. Signing is ad hoc with no team, no sandbox, and hardened runtime off. Debug builds the native architecture only and Release builds a universal binary.
+- **The project** (PRD §4, D-3). `project.yml` is the source of truth for XcodeGen. It defines scheme `PaintDotMac` with targets `PaintDotMac` (app) and `PaintDotMacTests` (Swift Testing, hosted in the app), with no UI test target (all tests are headless, PRD §4 Testing). The bundle ID is `com.thera-engineering.paintdotmac`, the minimum OS is macOS 15, and the code uses Swift 6 strict concurrency. Signing is ad hoc with no team, no sandbox, and hardened runtime off. Debug builds the native architecture only and Release builds a universal binary.
 - **The app shell** (PRD §4 UI row, D-4). The app uses the AppKit lifecycle: `main.swift` + `AppDelegate`, an AppKit main menu built in code, `NSDocumentController.shared`, the `PaintDocument` (`NSDocument`) subclass, and one `DocumentWindowController` per document. Don't use the SwiftUI `App`/`DocumentGroup` lifecycle.
 - **APP-1:** each image opens in its own window, and native macOS window tabs work (`tabbingMode = .automatic` with a shared `tabbingIdentifier`). Windows follow the user's "Prefer tabs when opening documents" setting. *Window > Merge All Windows*, *Show Tab Bar*, and the related items work. `.automatic` is chosen over `.preferred` because APP-1 says "each image is its own window, and native window tabs are supported".
 - **Read-only PNG/JPEG.** A temporary `PlaceholderImageView` displays the image. Spec 0002 replaces the decoded `CGImage` with `LayeredImage`, and 0003 replaces the placeholder with the Metal `CanvasView`. Saving starts in 0005, so in this spec the PNG/JPEG document types have the **Viewer** role and the Save items are disabled.
-- **D-36 test hooks** (PRD §4 Testing row). `#if DEBUG` code handles `-UITestOpen <path>` (opens a fixture) and `-UITestResetDefaults YES` (clears `tool.*` and panel defaults). AppKit itself honors `-ApplePersistenceIgnoreState YES`.
-- **UI test harness.** `UITestApp` generates fixture images at test time into a temp directory and launches the app with the hooks. It also has helpers for menus and canvas drags that later specs reuse.
-- **A green gate.** The default `quality-gate.sh` run (no `--sanitizers`) is the bar: clean build with zero warnings, all unit and UI tests ran with none failed or skipped, and the launch smoke test passes for empty, PNG, and JPEG launches.
+- **Windowless test-host mode** (PRD §4 Testing, AGENTS.md *Headless testing*). Every automated test is headless: there is no UI test target, no `-UITest*` launch hook, and no launch smoke test. The tests run hosted in the app; when the app is a test host, it never activates and never opens a window, so a test run can't disturb the user's work and a crash can't leave windows behind.
+- **Headless test harness.** `FixtureFiles` writes fixture images at test time into a temp directory, and `HeadlessAssertions` checks that no window became visible. Later specs reuse both. Integration tests open documents in-process with `display: false` and build window controllers offscreen.
+- **A green gate.** The default `quality-gate.sh` run (no `--sanitizers`) is the bar: clean build with zero warnings, all headless tests ran with none failed or skipped, the headless checks pass, and no crash report was written.
 
 Environment facts the implementer must know:
 
 - **Versions:** Xcode 26.3 (17C529), macOS 26.6.2, XcodeGen 2.46.0 at `/opt/homebrew/bin/xcodegen`, `jq` at `/usr/bin/jq`.
-- **Developer Mode is currently disabled** (`DevToolsSecurity -status`). UI tests can't run until the user enables it and approves the Accessibility prompt. That is a user blocker, not a code bug (see *Manual verification*).
 - **Sanitizers are UNAVAILABLE** on this Mac. Nothing in this spec may depend on `--sanitizers`.
 
 ## User story
@@ -65,38 +64,32 @@ As a Paint.NET switcher, I can open PNG and JPEG files in PaintDotMac in several
     - `sources: [PaintDotMacTests]`, `dependencies: [{ target: PaintDotMac }]`.
     - settings: `GENERATE_INFOPLIST_FILE: YES`, `PRODUCT_BUNDLE_IDENTIFIER: com.thera-engineering.paintdotmac.tests`, `TEST_HOST: $(BUILT_PRODUCTS_DIR)/PaintDotMac.app/Contents/MacOS/PaintDotMac`, `BUNDLE_LOADER: $(TEST_HOST)`.
     - Tests are hosted so they can `@testable import PaintDotMac` and use `NSApp`/`Bundle.main`.
-  - **Target `PaintDotMacUITests`** (`type: bundle.ui-testing`):
-    - `sources: [PaintDotMacUITests]`, `dependencies: [{ target: PaintDotMac }]`.
-    - settings: `GENERATE_INFOPLIST_FILE: YES`, `PRODUCT_BUNDLE_IDENTIFIER: com.thera-engineering.paintdotmac.uitests`, `TEST_TARGET_NAME: PaintDotMac`.
+  - **No UI test target.** Don't add a `bundle.ui-testing` target or a `PaintDotMacUITests/` folder; the gate fails if either exists.
   - **Scheme `PaintDotMac`**:
-    - `build.targets`: `PaintDotMac: all`, `PaintDotMacTests: [test]`, `PaintDotMacUITests: [test]`.
+    - `build.targets`: `PaintDotMac: all`, `PaintDotMacTests: [test]`.
     - `run.config: Debug`.
-    - `test.config: Debug` with `targets: [{ name: PaintDotMacTests, parallelizable: false }, { name: PaintDotMacUITests, parallelizable: false }]` and `commandLineArguments: { "-ApplePersistenceIgnoreState YES": true }`. The hosted unit tests then never restore windows from earlier UI-test sessions.
+    - `test.config: Debug` with `targets: [{ name: PaintDotMacTests, parallelizable: false }]`, `environmentVariables: { PAINTDOTMAC_HEADLESS_TESTS: "1" }`, and `commandLineArguments: { "-ApplePersistenceIgnoreState YES": true }`. The hosted test app then runs in test-host mode and never restores windows.
     - `archive.config: Release`, `profile.config: Release`, `analyze.config: Debug`.
   - The gate builds with `-destination 'platform=macOS,arch=$(uname -m)'`, so check that this destination resolves with the generated scheme.
 
 ### App (platform glue, `PaintDotMac/App/`)
 
-- **`App/main.swift`** creates `NSApplication.shared` and assigns an `AppDelegate`. It keeps a strong reference to the delegate in a file-level `let`, because `NSApplication.delegate` is weak. It then calls `NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)` and loads no nib.
+- **`App/main.swift`** creates `NSApplication.shared` and assigns an `AppDelegate`. It keeps a strong reference to the delegate in a file-level `let`, because `NSApplication.delegate` is weak. If `TestHost.isActive`, it calls `NSApp.setActivationPolicy(.prohibited)` (no Dock icon, never activates, no windows on screen). It then calls `NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)` and loads no nib. If `.prohibited` stops Xcode from hosting the tests, use `.accessory` instead and record that in the Verification status; the no-window rules below still apply.
+- **`Core/Settings/TestHost.swift`** contains `enum TestHost`. It is pure Foundation and lives in `Core` so `AppDefaults` can use it.
+  - `static func isActive(environment: [String: String]) -> Bool` returns true when `environment["PAINTDOTMAC_HEADLESS_TESTS"] == "1"` or `environment["XCTestConfigurationFilePath"] != nil`.
+  - `static let isActive: Bool = isActive(environment: ProcessInfo.processInfo.environment)`.
+  - **Contract for every later spec:** when `TestHost.isActive`, the app opens no window, panel, sheet, or alert on its own at launch (no untitled document, no panels from 0006, no Settings window, no crash-recovery prompt from 0047, no restored windows). Code that would show something at launch checks `TestHost.isActive` first.
+- **`Core/Settings/AppDefaults.swift`** contains `enum AppDefaults`, so tests can never change the user's real preferences (the hosted test app has the same bundle ID as the real app).
+  - `static let shared: UserDefaults` is `.standard` normally. In test-host mode it is `UserDefaults(suiteName: "com.thera-engineering.paintdotmac.headless-tests")`, whose persistent domain is removed when it is first created, so every test run starts clean.
+  - `static func frameAutosaveName(_ name: String) -> String` returns `name` normally and `"test." + name` in test-host mode. On first use in test-host mode, it removes every `.standard` key that starts with `NSWindow Frame test.`. AppKit always writes frame autosaves to `.standard`, so this keeps test runs away from the user's real window and panel frames.
+  - **Contract for every later spec:** app code reads and writes preferences only through `AppDefaults.shared` (or an injected `UserDefaults` whose default argument is `AppDefaults.shared`), never `UserDefaults.standard`, and passes every `setFrameAutosaveName` / `frameAutosaveName` through `AppDefaults.frameAutosaveName(_:)`. Unit tests still inject their own `UserDefaults(suiteName:)`.
 - **`App/AppDelegate.swift`** contains `@MainActor final class AppDelegate: NSObject, NSApplicationDelegate`.
-  - `applicationWillFinishLaunching(_:)` does two things:
-    1. In `#if DEBUG` only: it parses `LaunchOptions(arguments: ProcessInfo.processInfo.arguments)`. If `resetsDefaults` is set, it calls `LaunchOptions.resetDefaults(in: .standard, domainName: Bundle.main.bundleIdentifier ?? "com.thera-engineering.paintdotmac")` before anything reads defaults.
-    2. It then calls `MainMenu.install(in: NSApp)`.
-  - `applicationDidFinishLaunching(_:)`, in `#if DEBUG` only, opens `fixtureURLs` **sequentially in argument order**. It uses `NSDocumentController.shared.openDocument(withContentsOf:display: true)` and opens the next URL from the completion handler, so the window and tab order is deterministic. If an open fails, it calls `NSApp.presentError(error)` and continues with the next URL. The programmatic API does not present errors itself.
+  - `applicationWillFinishLaunching(_:)` calls `MainMenu.install(in: NSApp)`.
   - `applicationShouldOpenUntitledFile(_:) -> false`. This is permanent: the app never opens an untitled document at launch, also after the New Image dialog exists (0005), so an empty launch shows only the menu bar. New images come only from File > New (⌘N).
   - `applicationShouldTerminateAfterLastWindowClosed(_:) -> false` (the Mac document-app convention).
   - `applicationSupportsSecureRestorableState(_:) -> true`.
-  - The delegate does **not** implement `application(_:open:)` or `application(_:openFiles:)`. Without them, Apple Events from Finder, `open -a`, and the gate's smoke test go to `NSDocumentController.shared`. Drops on the Dock icon and the app (FMT-C) are spec 0030.
-- **`App/LaunchOptions.swift`** contains `struct LaunchOptions: Equatable, Sendable`. It is pure Foundation and always compiled, so the parser can be unit-tested. Only `AppDelegate` gates its *use* behind `#if DEBUG`, so Release builds ignore the flags.
-  - `init(arguments: [String])` follows these parsing rules:
-    - `-UITestOpen <path>` may appear several times. Each value appends `URL(fileURLWithPath: path)` to `fixtureURLs: [URL]` in order.
-    - A `-UITestOpen` that is the last argument is ignored. So is one whose next argument starts with `-`. That next argument is then parsed normally.
-    - `-UITestResetDefaults <value>` sets `resetsDefaults: Bool`. `YES`, `true`, and `1` (case-insensitive) give `true`, and anything else gives `false`. A bare `-UITestResetDefaults` at the very end also gives `true`.
-    - All other arguments are ignored, for example `-ApplePersistenceIgnoreState YES`, `-NSDocumentRevisionsDebugMode YES`, and `argv[0]`. The process path in `argv[0]` must not become a fixture.
-    - **Why key/value pairs:** AppKit reads `-Key value` pairs into the argument defaults domain. A bare flag followed by a path would turn the path into a stray argument, which AppKit may try to open as a file. That is why the harness always passes `-UITestResetDefaults YES`.
-  - `static let resettableKeyPrefixes = ["tool.", "panel.", "NSWindow Frame panel."]`. These cover tool options (AGENTS.md rule 6), panel state, and panel frame-autosave entries. The panel autosave names chosen by 0006 must start with `panel.`. Later specs that persist other UI state the UI tests depend on append their prefix here, with a test: 0004 appends `"settings."` and 0007 appends `"colors."`, giving the final list `["tool.", "panel.", "NSWindow Frame panel.", "colors.", "settings."]` (PRD §4 Testing, D-37).
-  - `static func shouldReset(key: String) -> Bool` returns true when the key has one of those prefixes. The match is case-sensitive.
-  - `static func resetDefaults(in defaults: UserDefaults, domainName: String)` removes every key in `defaults.persistentDomain(forName: domainName)` for which `shouldReset` is true.
+  - The delegate does **not** implement `application(_:open:)` or `application(_:openFiles:)`. Without them, Apple Events from Finder and `open -a` go to `NSDocumentController.shared`. Drops on the Dock icon and the app (FMT-C) are spec 0030.
+- **No launch hooks.** There is no `LaunchOptions` type and no `-UITest*` argument. Tests configure the app in-process. Persisted UI state still uses the key prefixes `tool.`, `panel.` (panel autosave names start with `panel.`), `colors.`, and `settings.`, and tests that touch persistence use a throwaway `UserDefaults(suiteName:)`.
 - **`App/MainMenu.swift`** contains `@MainActor enum MainMenu`.
   - `static func make() -> NSMenu` builds the whole menu bar in code. It has no side effects on `NSApp`.
   - `static func install(in app: NSApplication)` sets `app.mainMenu = make()`. It then sets `app.servicesMenu` (the Services submenu), `app.windowsMenu` (the Window menu), and `app.helpMenu` (the Help menu), finding each menu by its identifier.
@@ -169,7 +162,7 @@ As a Paint.NET switcher, I can open PNG and JPEG files in PaintDotMac in several
   - `init(image: CGImage)` builds the window in code with no nib. 0002/0003 will change the parameter to the document model. The window is configured as follows:
     - `NSWindow(contentRect:styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)`;
     - `tabbingMode = .automatic` and `tabbingIdentifier = "com.thera-engineering.paintdotmac.document"`;
-    - `identifier = NSUserInterfaceItemIdentifier("documentWindow")`. UI tests count document windows with it, which keeps them separate from the floating panels that 0006 adds;
+    - `identifier = NSUserInterfaceItemIdentifier("documentWindow")`. Tests and later code find document windows with it, which keeps them separate from the floating panels that 0006 adds;
     - `minSize = 320×240`;
     - the content view is a `PlaceholderImageView` that fills it (autoresizing width + height).
   - `shouldCascadeWindows = true`, and the window is centered on first show.
@@ -186,8 +179,7 @@ As a Paint.NET switcher, I can open PNG and JPEG files in PaintDotMac in several
     - The interpolation is `.none` when the image is drawn at its pixel size and `.high` when it is scaled down.
   - **Responder:** it does not accept first responder and implements no edit actions, so Cut/Copy/Paste/Select All stay disabled.
   - **Accessibility:** `isAccessibilityElement = true`, role `.image`, identifier `"canvas"`, label `"Canvas"`, and value `"<width> × <height>"`. The value is the pixel size with U+00D7 and single spaces, for example `"64 × 48"`.
-    - This is a contract. 0003's `CanvasView` must keep the `canvas` identifier and this value format, so `LaunchUITests` keeps passing.
-    - If XCUITest doesn't surface `AXValue` for the image role, use role `.group` instead and keep the identifier and value. Record that choice in the Verification status.
+    - This is a contract. 0003's `CanvasView` must keep the `canvas` identifier and this value format, so VoiceOver and the integration tests keep working.
   - `static func imageRect(imageSize: CGSize, in bounds: CGRect) -> CGRect` is pure and unit-tested. It scales to fit and never upscales.
     - If `bounds` has width ≤ 0 or height ≤ 0, or `imageSize` has a side ≤ 0, it returns `.zero`.
     - Otherwise `scale = min(1, bounds.width / image.width, bounds.height / image.height)` and `size = image × scale`.
@@ -196,85 +188,75 @@ As a Paint.NET switcher, I can open PNG and JPEG files in PaintDotMac in several
 ### Tests and harness
 
 - **`PaintDotMacTests/`**: the unit tests listed in the Test plan. Images for document-read tests are encoded in the test with a private helper in `PaintDocumentTests.swift` (CGContext + `CGImageDestination`). `PaintDotMacTests/Support/TestImages.swift` belongs to 0002, so don't create it here.
-- **`PaintDotMacUITests/Support/UITestApp.swift`**: the reusable harness, specified in full below.
-- **`PaintDotMacUITests/LaunchUITests.swift`**: the UI tests.
-
-`UITestApp` is `@MainActor final class UITestApp` and uses XCTest + ImageIO + UniformTypeIdentifiers:
-
-- `let app = XCUIApplication()`.
-- `let fixtureDirectory: URL` is `FileManager.default.temporaryDirectory/PaintDotMacUITests/<UUID>/`. `init() throws` creates it.
-- Fixture writers. Each one returns the URL in `fixtureDirectory`:
+- **`PaintDotMacTests/Support/FixtureFiles.swift`**: `final class FixtureFiles` writes fixture files for integration tests.
+  - `let directory: URL` is `FileManager.default.temporaryDirectory/PaintDotMacTests/<UUID>/`. `init() throws` creates it; `func removeAll()` deletes it (call it at the end of each test, also on failure, for example from `deinit`).
   - `func makePNG(named: String, width: Int, height: Int, rgba: (UInt8, UInt8, UInt8, UInt8)) throws -> URL` draws a solid color in sRGB and writes it with `CGImageDestination`.
   - `func makeJPEG(named:width:height:rgba:) throws -> URL` does the same, writing an opaque JPEG at quality 0.9.
   - `func makeFile(named: String, contents: Data) throws -> URL` writes raw bytes, for corrupt fixtures.
-- `func launch(opening fixtures: [URL] = [], resetDefaults: Bool = true, extraArguments: [String] = [])` builds `app.launchArguments` in this order:
-  1. `["-ApplePersistenceIgnoreState", "YES"]`
-  2. `["-UITestResetDefaults", resetDefaults ? "YES" : "NO"]`
-  3. `["-UITestOpen", path]` for each fixture
-  4. `extraArguments`
-
-  It then calls `app.launch()`.
-- Queries:
-  - `var documentWindows: XCUIElementQuery` is `app.windows.matching(identifier: "documentWindow")`.
-  - `var canvas: XCUIElement` is the first descendant (any type) with identifier `canvas` in the frontmost document window.
-- `func menuItem(_ menu: String, _ item: String) -> XCUIElement` returns `app.menuBars.menuBarItems[menu].menus.menuItems[item]`.
-- `func chooseMenuItem(_ menu: String, _ item: String)` clicks the menu bar item and then the item.
-- `func dragOnCanvas(from: CGVector, to: CGVector, holdDuration: TimeInterval = 0.05)` drags between normalized offsets of `canvas` with `press(forDuration:thenDragTo:)`. It is for later specs.
-- `func waitForDocumentWindowCount(_ n: Int, timeout: TimeInterval = 10) -> Bool` waits with an `NSPredicate` expectation.
-- `func tearDown()` terminates the app if it is running and deletes `fixtureDirectory`.
-- Every `waitForExistence` uses a 10 s timeout.
-- The harness never calls `XCTSkip` (the gate fails on skipped tests).
+- **`PaintDotMacTests/Support/HeadlessAssertions.swift`**: `@MainActor enum HeadlessAssertions`.
+  - `static func noVisibleWindows(sourceLocation: SourceLocation = #_sourceLocation)` records an issue for every window in `NSApp.windows` with `isVisible == true`, naming its class and identifier.
+  - `static func closeAllDocuments()` closes every document in `NSDocumentController.shared.documents` with `close()` (never through a path that can prompt) so tests don't leak documents into each other.
+  - Every integration test that creates a document or window calls both at its end.
+- **`PaintDotMacTests/Support/DocumentHarness.swift`**: `@MainActor final class DocumentHarness`, the in-process replacement for UI-test drivers. Later specs extend it (0003 adds canvas drags in image coordinates, 0005 adds `newImage` and `exportPNG`, 0006 adds tool keys) and write their user-story tests against it.
+  - `static func open(_ url: URL) async throws -> DocumentHarness` opens through `NSDocumentController.shared.openDocument(withContentsOf:display: false)`, then calls `makeWindowControllers()`. Never `showWindows()`.
+  - `let document: PaintDocument`, `var windowController: DocumentWindowController`, `var window: NSWindow` (built, never ordered on screen).
+  - `func target(for action: Selector) -> AnyObject?` mirrors AppKit's action lookup without a key window: the window's first responder and its `nextResponder` chain, then the window, its controller, the document, `NSDocumentController.shared`, `NSApp`, and `NSApp.delegate`; it returns the first object that `responds(to:)` the action.
+  - `func isEnabled(_ action: Selector) -> Bool` builds an `NSMenuItem` with that action and asks the target's `validateUserInterfaceItem(_:)` / `validateMenuItem(_:)` (true if the target implements neither; false if there is no target), which is what AppKit's menu auto-enabling does.
+  - `func perform(_ action: Selector, sender: Any? = nil)` sends the action to `target(for:)` with `NSApp.sendAction(_:to:from:)` using that explicit target, and records an issue if there is none.
+  - `func key(_ characters: String, modifiers: NSEvent.ModifierFlags = [])` synthesizes `keyDown`/`keyUp` with `NSEvent.keyEvent(…windowNumber: window.windowNumber…)` and delivers them to `window.firstResponder` (menu key equivalents are not dispatched this way; menu shortcuts are covered by the menu-table tests plus `perform`).
+  - `func mouse(_ type: NSEvent.EventType, at pointInWindow: CGPoint, modifiers:, clickCount:, pressure:) -> NSEvent` builds a mouse event for this window; later specs' drag helpers use it and call the view's `mouseDown(with:)`/`mouseDragged(with:)`/`mouseUp(with:)` (or the right-mouse variants) directly.
+  - `func close()` calls `document.close()`. It never goes through a path that can show a save sheet.
+- **`PaintDotMacTests/App/TestHostTests.swift`** and **`PaintDotMacTests/Document/DocumentOpenIntegrationTests.swift`**: the test-host and integration tests listed in the Test plan.
 
 ### AGENTS.md (the implementer updates it in this change)
 
-- Replace the placeholder text in *Build and test* with the real commands, and remove "The Xcode project or Swift package is created in milestone M0. Until then…". Add a note that UI tests need Developer Mode and the Accessibility prompt approved, and that they take over the mouse and keyboard.
+- Replace the placeholder text in *Build and test* with the real commands, and remove "The Xcode project or Swift package is created in milestone M0. Until then…". Add a note that the tests are headless (no UI tests; the hosted app runs windowless) and that the user runs the app by hand for the manual checks.
 
 ```bash
 xcodegen generate                                                     # after adding/removing files or targets
 xcodebuild -scheme PaintDotMac -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath build/DerivedData build
 xcodebuild -scheme PaintDotMac -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath build/DerivedData test -only-testing:PaintDotMacTests
-xcodebuild -scheme PaintDotMac -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath build/DerivedData test -only-testing:PaintDotMacUITests
 .agents/skills/spec-implementer/scripts/quality-gate.sh                # the final word, after every spec
 ```
 
-- No PRD change. Every decision used here is already in PRD §4/§12.
+- No PRD change. Every decision used here is already in PRD §4/§12 (headless-only testing: §4 Testing, D-3).
 
 ## Acceptance criteria
 
-- [ ] `xcodegen generate` produces `PaintDotMac.xcodeproj` with scheme `PaintDotMac` and the targets `PaintDotMac`, `PaintDotMacTests`, and `PaintDotMacUITests`. The scheme's test action runs both test targets. → the quality gate (steps 1, 4: the UI target ran).
+- [ ] `xcodegen generate` produces `PaintDotMac.xcodeproj` with scheme `PaintDotMac` and the targets `PaintDotMac` and `PaintDotMacTests`, and no UI test target. The scheme's test action runs `PaintDotMacTests` with `PAINTDOTMAC_HEADLESS_TESTS=1`. → the quality gate (steps 1, 2: headless checks, 4).
 - [ ] `.gitignore` ignores `build/`, `*.xcodeproj`, and `DerivedData/`. `git status` after a gate run shows no build products. → manual check (`git status --porcelain` lists only source files).
 - [ ] Bundle ID `com.thera-engineering.paintdotmac`, `LSMinimumSystemVersion` 15.0, principal class `NSApplication`, not sandboxed. → `SmokeTests.bundleIdentifier`, `SmokeTests.minimumSystemVersion`, `SmokeTests.principalClass`, `SmokeTests.notSandboxed`.
 - [ ] PNG and JPEG document types map to `PaintDocument` with the Viewer role. → `SmokeTests.documentTypesMapPNGAndJPEGToPaintDocument`.
 - [ ] Ad hoc signature, no hardened runtime. The Debug build is native-arch only and the Release build is universal. → manual (`codesign`/`lipo` commands below). The Release check runs with the end-of-batch `--release` gate.
-- [ ] The app launches with no window when no document is given, and keeps running when the last window closes. → `AppDelegateTests.noUntitledDocumentAndNoTerminateOnLastClose`, `LaunchUITests.testEmptyLaunchShowsMenuBarOnly`, gate smoke (empty launch).
-- [ ] Opening a valid PNG or JPEG shows one document window. Its title starts with the file's base name and its `canvas` element reports the image's pixel size. → `LaunchUITests.testOpensPNGFixture`, `LaunchUITests.testOpensJPEGFixture`, `PaintDocumentTests.readsPNG`, `PaintDocumentTests.readsJPEG`.
-- [ ] A corrupt, truncated, empty, or unsupported file never crashes the app. It shows the standard "couldn’t be opened" alert and the app keeps running. → `PaintDocumentTests.rejectsGarbage`, `.rejectsTruncatedPNG`, `.rejectsEmptyData`, `.rejectsUnsupportedType`, `LaunchUITests.testCorruptFixtureShowsAlertAndAppSurvives`.
-- [ ] Two open documents can be merged into native tabs of one window (APP-1). → `LaunchUITests.testTwoDocumentsMergeIntoTabs`, `DocumentWindowControllerTests.windowSupportsTabbing`.
-- [ ] File > Close (⌘W) closes the document window without a prompt (nothing is edited). → `LaunchUITests.testCloseWithCommandW`.
-- [ ] The menu bar has exactly the menus and items in the *Scope* table, with the listed shortcuts and actions. → `MainMenuTests.*`, `LaunchUITests.testMenuBarAndPlaceholderEnablement`.
-- [ ] New…, Save, Save As…, Undo, and Cut/Copy/Paste are disabled while a document is open. Open… is enabled. Nothing crashes when these items are clicked or pressed. → `PaintDocumentTests.saveActionsAreDisabled`, `LaunchUITests.testMenuBarAndPlaceholderEnablement`.
+- [ ] The app launches with no window when no document is given, and keeps running when the last window closes. → `AppDelegateTests.noUntitledDocumentAndNoTerminateOnLastClose`; the real launch → manual step 4.
+- [ ] Opening a valid PNG or JPEG gives one document with one document window. Its title starts with the file's base name and its `canvas` element reports the image's pixel size. → `DocumentOpenIntegrationTests.opensPNGThroughDocumentController`, `.opensJPEGThroughDocumentController`, `PaintDocumentTests.readsPNG`, `PaintDocumentTests.readsJPEG`; on screen → manual step 4.
+- [ ] A corrupt, truncated, empty, or unsupported file never crashes the app. It shows the standard "couldn’t be opened" alert and the app keeps running. → `PaintDocumentTests.rejectsGarbage`, `.rejectsTruncatedPNG`, `.rejectsEmptyData`, `.rejectsUnsupportedType`, `DocumentOpenIntegrationTests.corruptFileFailsWithoutDocument`; the alert → manual step 7.
+- [ ] Two open documents can be merged into native tabs of one window (APP-1). → `DocumentWindowControllerTests.windowSupportsTabbing`, `DocumentOpenIntegrationTests.twoDocumentsShareTabbingIdentifier`; merging → manual step 5.
+- [ ] File > Close (⌘W) closes the document window without a prompt (nothing is edited). → `MainMenuTests.fileMenuItems` (Close is ⌘W → `performClose:`), `DocumentOpenIntegrationTests.uneditedDocumentClosesWithoutPrompt`.
+- [ ] The menu bar has exactly the menus and items in the *Scope* table, with the listed shortcuts and actions. → `MainMenuTests.*`.
+- [ ] New…, Save, Save As…, Undo, and Cut/Copy/Paste are disabled while a document is open. Open… is enabled. Nothing crashes when these items are clicked or pressed. → `PaintDocumentTests.saveActionsAreDisabled`, `MainMenuTests.placeholdersHaveNoAction`; clicking them in the real app → manual step 4.
 - [ ] `autosavesInPlace` is false. → `PaintDocumentTests.doesNotAutosaveInPlace`.
-- [ ] The `-UITestOpen` and `-UITestResetDefaults` launch hooks parse as specified. Resetting removes only `tool.*`, `panel.*`, and `NSWindow Frame panel.*` keys. → `LaunchOptionsTests.*`. The hooks work in the real app. → every `LaunchUITests` test, because each one launches through them.
+- [ ] Test-host mode is detected from the environment, and while the tests run the app is not activatable and shows no window. → `TestHostTests.*`; every integration test ends with `HeadlessAssertions.noVisibleWindows()`.
+- [ ] No UI test target, no `-UITest*` launch hook, and no window-showing call in the tests. → the gate's headless checks.
 - [ ] The window content size and the placeholder image rect follow the formulas. → `DocumentWindowControllerTests.initialContentSize*`, `PlaceholderImageViewTests.*`.
 - [ ] AGENTS.md *Build and test* lists the real commands. → reviewer check.
-- [ ] The quality gate (default run, no `--sanitizers`) is green: clean build with zero warnings, all unit and UI tests passed, none skipped, UI target ran, and the launch smoke test passed (empty, PNG, JPEG). → `quality-gate.sh`.
-- [ ] The app launches, opens a PNG and a JPEG, and stays up with no crash report. → the gate's launch smoke step.
+- [ ] The quality gate (default run, no `--sanitizers`) is green: clean build with zero warnings, headless checks passed, all tests passed, none skipped, and no crash report during the run. → `quality-gate.sh`.
+- [ ] The real app launches, opens a PNG and a JPEG, and stays up. → manual step 4 (the gate never launches the app).
 
 ## Edge cases
 
 - **Empty file (0 bytes), random bytes, or a PNG truncated to half its bytes:** `read` throws `CocoaError(.fileReadCorruptFile)`, NSDocument shows its standard alert, and no window opens.
 - **Unsupported type name**, for example `com.compuserve.gif` passed directly to `read`: it throws `CocoaError(.fileReadUnknown)`. In the real app the Open panel doesn't offer such files, because only PNG/JPEG are declared.
 - **A JPEG whose name ends in `.png`:** it opens by content, without an error.
-- **`-UITestOpen` with a missing path:** the open fails, `NSApp.presentError` shows an alert, and the app keeps running. Any remaining fixtures still open.
-- **`-UITestOpen` at the end of the arguments, or followed by another flag:** it is ignored. It never crashes and never yields an empty URL.
+- **A missing file passed to `openDocument(withContentsOf:display:)`:** the completion handler gets an error and no document is added; nothing crashes.
 - **The same file opened twice:** NSDocumentController brings the existing window forward instead of opening a second one (standard behavior). Don't override it.
 - **Very small images (1×1):** the window opens at the 480×360 minimum, and the image draws at 1×1 pt, centered.
 - **Very large images:** the window is capped at 80% of the visible screen and the image is scaled down to fit. Memory and size limits (APP-10) are 0002's job. 0001 does not test giant images.
 - **Window resized smaller than the image:** the image is re-fitted. `imageRect` never returns NaN or negative sizes, and it returns `.zero` for empty bounds.
-- **Release builds:** `-UITestOpen` and `-UITestResetDefaults` have no effect because their use is compiled out. The parser still exists and is harmless.
+- **Test-host detection in a normal launch:** neither environment variable is set when the user launches the app from Finder or Xcode's Run action, so `TestHost.isActive` is false and the app behaves normally.
 - **Clicking a placeholder item** (New…, Settings…): it is disabled because its action is nil, so clicking it does nothing.
 - **Pressing ⌘S in 0001:** Save is disabled by `validateUserInterfaceItem`, so it does nothing. `data(ofType:)` throws if it is ever reached, and NSDocument presents that as an alert, not a crash.
-- **State restoration:** tests and the gate pass `-ApplePersistenceIgnoreState YES`, and the scheme's test action passes it to hosted unit tests too.
+- **State restoration:** the scheme's test action passes `-ApplePersistenceIgnoreState YES` to the hosted test app, so it never restores windows from the user's own sessions.
 
 ## Test plan
 
@@ -293,26 +275,15 @@ Expected values below are hand-computed from the formulas in *Scope*. Use Swift 
   - Both have `CFBundleTypeRole == "Viewer"` and `LSHandlerRank == "Alternate"`.
   - `NSClassFromString(entry["NSDocumentClass"]) === PaintDocument.self`, which proves the `$(PRODUCT_MODULE_NAME)` expansion worked.
 
-**`PaintDotMacTests/App/LaunchOptionsTests.swift`**
+**`PaintDotMacTests/App/TestHostTests.swift`** (`@MainActor`)
 
-- `emptyArguments`: `LaunchOptions(arguments: [])` gives `fixtureURLs == []` and `resetsDefaults == false`.
-- `processPathIsNotAFixture`: `["/path/PaintDotMac"]` gives `fixtureURLs == []`.
-- `singleOpen`: `["/app", "-UITestOpen", "/tmp/a.png"]` gives `fixtureURLs == [URL(fileURLWithPath: "/tmp/a.png")]`.
-- `multipleOpensKeepOrder`: `-UITestOpen /tmp/b.jpg -UITestOpen /tmp/a.png` gives `[b.jpg, a.png]`, in that order.
-- `openWithoutValueAtEndIsIgnored`: `["/app", "-UITestOpen"]` gives `[]`.
-- `openFollowedByFlagIsIgnoredAndFlagStillParsed`: `["/app", "-UITestOpen", "-UITestResetDefaults", "YES"]` gives `fixtureURLs == []` and `resetsDefaults == true`.
-- `resetValues`: parameterized. `YES`, `yes`, `true`, `1` → true. `NO`, `false`, `0`, `maybe` → false. A bare trailing `-UITestResetDefaults` → true.
-- `ignoresUnrelatedArguments`: `["/app", "-ApplePersistenceIgnoreState", "YES", "-NSDocumentRevisionsDebugMode", "YES", "-UITestOpen", "/tmp/x.png"]` gives `fixtureURLs == [/tmp/x.png]` and `resetsDefaults == false`.
-- `shouldResetKeys`: parameterized.
-  - true for `tool.paintbrush.width`, `tool.x`, `panel.tools.visible`, `NSWindow Frame panel.tools`;
-  - false for `toolbarStyle`, `Tool.paintbrush.width`, `panels`, `NSWindow Frame documentWindow`, `NSRecentDocuments`, `""`. (`settings.*` and `colors.*` keys are deliberately not listed: 0004 and 0007 make them resettable and add their own cases.)
-- `resetDefaultsRemovesOnlyResettableKeys`:
-  1. Create `UserDefaults(suiteName: "PaintDotMacTests.\(UUID())")`.
-  2. Set `tool.paintbrush.width = 5`, `panel.layers.visible = true`, `NSWindow Frame panel.tools = "0 0 100 100 …"`, `toolbarStyle = "x"`, and `other = 1`.
-  3. Call `resetDefaults(in:domainName:)` with the suite name.
-  4. Expect the first three keys to be nil. Expect `toolbarStyle == "x"` and `other == 1`.
-  5. Clean up with `removePersistentDomain(forName:)`.
-- `resetDefaultsOnEmptyDomainIsNoOp`: an unknown domain name causes no crash and no change.
+- `detectsHeadlessFlag`: `TestHost.isActive(environment: ["PAINTDOTMAC_HEADLESS_TESTS": "1"]) == true`.
+- `detectsXCTestConfiguration`: `isActive(environment: ["XCTestConfigurationFilePath": "/x"]) == true`.
+- `normalLaunchIsNotTestHost`: `isActive(environment: [:]) == false`, and `["PAINTDOTMAC_HEADLESS_TESTS": "0"]` gives false.
+- `defaultsAreIsolated`: in the hosted run, `AppDefaults.shared !== UserDefaults.standard`; writing `tool.test.marker = 1` to `AppDefaults.shared` leaves `UserDefaults.standard.object(forKey: "tool.test.marker") == nil` (remove the key afterwards).
+- `frameAutosaveNamesArePrefixed`: in the hosted run, `AppDefaults.frameAutosaveName("panel.tools") == "test.panel.tools"`.
+- `runningAsTestHost`: in the hosted run, `TestHost.isActive == true` and `NSApp.activationPolicy() == .prohibited` (or `.accessory` if the fallback was taken).
+- `noWindowsAtLaunch`: `NSDocumentController.shared.documents.isEmpty` and `HeadlessAssertions.noVisibleWindows()` passes before any test opens anything.
 
 **`PaintDotMacTests/App/MainMenuTests.swift`** (`@MainActor`)
 
@@ -380,40 +351,22 @@ There are no Core invariants yet. The one round trip in this spec is `pngPixelRo
 
 None. Nothing is rendered yet that needs one.
 
-### Integration tests
+### Integration tests (headless)
 
-`PaintDocumentTests.makeWindowControllersCreatesOneDocumentWindow` goes from read to window. The real-app open path is covered by the UI tests.
+`PaintDocumentTests.makeWindowControllersCreatesOneDocumentWindow` goes from read to window.
 
-### UI tests (`PaintDotMacUITests/LaunchUITests.swift`)
+**`PaintDotMacTests/Document/DocumentOpenIntegrationTests.swift`** (`@MainActor`, `.serialized`). Each test writes its fixtures with `FixtureFiles` and goes through `NSDocumentController.shared.openDocument(withContentsOf:display: false)` (directly, or through `DocumentHarness.open`), awaited with `withCheckedThrowingContinuation`. `display: false` means AppKit creates no window controller and shows nothing; the test calls `makeWindowControllers()` itself where it needs a window. Every test ends with `HeadlessAssertions.closeAllDocuments()` and `HeadlessAssertions.noVisibleWindows()`, and removes its fixtures.
 
-Write the tests as a `@MainActor final class LaunchUITests: XCTestCase` with `continueAfterFailure = false`. Each test builds a `UITestApp` in `setUp` and calls `harness.tearDown()` in `tearDown`.
-
-- `testEmptyLaunchShowsMenuBarOnly`: launch without fixtures. The menu bar item "File" exists, `documentWindows.count == 0` after 2 s, and `app.state == .runningForeground`.
-- `testOpensPNGFixture`: generate `launch-fixture.png` (64×48, opaque (200, 100, 50)) and launch with it.
-  - `waitForDocumentWindowCount(1)` succeeds.
-  - The document window's title has the prefix `launch-fixture`. Don't check the extension, because the Finder "show extensions" setting decides whether it is shown.
-  - `canvas` exists and `canvas.value as? String == "64 × 48"`.
-- `testOpensJPEGFixture`: the same with `launch-fixture.jpg` at 40×30, expecting `"40 × 30"`.
-- `testCorruptFixtureShowsAlertAndAppSurvives`: generate `corrupt.png` with the contents `"not an image"` and launch with it.
-  - An alert appears: `app.dialogs.firstMatch` or `app.sheets.firstMatch`, whichever is present, within 10 s.
-  - Its static texts include one containing `"corrupt"`, the file name in the message.
-  - Click its default button ("OK"). `documentWindows.count == 0` and `app.state == .runningForeground`.
-- `testCloseWithCommandW`: open the PNG fixture, wait for the window, and press `app.typeKey("w", modifierFlags: .command)`. `waitForDocumentWindowCount(0)` succeeds, no sheet appears (nothing is edited), and the app is still running.
-- `testTwoDocumentsMergeIntoTabs`: generate `first.png` (30×20) and `second.jpg` (50×40) and launch with both, in that order.
-  1. Wait until both are open. With "Prefer tabs: In Full Screen" that means `documentWindows.count == 2`. If the user prefers tabs "Always", it means one window with two tabs.
-  2. If "Merge All Windows" is enabled in the Window menu, choose it.
-  3. Assert there is exactly one visible document window and its tab group shows two tabs whose titles start with `first` and `second`.
-  4. **Fallback** if XCUITest can't see native tab buttons:
-     - after the merge, `documentWindows.count == 1`;
-     - Window > "Show Next Tab" is enabled;
-     - choosing it switches the frontmost document window's title between the `first…` and `second…` prefixes, and `canvas.value` switches between `"30 × 20"` and `"50 × 40"`.
-
-  Only the query may change. The assertion that there is one window with two documents switchable as tabs may not be weakened, and `XCTSkip` is not allowed.
-- `testMenuBarAndPlaceholderEnablement`: open the PNG fixture.
-  - The menu bar items include "PaintDotMac", "File", "Edit", "View", "Window", and "Help".
-  - After clicking "File": "Open…" `isEnabled == true`, while "New…", "Save", and "Save As…" are `isEnabled == false`. Press Escape to close the menu.
-  - In the Edit menu, "Undo", "Cut", "Copy", and "Paste" are disabled. Press Escape.
-  - Press ⌘S and ⌘N: there is no sheet or alert, the app is still running, and `documentWindows.count == 1`.
+- `opensPNGThroughDocumentController`: `launch-fixture.png` (64×48, opaque (200, 100, 50)).
+  - The completion gives a `PaintDocument` with `imagePixelSize == 64×48`, and `NSDocumentController.shared.documents.count == 1`.
+  - After `makeWindowControllers()`: one `DocumentWindowController`; its window has identifier `documentWindow`, `isVisible == false`, and a title with the prefix `launch-fixture` (don't check the extension; the Finder "show extensions" setting decides it).
+  - The content view's `accessibilityValue() as? String == "64 × 48"`.
+- `opensJPEGThroughDocumentController`: the same with `launch-fixture.jpg` at 40×30, expecting `"40 × 30"`.
+- `corruptFileFailsWithoutDocument`: `corrupt.png` with the contents `"not an image"`. The completion gives `nil` and an error whose underlying `CocoaError` code is `.fileReadCorruptFile`; `documents` is empty. (The programmatic API doesn't present the error, so nothing appears on screen.)
+- `missingFileFailsWithoutDocument`: a path in the fixture directory that doesn't exist gives an error and no document.
+- `twoDocumentsShareTabbingIdentifier`: open `first.png` (30×20) and `second.jpg` (50×40). Two documents; after `makeWindowControllers()` on each, both windows have `tabbingMode == .automatic` and the same `tabbingIdentifier`, so AppKit can merge them (the merge itself → manual step 5).
+- `harnessFindsDocumentActions`: through `DocumentHarness.open` on the PNG, `isEnabled(#selector(NSDocument.saveDocument(_:))) == false`, `isEnabled(#selector(NSDocument.saveDocumentAs(_:))) == false`, and `target(for: #selector(NSWindow.performClose(_:)))` is the window.
+- `uneditedDocumentClosesWithoutPrompt`: open the PNG, build its window controller, check `isDocumentEdited == false`, call `close()`; `documents` is empty and no window is visible.
 
 ### Performance
 
@@ -424,23 +377,20 @@ Not applicable. This spec has no canvas, compositing, or history, so NF-1 to NF-
 Run `.agents/skills/spec-implementer/scripts/quality-gate.sh` with **no** flags. It must end with `GREEN`:
 
 - the clean Debug build has zero warnings in our sources;
-- `tests: N passed, 0 failed, 0 skipped`, with the UI target present;
-- `debug launch smoke: OK (empty, PNG, JPEG …)`.
+- `Test sources: headless` (no UI test target, no window-showing calls);
+- `tests: N passed, 0 failed, 0 skipped` and `tests: no crash reports during the run`.
 
-Sanitizers are not part of the bar: they are UNAVAILABLE on this Mac. `--skip-ui` is not acceptable for this spec, because it is the spec that proves UI tests run. If UI tests can't run because Developer Mode is off or the Accessibility prompt is pending, stop and report that as a user blocker.
+Sanitizers are not part of the bar: they are UNAVAILABLE on this Mac. The gate never launches the app; don't launch it yourself either (the user runs the manual checks).
 
 ### Manual verification
 
-1. **Enable Developer Mode (one-time, before the first gate run).** Run `sudo DevToolsSecurity -enable`, then `DevToolsSecurity -status`, which must print "Developer mode is currently enabled."
-2. **Approve UI-test automation (first UI-test run).** Run the gate.
-   - When macOS asks, allow the test runner (`PaintDotMacUITests-Runner` and/or Xcode's helper, as shown) in System Settings > Privacy & Security > Accessibility, then re-run the gate.
-   - Don't touch the mouse or keyboard while the UI tests run.
-   - If the prompt reappears after a rebuild (ad hoc signatures change between builds), approve it again and note that in the Verification status.
+1. **The gate stays off screen.** While the gate runs, no PaintDotMac window, Dock icon, or alert appears, and no PaintDotMac process is left running afterwards (`pgrep -fl PaintDotMac.app` prints nothing).
+2. **Empty launch.** Launch `build/DerivedData/Build/Products/Debug/PaintDotMac.app`: only the menu bar appears, with no window. Close nothing; the app keeps running.
 3. **Signing and architectures.**
    - `codesign -dv --verbose=2 build/DerivedData/Build/Products/Debug/PaintDotMac.app` shows `Signature=adhoc`, no `TeamIdentifier`, and no `runtime` flag.
    - `lipo -archs build/DerivedData/Build/Products/Debug/PaintDotMac.app/Contents/MacOS/PaintDotMac` prints only `arm64` on Apple Silicon.
    - After the end-of-batch `--release` gate, `lipo -archs build/PaintDotMac.app/Contents/MacOS/PaintDotMac` prints `x86_64 arm64`.
-4. **Finder integration.** In Finder, right-click a PNG and a JPEG > Open With > PaintDotMac. Each one opens in a window.
+4. **Finder integration.** In Finder, right-click a PNG and a JPEG > Open With > PaintDotMac. Each one opens in a window, titled with the file name, showing the image. ⌘W closes it without a prompt. In the File menu, New…, Save, and Save As… are disabled; in the Edit menu, Undo, Cut, Copy, and Paste are disabled; pressing ⌘S and ⌘N does nothing.
    - File > Open… only lets you pick PNG and JPEG files.
    - File > Open Recent lists the opened files, and "Clear Menu" empties the list.
 5. **Tabs (APP-1).**

@@ -14,7 +14,7 @@ Not yet implemented: there is no application code. This spec builds on these typ
 - **0007**: `ToolContext.colors: ColorSelection` (`.primary` default black, `.secondary` default white).
 - **0008**: `TileDiff.between(before:after:layerID:candidates:)`, `TileDiffHistoryItem(name:icon:diff:)` (no step when the diff is empty), `HistoryIcon.lineCurve` (already a case; 0010 already maps it to `line.diagonal`), `ToolContext.commitHistory(_:)`, `ToolContext.updateImage(_:)`, `UndoBridge`.
 - **0009**: `BlendOps.mul255`, `BlendOps.blend(_:dst:src:opacity:)` (Normal = exact straight source-over; `Sa == 0` → `dst` unchanged), `BrushOptions.widthRange` (1…2000) and default width 2, `protocol BrushClipMask`, `ToolContext.paintClipMask`, `BrushWidthAdjustable` (`[`/`]` step ±1 through `CanvasInputRouter`), the `toolOptions.width` / `.width.decrease` / `.width.increase` / `.antialiasing` / `.blendMode` control patterns.
-- **0013**: `Selection`/`SelectionMask` (a `BrushClipMask`), `paintClipMask` = `selection?.mask`, debug hook `-UITestSelectRect x,y,w,h`.
+- **0013**: `Selection`/`SelectionMask` (a `BrushClipMask`), `paintClipMask` = `selection?.mask`, test seam `setInitialSelection(_:)`.
 - **0020**: `Tool.prepareForHistoryNavigation(context:)` (default: commit a pending edit), `PendingEditReason` (`.command`, `.historyNavigation`, `.save`). This tool keeps both defaults.
 - **0023** (closest precedent, mirror it): `GradientTool`'s state machine (idle → drawing → editing ⇄ dragging handle), capture-at-gesture-start of `layerID`/`before`/`clip`/colors, re-render from `before` on every change, `touchedTiles` union, commit via `TileDiff.between(... candidates: touchedTiles)`, cancel writes `before` back, overlay case + drawing in `ToolOverlayView`, and `GradientGeometry.snapped(_:anchor:)` (15° snap preserving length) and `GradientGeometry.handleHitRadius` (6 view points). Reuse `GradientGeometry.snapped` — do not duplicate it.
 
@@ -207,7 +207,7 @@ As a PaintDotMac user, I press **O**, set the brush width, a dash style, start/e
     - **`deactivate`**: default (commit) then `setOverlay(nil)`.
   - **`Core/Tools/ToolRegistry.swift`** (modify): register `.lineCurve → LineCurveTool()` in `standard()`. The O group now has one implemented tool (O selects Line / Curve; 0039 adds Shapes to the cycle).
 
-### Platform glue (AppKit/SwiftUI; UI tests and manual checks)
+### Platform glue (AppKit/SwiftUI; headless integration tests and manual checks)
 
 - **`PaintDotMac/Canvas/ShapeHandlesOverlay.swift`** (new): `enum ShapeHandlesOverlay { static func draw(_ model: ShapeHandlesOverlayModel, transform: CanvasTransform, in ctx: CGContext) }`, called by `ToolOverlayView` for `.shapeHandles`. Points mapped with `transform.canvasToViewAffine`. Guides: 1 pt line, black dashed [3,3] over white solid. Handles: `.endpoint` → 10 pt circle, `.control` → 8 pt circle; white fill, 1 pt black stroke; `activeHandle` filled light blue (`NSColor.controlAccentColor` at 50%). Handles stay constant size in view points at every zoom/backing scale. No logic beyond drawing (the model and transform math are in Core).
 - **`Canvas/ToolOverlayView.swift`** (extend): route `.shapeHandles` to `ShapeHandlesOverlay.draw`.
@@ -224,16 +224,15 @@ As a PaintDotMac user, I press **O**, set the brush width, a dash style, start/e
 
 ## Acceptance criteria
 
-- [ ] Pressing O selects Line / Curve; the options bar shows Brush width 2, Dash style "Solid", Start cap "Flat", End cap "Flat", Antialiasing on, Blend mode "Normal", and a disabled Finish button. → `LineCurveUITests.pressingOSelectsLineCurveAndShowsOptions`, `LineCurveToolTests.defaultsAndRegistration`
+- [ ] Pressing O selects Line / Curve; the options bar shows Brush width 2, Dash style "Solid", Start cap "Flat", End cap "Flat", Antialiasing on, Blend mode "Normal", and a disabled Finish button. → `LineCurveWindowIntegrationTests.pressingOSelectsLineCurveAndShowsOptions`, `LineCurveToolTests.defaultsAndRegistration`
 - [ ] Dragging draws a straight line in the primary color (secondary with right-drag / Control-drag) with four nubs; nothing is committed until finished. → `LineCurveToolTests.drawShowsFourHandlesAndIsPending`, `.secondaryDragUsesSecondaryColor`
 - [ ] Coverage of straight lines is exact for widths 1, 2, 3 (antialiased and aliased) and dashes/caps/arrowheads produce the hand-computed pixels. → `ShapeRasterizerTests.*`, `ShapeStrokeStyleTests.*`
 - [ ] Dragging an endpoint, a control nub, or the line body reshapes the curve live, always re-rendered from the original pixels; Shift snaps to 15°; arrow keys move the shape 1 px (⌘: 10 px). → `LineCurveGeometryTests.*`, `LineCurveToolTests.handleDragRerendersFromBefore`, `.bodyDragBends`, `.shiftSnaps`, `.arrowKeysMove`
-- [ ] Return, Finish, tool switch, and clicking away commit exactly one "Line/Curve" step (icon `lineCurve`); Escape restores the layer with no step; a click without drag adds nothing. → `LineCurveToolTests.returnCommits`, `.deactivateCommits`, `.clickAwayCommitsAndStartsNew`, `.escapeCancels`, `.clickWithoutDragAddsNoStep`; `LineCurveUITests.drawLineSavePNG`, `.escapeDiscards`
+- [ ] Return, Finish, tool switch, and clicking away commit exactly one "Line/Curve" step (icon `lineCurve`); Escape restores the layer with no step; a click without drag adds nothing. → `LineCurveToolTests.returnCommits`, `.deactivateCommits`, `.clickAwayCommitsAndStartsNew`, `.escapeCancels`, `.clickWithoutDragAddsNoStep`; `LineCurveWindowIntegrationTests.drawLineSavePNG`, `.escapeDiscards`
 - [ ] Changing an option (width, dash, caps, antialiasing, blend mode) or pressing `[`/`]` while pending re-renders live. → `LineCurveToolTests.optionChangeRerendersPending`, `.bracketKeysResizePending`
-- [ ] The line is confined to the selection (antialiased mask edge with antialiasing on, threshold 128 off). → `ShapeRasterizerTests.clipPartialCoverage`, `LineCurveIntegrationTests.selectionClipsLine`, `LineCurveUITests.lineClippedToSelection`
+- [ ] The line is confined to the selection (antialiased mask edge with antialiasing on, threshold 128 off). → `ShapeRasterizerTests.clipPartialCoverage`, `LineCurveIntegrationTests.selectionClipsLine`, `LineCurveWindowIntegrationTests.lineClippedToSelection`
 - [ ] Undo while editing first commits the line, then undoes it; undo/redo restore exact before/after tiles. → `LineCurveIntegrationTests.undoWhileEditingCommitsFirst`, `.undoRedoRoundTrip`
-- [ ] Options persist under `tool.lineCurve.*`. → `LineCurveToolTests.optionsRoundTripThroughStore`, `LineCurveUITests.optionsPersistAcrossRelaunch`
-- [ ] The app launches, opens a PNG and a JPEG, and stays up with no crash report (quality gate launch smoke).
+- [ ] Options persist under `tool.lineCurve.*`. → `LineCurveToolTests.optionsRoundTripThroughStore`, `LineCurveWindowIntegrationTests.optionsPersistAcrossRelaunch`
 
 ## Edge cases
 
@@ -320,14 +319,14 @@ Expected values are hand-computed. `P = (0,0,0,255)`, `W = (255,255,255,255)`. C
   - `undoWhileEditingCommitsFirst`: pending line, `undoBridge.undo()` through the 0020 hook → pixels W, redo available named "Line/Curve".
   - `noOpAddsNoStep`: primary alpha 0 → no step; selection outside the line → no step.
   - `selectionClipsLine`: `Selection(rect: (100,100,200,200))`, line (0,200)→(800,200) width 10 → pixels outside the rect W, (200,200) P.
-- **UI — `PaintDotMacUITests/LineCurveUITests.swift`** (fixture 4000×1000 opaque white via `UITestApp.makePNG`, reset defaults):
+- **Window-level integration tests (headless) — `PaintDotMacTests/Integration/LineCurveWindowIntegrationTests.swift`** (fixture 4000×1000 opaque white via `FixtureFiles.makePNG`). Headless, in-process (AGENTS.md *Headless testing*): `@MainActor`, `.serialized`; documents open through `DocumentHarness` and are never shown; each step below maps to the real code path the UI uses: a menu shortcut or menu item (⌘R, ⇧⌘L, Image ▸ …) means `harness.perform` of that item's action (with its `representedObject` as sender), and enablement means `harness.isEnabled`; ⌘Z / ⇧⌘Z mean `perform(undo)` / `perform(redo)`; ⌘S means `save(to: fileURL, ofType: fileType, for: .saveOperation)` followed by decoding the file; tool keys go through `harness.shortcut`, canvas clicks and drags through `harness.clickCanvas` / `dragCanvas`; a dialog or sheet is captured by the recording `SheetPresenting` (0025) and driven through its model and its OK/Cancel actions, and "type X" into a field means setting that field's binding and committing it; Escape on a dialog means its Cancel action; a menu item's shown title or enabled state means its state after validation (`harness.isEnabled` and the item's validated title); an alert is recorded by `RecordingAlertPresenter` (0005) instead of being shown; history rows, layer rows, and status-bar values are read from the History and Layers panel models and the window's `StatusBarModel`. Each test ends with `HeadlessAssertions.closeAllDocuments()` and `noVisibleWindows()`.
   - `pressingOSelectsLineCurveAndShowsOptions`: type `o` → `tool.lineCurve` selected; `toolOptions.width` "2", `toolOptions.dashStyle` "Solid", `toolOptions.startCap` "Flat", `toolOptions.endCap` "Flat", `toolOptions.antialiasing` on, `toolOptions.blendMode` "Normal"; `toolOptions.finish` exists, disabled.
   - `drawLineSavePNG`: `o`; set `toolOptions.width` to 40; `dragOnCanvas(from: (0.25, 0.5), to: (0.75, 0.5))`; `toolOptions.finish` enabled; Return → History row "Line/Curve", Edit menu "Undo Line/Curve"; ⌘S; read the PNG: column x = 2000 has ≥ 36 pixels exactly `(0,0,0,255)` within rows 440…560; (2000,300), (2000,700), (500,500), (3500,500) are white. ⌘Z, ⌘S, reread → (2000,500) white.
   - `escapeDiscards`: draw, Escape → no "Line/Curve" row; ⌘S → column 2000 all white.
-  - `lineClippedToSelection`: launch with `-UITestSelectRect 1500,0,1000,1000`; draw as above; Return; ⌘S → (1200,500) white, (2000,500) black.
-  - `optionsPersistAcrossRelaunch`: choose Dash style "Dash" and End cap "Arrow (Filled)", quit, relaunch without reset → both popups show those values.
+  - `lineClippedToSelection`: `setInitialSelection((1500,0,1000,1000))` (0013); draw as above; Return; ⌘S → (1200,500) white, (2000,500) black.
+  - `optionsPersistAcrossRelaunch`: choose Dash style "Dash" and End cap "Arrow (Filled)", a new `AppModel` on the same suite (what a relaunch reads) → both popups show those values.
 - **Performance** — `PaintDotMacTests/Performance/LineCurvePerformanceTests.swift` (XCTest `measure`, report only): re-render of a width-50 dashed Bézier spanning a 4000×3000 layer (handle-drag responsiveness, NF-1); record in Verification status. NF-4: diffs hold only touched tiles.
-- **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` green (clean build, no warnings, all tests pass, none skipped, UI tests ran, launch smoke).
+- **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` green (clean build, no warnings, headless checks, all tests pass, none skipped, no crash report during the run).
 - **Manual verification:**
   1. At 100% and 800% on 1× and 2× displays: nubs keep their on-screen size; guides from endpoints to control nubs are visible on white, black, and photos.
   2. Drag each nub and the line body: the curve follows smoothly without lag on a 4000×3000 image; the cursor is an open hand over nubs/body and a closed hand while dragging.

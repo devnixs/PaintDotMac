@@ -15,7 +15,7 @@ Not yet implemented: there is no application code. This spec builds on these typ
 - **0008**: `TileDiff.between(before:after:layerID:candidates:)` (`isEmpty`, `apply`, `revert`), `TileDiffHistoryItem(name:icon:diff:)` (no-op when `diff.isEmpty`), `HistoryIcon.gradient` (already a case), `ToolContext.commitHistory(_:)` (records an already-applied item), `ToolContext.updateImage(_:)` (live pixel writes; the app redraws changed tiles), `UndoBridge` (`prepareForNavigation` commits the active tool's pending edit before undo/redo/jump and before Edit/Image commands). **0020** routes undo/redo/jump and save (`undoBridge.prepareForSave()`) through `Tool.prepareForHistoryNavigation(context:)`, whose default commits a pending edit, and commands through `commit(context:)`; the Gradient keeps both defaults, so a pending gradient is committed before every one of them.
 - **0009**: `BlendOps.mul255`, `BlendOps.blend(_:dst:src:opacity:)` (`Core/Rendering/BlendOps.swift`; Normal = exact straight-alpha source-over, `Sa == 0` → `dst` unchanged), `protocol BrushClipMask: Sendable { var bounds: PixelRect; func coverage(x:y:) -> UInt8 }`, `ToolContext.paintClipMask`, `BlendMode: ToolOptionValue`, the blend-mode popup pattern (`toolOptions.blendMode`, implemented `BlendMode` cases in L-3 order), the `toolOptions.antialiasing` toggle pattern, the brush-outline overlay pattern (`ToolOverlay` case + drawing in `ToolOverlayView`).
 - **0010**: History panel; icon for `.gradient` (0010 maps every `HistoryIcon` case).
-- **0013**: `Selection` / `SelectionMask` (conforms to `BrushClipMask`), `ToolContext.paintClipMask` returns `selection?.mask` (nil = no selection = everything paintable), `DocumentState.selection`, debug launch hook `-UITestSelectRect x,y,w,h`.
+- **0013**: `Selection` / `SelectionMask` (conforms to `BrushClipMask`), `ToolContext.paintClipMask` returns `selection?.mask` (nil = no selection = everything paintable), `DocumentState.selection`, test seam `DocumentWindowController.setInitialSelection(_:)`.
 
 Paint.NET behavior being mirrored (GradientTool.html, quoted):
 - Types: "There are seven types of gradient" — Linear, Linear (Reflected), Diamond, Radial, Conical, Spiral (Clockwise), Spiral (Anticlockwise). PRD T-10 covers the first five; the spirals are out of scope.
@@ -122,7 +122,7 @@ As a PaintDotMac user, I press **G**, choose a gradient type (Linear, Linear (Re
   - **`Core/Tools/ToolContext.swift`** (extend 0006's `ToolOverlay`): `case gradientHandles(start: CGPoint, end: CGPoint)` (canvas space).
   - **`Core/Tools/ToolRegistry.swift`** (modify 0006): register `.gradient → GradientTool()` in `standard()`; change the `gradient` descriptor row to `supportsPendingEdits: true` (the Finish button commits a pending gradient, as in Paint.NET). Update 0006's `ToolRegistryTests.descriptorsMatchTable` and `ToolOptionsBarModelTests.finishVisibility` expectations accordingly (true for moveSelectedPixels, gradient, text, lineCurve, shapes; false for the other 14).
 
-### Platform glue (AppKit/SwiftUI; UI tests and manual checks)
+### Platform glue (AppKit/SwiftUI; headless integration tests and manual checks)
 
 - **`Canvas/ToolOverlayView.swift`** (extend): draw `.gradientHandles(start, end)`: map both points with `transform.canvasToView`; a 1 pt black line over a 1 pt white line (offset so it shows on any background) between them, and at each end a 10 pt diameter circle (white fill, 1 pt black stroke). Redraw on every transform change (0006 already does).
 - **`UI/ToolOptionsBar.swift`** (extend `ToolOptionsContent`): case `.gradient`, left to right with Paint.NET's labels:
@@ -138,18 +138,17 @@ As a PaintDotMac user, I press **G**, choose a gradient type (Linear, Linear (Re
 
 ## Acceptance criteria
 
-- [ ] Pressing G selects the Gradient; the options bar shows Gradient type (Linear default), Mode (Color Mode default), Antialiasing (on), Blend mode (Normal), and a Finish button. → `GradientUITests.pressingGSelectsGradientAndShowsOptions`, `GradientToolTests.defaultsMatchPaintNET`
+- [ ] Pressing G selects the Gradient; the options bar shows Gradient type (Linear default), Mode (Color Mode default), Antialiasing (on), Blend mode (Normal), and a Finish button. → `GradientWindowIntegrationTests.pressingGSelectsGradientAndShowsOptions`, `GradientToolTests.defaultsMatchPaintNET`
 - [ ] Each of the five types produces exactly the hand-computed pixel values below. → `GradientRendererTests.linear*`, `.reflected*`, `.diamond*`, `.radial*`, `.conical*`
 - [ ] Color mode interpolates primary → secondary in straight sRGB including alpha and composites with the selected blend mode. → `GradientRendererTests.colorLerpIncludesAlpha`, `.colorModeOverOpaqueUsesNormalBlend`
 - [ ] Transparency mode changes only alpha: primary alpha → 255 − secondary alpha, multiplied into the existing alpha; RGB untouched. → `GradientRendererTests.transparencyRamp`, `.transparencyMultipliesExistingAlpha`, `.transparencyKeepsRGBUnderZeroAlpha`
 - [ ] Right-drag (or Control-drag) reverses the gradient in both modes; right-clicking a handle toggles the reversal. → `GradientToolTests.secondaryDragReverses`, `.rightClickHandleSwapsColors`, `GradientRendererTests.endpointColors`
 - [ ] Shift snaps the handle angle to 15° steps while keeping the length. → `GradientGeometryTests.snapped*`, `GradientToolTests.shiftSnapsDuringDrawAndHandleDrag`
-- [ ] Handles stay editable until commit; dragging a handle re-renders from the original pixels; Return, Finish, tool switch, and clicking outside the handles commit one "Gradient" step; Escape restores the layer with no step. → `GradientToolTests.handleDragRerendersFromBefore`, `.returnCommits`, `.deactivateCommits`, `.clickOutsideCommitsAndStartsNew`, `.escapeCancels`; `GradientUITests.drawCommitUndoRedo`, `.escapeDiscards`
+- [ ] Handles stay editable until commit; dragging a handle re-renders from the original pixels; Return, Finish, tool switch, and clicking outside the handles commit one "Gradient" step; Escape restores the layer with no step. → `GradientToolTests.handleDragRerendersFromBefore`, `.returnCommits`, `.deactivateCommits`, `.clickOutsideCommitsAndStartsNew`, `.escapeCancels`; `GradientWindowIntegrationTests.drawCommitUndoRedo`, `.escapeDiscards`
 - [ ] Changing an option while pending re-renders live. → `GradientToolTests.optionChangeRerendersPending`
-- [ ] Painting is confined to the selection; antialiasing on uses the antialiased mask edge, off thresholds it at 128. → `GradientRendererTests.clipPartialCoverage`, `.antialiasingOffThresholdsClip`, `.outsideClipBoundsUntouched`; `GradientUITests.gradientClippedToSelection`
+- [ ] Painting is confined to the selection; antialiasing on uses the antialiased mask edge, off thresholds it at 128. → `GradientRendererTests.clipPartialCoverage`, `.antialiasingOffThresholdsClip`, `.outsideClipBoundsUntouched`; `GradientWindowIntegrationTests.gradientClippedToSelection`
 - [ ] Undo restores the exact before tiles, redo the exact after tiles; no-op gradients add no step. → `GradientIntegrationTests.undoRedoRoundTrip`, `.noOpAddsNoStep`, `GradientToolTests.clickWithoutDragAddsNoStep`
 - [ ] Options persist under `tool.gradient.*`. → `GradientToolTests.optionsRoundTripThroughStore`
-- [ ] The app launches, opens a PNG and a JPEG, and stays up with no crash report (quality gate launch smoke).
 
 ## Edge cases
 
@@ -221,13 +220,13 @@ Expected values below are hand-computed (verified by hand arithmetic, not by run
   - `undoWhilePendingCommitsFirst`: pending gradient, `undoBridge.undo()` (with the 0008 `prepareForNavigation` hook wired to the tool's commit) → the "Gradient" step was committed then undone: pixels white, redo available named "Gradient".
   - `noOpAddsNoStep`: transparency mode on a transparent layer (new transparent image) → history unchanged; color mode with both colors alpha 0 → unchanged.
   - `selectionClipsGradient`: `DocumentState.selection = Selection(rect: (100,100,200,200))`, draw linear across the canvas → pixels outside the rect unchanged white; inside non-white for t < 1.
-- **UI tests — `PaintDotMacUITests/GradientUITests.swift`** (fixture generated at test time with `UITestApp.makePNG`, reset defaults):
-  - `pressingGSelectsGradientAndShowsOptions`: type `g` → `tool.gradient` selected; `toolOptions.gradientType` value "Linear", `toolOptions.gradientMode` "Color Mode", `toolOptions.antialiasing` on, `toolOptions.blendMode` "Normal"; `toolOptions.finish` exists and is disabled. Choose "Transparency Mode" → `toolOptions.blendMode` disabled.
-  - `drawCommitUndoRedo`: open a 4000×1000 opaque white PNG (opens fitted, spanning the view width); `g`; `dragOnCanvas(from: (0.25, 0.5), to: (0.75, 0.5))`; `toolOptions.finish` enabled; press Return → History row "Gradient", Edit menu "Undo Gradient"; ⌘S; read the PNG: pixel (100,500) == `(0,0,0,255)`, (3900,500) == `(255,255,255,255)`, (2000,500) red channel in 100…155, row 500 non-decreasing in red, pixel (2000,10) == (2000,990). ⌘Z, ⌘S, reread → all sampled pixels white. ⇧⌘Z → "Gradient" again.
-  - `escapeDiscards`: draw as above, Escape → no "Gradient" history row, Edit menu has no "Undo Gradient"; ⌘S → pixel (100,500) white.
-  - `gradientClippedToSelection`: launch with `["-UITestSelectRect", "1000,250,2000,500"]` on the 4000×1000 fixture; draw the same gradient; Return; ⌘S → pixels (500,500) and (3500,500) and (2000,100) white; (1200,500) non-white.
+- **Window-level integration tests (headless) — `PaintDotMacTests/Integration/GradientWindowIntegrationTests.swift`** (`@MainActor`, `.serialized`; headless: documents through `DocumentHarness` (never shown), a fresh-suite `AppModel`, canvas input through `harness.dragCanvas`/`clickCanvas` and keys through `harness.shortcut`; pixels checked by saving with `save(to:ofType:for: .saveOperation)` and decoding the file; each test ends with `HeadlessAssertions.closeAllDocuments()` and `noVisibleWindows()`) (fixtures generated at test time with `FixtureFiles.makePNG`):
+  - `pressingGSelectsGradientAndShowsOptions`: `shortcut("g")` → `.gradient`; the options bar exposes `toolOptions.gradientType` "Linear", `toolOptions.gradientMode` "Color Mode", `toolOptions.antialiasing` on, `toolOptions.blendMode` "Normal", and `toolOptions.finish` present and disabled. Set "Transparency Mode" → `toolOptions.blendMode` disabled.
+  - `drawCommitUndoRedo`: a 4000×1000 opaque white PNG (opens fitted); `g`; drag from 25 % to 75 % of the view width at mid-height; `toolOptions.finish` enabled; Return → History row "Gradient", `undoMenuItemTitle == "Undo Gradient"`; save and decode: pixel (100,500) == `(0,0,0,255)`, (3900,500) == `(255,255,255,255)`, (2000,500) red in 100…155, row 500 non-decreasing in red, pixel (2000,10) == (2000,990). Undo, save, decode → all sampled pixels white. Redo → "Gradient" again.
+  - `escapeDiscards`: draw as above, Escape → no "Gradient" row, no "Undo Gradient"; save → pixel (100,500) white.
+  - `gradientClippedToSelection`: `setInitialSelection((1000,250,2000,500))` on the 4000×1000 fixture; draw the same gradient; Return; save → (500,500), (3500,500), and (2000,100) white; (1200,500) non-white.
 - **Performance**: `PaintDotMacTests/Performance/GradientPerformanceTests.swift` (XCTest `measure`): full re-render of a linear and a conical gradient on a 4000×3000 opaque layer. Report only (no gate); record the numbers in Verification status. (Affects NF-1 perceived responsiveness while dragging handles; NF-4: the diff holds only changed tiles.)
-- **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` green (clean build, no warnings, all tests pass, none skipped, UI tests ran, launch smoke).
+- **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` green (clean build, no warnings, headless checks, all tests pass, none skipped, no crash report during the run).
 - **Manual verification:**
   1. Each of the five types at 100% and 400% zoom on 1× and 2× displays: smooth banding-free ramps; conical has no seam; diamond corner points at the end handle.
   2. Handles: visible on white, black, and photos; dragging either handle updates live without visible lag on a 4000×3000 image; cursor shows open hand over a handle and closed hand while dragging.
@@ -247,6 +246,6 @@ Expected values below are hand-computed (verified by hand arithmetic, not by run
 - Spiral gradients and repeat modes (Paint.NET 5 has No Repeat / Repeat Wrapped / Repeat Reflected and two spiral types; PRD T-10 lists none of them, so v1.0 is No Repeat only).
 - Live update of a pending gradient on palette changes (Open question 2).
 - Blend modes other than Normal in the popup (0026, 0027, 0059 extend `BlendOps` and the list automatically).
-- Selection tools themselves (0014+; tests use `-UITestSelectRect` and `Selection(rect:)`).
+- Selection tools themselves (0014+; tests use `setInitialSelection` and `Selection(rect:)`).
 - Metal compositing of the result (0024); the canvas shows the live layer via 0003's tile upload.
 - Tablet pressure (0055).

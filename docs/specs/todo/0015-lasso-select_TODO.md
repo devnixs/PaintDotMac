@@ -78,18 +78,17 @@ All types below live in this one file.
 
 ## Acceptance criteria
 
-- [ ] Pressing S cycles Rectangle Select → Lasso Select → Ellipse Select within 1 s; the Tools panel shows and highlights `tool.lassoSelect`. → `LassoSelectUITests.sKeyCyclesToLasso`, `ToolRegistryLassoTests.sGroupOrder`
+- [ ] Pressing S cycles Rectangle Select → Lasso Select → Ellipse Select within 1 s; the Tools panel shows and highlights `tool.lassoSelect`. → `LassoSelectIntegrationTests.sKeyCyclesToLasso`, `ToolRegistryLassoTests.sGroupOrder`
 - [ ] Freeform: dragging a closed outline selects its interior; the outline is closed by a straight line from the release point to the start point. → `LassoSelectToolTests.freeformSquareSelectsInterior`, `.openOutlineClosesWithStraightLine`
-- [ ] Polygon: each click adds a vertex (press-and-drag positions it); Return, a double-click, or clicking within 6 pt of the first vertex (≥ 3 vertices) closes the polygon; Escape cancels with no step. → `LassoSelectToolTests.polygonClicksThenReturn`, `.polygonDoubleClickFinishes`, `.polygonClickOnFirstVertexCloses`, `.polygonDragPositionsVertex`, `.polygonEscapeCancels`, `LassoSelectUITests.polygonTriangleSelectsAndUndoes`, `.polygonEscapeAddsNoStep`
+- [ ] Polygon: each click adds a vertex (press-and-drag positions it); Return, a double-click, or clicking within 6 pt of the first vertex (≥ 3 vertices) closes the polygon; Escape cancels with no step. → `LassoSelectToolTests.polygonClicksThenReturn`, `.polygonDoubleClickFinishes`, `.polygonClickOnFirstVertexCloses`, `.polygonDragPositionsVertex`, `.polygonEscapeCancels`, `LassoSelectIntegrationTests.polygonTriangleSelectsAndUndoes`, `.polygonEscapeAddsNoStep`
 - [ ] Self-intersecting outlines use the even-odd rule. → `LassoPathTests.pentagramCenterIsHoleEvenOdd`, `LassoSelectToolTests.pentagramMask`
 - [ ] Freeform point thinning: points closer than 1 view point to the last kept point are dropped; the release point is always kept. → `LassoPathTests.thinningInViewSpace`, `.finalPointAlwaysKept`
-- [ ] Fewer than 3 distinct points or collinear points → treated as a click (0014's rule); no "Lasso Select" step. → `LassoPathTests.degenerateCases`, `LassoSelectToolTests.clickActsLikeSelectionClick`, `LassoSelectUITests.straightDragAddsNoLassoStep`
+- [ ] Fewer than 3 distinct points or collinear points → treated as a click (0014's rule); no "Lasso Select" step. → `LassoPathTests.degenerateCases`, `LassoSelectToolTests.clickActsLikeSelectionClick`, `LassoSelectIntegrationTests.straightDragAddsNoLassoStep`
 - [ ] Pixelated vs Antialiased selection clipping is honoured. → `LassoSelectToolTests.pixelatedMaskIsBinary`, `.antialiasedEdgeIsPartial`
-- [ ] Replace / Union / Exclude / Intersect / Invert (picker and modifiers, mode fixed at the first mouseDown) combine with the existing selection exactly like Rectangle Select. → `LassoSelectToolTests.combineModes`, `.modeFixedAtFirstMouseDown`, `LassoSelectUITests.commandAddsToSelection`
+- [ ] Replace / Union / Exclude / Intersect / Invert (picker and modifiers, mode fixed at the first mouseDown) combine with the existing selection exactly like Rectangle Select. → `LassoSelectToolTests.combineModes`, `.modeFixedAtFirstMouseDown`, `LassoSelectIntegrationTests.commandAddsToSelection`
 - [ ] Each lasso is one history step "Lasso Select" (icon `lassoSelect`); undo restores the previous selection exactly, redo re-applies it; a no-op result adds no step. → `LassoSelectToolTests.historyStepUndoRedo`, `.noOpUnionAddsNoStep`, `LassoSessionTests.paintClippedToLasso`
 - [ ] Switching tools or documents mid-polygon commits it; changing the Lasso mode mid-polygon commits it. → `LassoSelectToolTests.deactivateCommitsPolygon`, `.modeChangeCommitsPolygon`
-- [ ] The Lasso mode persists across launches (`tool.lassoSelect.lassoMode`, default Freeform). → `LassoSelectToolTests.lassoModeDefaultsAndPersistence`, `LassoSelectUITests.lassoModePersists`
-- [ ] The app launches, opens a PNG and a JPEG, and stays up with no crash report. → quality-gate launch smoke (`quality-gate.sh`)
+- [ ] The Lasso mode persists across launches (`tool.lassoSelect.lassoMode`, default Freeform). → `LassoSelectToolTests.lassoModeDefaultsAndPersistence`, `LassoSelectIntegrationTests.lassoModePersists`
 
 ## Edge cases
 
@@ -141,15 +140,15 @@ All types below live in this one file.
 - **Property test — `LassoSelectToolTests.undoRedoProperty`:** 200 seeded random polygons (3–12 vertices, random modes, random existing selection): apply → undo restores the exact prior mask, redo the exact result; Invert applied twice with the same lasso restores the original mask (pixelated).
 - **Registry test — `PaintDotMacTests/Tools/ToolRegistryLassoTests.swift`:** `sGroupOrder` (`shortcutGroup(for: "s")` starts `[.rectangleSelect, .lassoSelect, .ellipseSelect]`; `makeTool(.lassoSelect) is LassoSelectTool`); update 0006's `standardRegistersZoomAndPan`-style list test to include `.lassoSelect`.
 - **Integration test — `PaintDotMacTests/Integration/LassoSessionTests.swift`:** `paintClippedToLasso`: new 64×64 white image; freeform lasso triangle (Pixelated); Paintbrush (width 100, primary black) drag across the whole image → pixels inside the triangle black, outside still white (TOOL-B); history `["New Image", "Lasso Select", "Paintbrush"]`; undo twice → white image, no selection; redo twice → same result.
-- **UI tests — `PaintDotMacUITests/LassoSelectUITests.swift`** (fixture generated at test time: 200×200 opaque white PNG via `UITestApp.makePNG`, `-UITestOpen`, `-UITestResetDefaults`; ⌘0 first):
-  - `sKeyCyclesToLasso`: press B, then S, S quickly → `tool.lassoSelect` selected.
-  - `polygonTriangleSelectsAndUndoes`: select Lasso, choose "Polygon" in `toolOptions.lassoMode`, click canvas at normalized (0.2,0.2), (0.8,0.2), (0.5,0.8), press Return → last `historyList` row "Lasso Select"; `statusBar.selectionSize` non-empty and ≈ "120 × 120" (±2 px per side, parse the numbers); ⌘Z → selection size empty, last row "Open Image" selected.
-  - `polygonEscapeAddsNoStep`: two clicks then Escape → history has only "Open Image".
-  - `straightDragAddsNoLassoStep`: Freeform, `dragOnCanvas` from (0.2,0.2) to (0.8,0.8) (a straight line is degenerate) → no "Lasso Select" row.
-  - `commandAddsToSelection`: Polygon triangle as above; then with `perform(withKeyModifiers: .command)` click a second triangle at (0.1,0.85),(0.3,0.85),(0.2,0.95) and press Return → two "Lasso Select" rows and the selection size grows to the union bounds (height ≈ 150).
-  - `lassoModePersists`: set Polygon, relaunch without reset → `toolOptions.lassoMode` value "Polygon".
+- **Integration tests (headless) — `PaintDotMacTests/Integration/LassoSelectIntegrationTests.swift`** (`@MainActor`, `.serialized`; headless: documents through `DocumentHarness` (never shown), a fresh-suite `AppModel`, canvas input through `harness.dragCanvas`/`clickCanvas` and keys through `harness.shortcut`; pixels checked by saving with `save(to:ofType:for: .saveOperation)` and decoding the file; each test ends with `HeadlessAssertions.closeAllDocuments()` and `noVisibleWindows()`) (fixture generated at test time: 200×200 opaque white PNG via `FixtureFiles.makePNG`; `actualSize` first):
+  - `sKeyCyclesToLasso`: `shortcut("b")`, then `s`, `s` within 1 s → `.lassoSelect`, and the Tools panel element `tool.lassoSelect` has the selected trait.
+  - `polygonTriangleSelectsAndUndoes`: Lasso, lasso mode "Polygon", click the canvas at normalized (0.2,0.2), (0.8,0.2), (0.5,0.8), then `harness.key("\r")` (Return to the canvas) → the History model's last row is "Lasso Select"; `statusBar.selectionSizeText` ≈ "120 × 120" (±2 px per side); `perform(undo)` → empty, current row "Open Image".
+  - `polygonEscapeAddsNoStep`: two clicks then Escape → the History model has only "Open Image".
+  - `straightDragAddsNoLassoStep`: Freeform, drag from (0.2,0.2) to (0.8,0.8) (a straight line is degenerate) → no "Lasso Select" row.
+  - `commandAddsToSelection`: the Polygon triangle as above; then with `.command` held click a second triangle at (0.1,0.85),(0.3,0.85),(0.2,0.95) and press Return → two "Lasso Select" rows and the selection size grows to the union bounds (height ≈ 150).
+  - `lassoModePersists`: set Polygon; a new `AppModel` on the same suite → the lasso mode option reads "Polygon".
 - **Performance:** no NF target applies directly; `manyPointsCommit` guards gross regressions.
-- **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` green: clean build with no warnings, all tests pass with none skipped, UI tests ran, launch smoke passes.
+- **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` green: clean build with no warnings, all tests pass with none skipped, no crash report during the run.
 - **Manual verification:**
   1. Freeform: drag a wobbly loop around an object at 100 % → the dashed outline follows the pointer smoothly, a faint closing line shows how it will close; on release marching ants appear along the drawn edge.
   2. Draw a figure-eight / star crossing itself → the doubly enclosed region is not selected (even-odd).

@@ -13,8 +13,8 @@ The full requirements are in [`PRD.md`](./PRD.md). Read it before starting any f
 - **Metal** for on-screen canvas compositing and custom kernels. **Core Image** (Metal-backed `CIContext`) for adjustments and effects where it fits. A deterministic CPU compositor in `Core` is the reference used for export, flatten, merge, and Copy Merged (PRD §4).
 - **ImageIO** for codecs. **OpenRaster (`.ora`)** is the native layered format; its ZIP container is our own code in `Core/IO` (no ZIP dependency).
 - Minimum target: **macOS 15**. Built with Xcode 26. Primary hardware: Apple Silicon.
-- **XcodeGen**: `project.yml` is the source of truth. The generated `PaintDotMac.xcodeproj` is git-ignored; never hand-edit `project.pbxproj`. Run `xcodegen generate` after adding or removing files or targets. Scheme `PaintDotMac`; targets `PaintDotMac`, `PaintDotMacTests`, `PaintDotMacUITests`; bundle ID `com.thera-engineering.paintdotmac`; ad hoc signing, not sandboxed.
-- Tests: **Swift Testing** for unit, golden-image, and integration tests; **XCTest** only for `measure` performance tests; **XCUITest** for UI tests.
+- **XcodeGen**: `project.yml` is the source of truth. The generated `PaintDotMac.xcodeproj` is git-ignored; never hand-edit `project.pbxproj`. Run `xcodegen generate` after adding or removing files or targets. Scheme `PaintDotMac`; targets `PaintDotMac` and `PaintDotMacTests` (there is deliberately no UI test target); bundle ID `com.thera-engineering.paintdotmac`; ad hoc signing, not sandboxed.
+- Tests: **Swift Testing** for unit, golden-image, and integration tests; **XCTest** only for `measure` performance tests. **Headless only: no XCUITest and no tests that launch the app or put a window on screen** (see *Headless testing*).
 - **No third-party dependencies** without a written justification in the pull request or commit message.
 
 ## Repository layout (target)
@@ -34,8 +34,7 @@ PaintDotMac/
     IO/        ImageIO codecs, ZIP container, OpenRaster reader/writer
     Settings/  Typed app settings (defaults, keys)
     Shortcuts/ Keyboard shortcut table (PRD §5.12)
-PaintDotMacTests/    Unit, golden-image (Golden/), and integration tests
-PaintDotMacUITests/  XCUITest UI tests
+PaintDotMacTests/    Unit, golden-image (Golden/), and headless integration tests
 project.yml          XcodeGen spec
 ```
 
@@ -67,6 +66,18 @@ Keep this section updated as soon as the real project exists.
 - An OpenRaster round-trip test must preserve layer names, order, opacity, visibility, and blend mode.
 - Don't commit large binary fixtures (over 1 MB). Generate them in tests instead.
 
+## Headless testing
+Every automated test must run headless. The developer works on other things while the tests run, and a crash must never leave windows behind. So:
+- **Allowed:** unit, golden-image, and integration tests (Swift Testing) and XCTest `measure` performance tests, all in `PaintDotMacTests`.
+- **Not allowed:** XCUITest or any UI test target, tests that launch the app as a separate process (`XCUIApplication`, `open`, `NSWorkspace.open`, or a `Process` that runs the app; running a command-line tool such as `/usr/bin/unzip` as an oracle is fine), launch smoke tests, and anything that drives the real mouse or keyboard or needs Developer Mode or the Accessibility permission.
+- **Test-host mode.** `PaintDotMacTests` is hosted in the app so it can `@testable import PaintDotMac`. When the app runs as a test host (`TestHost.isActive`: the scheme's test action sets `PAINTDOTMAC_HEADLESS_TESTS=1`, and `XCTestConfigurationFilePath` is present), `main.swift` sets the activation policy to `.prohibited` before `NSApp.run()`, and the app opens no untitled document, no panels, no restored windows, and no Settings window.
+- **Nothing on screen.** Tests may create windows, panels, views, view controllers, window controllers, and documents, but never show them: no `showWindow`, `makeKeyAndOrderFront`, `orderFront`, `NSDocument.showWindows()`, `NSAlert.runModal`, `NSApp.runModal`, `beginSheet`, `presentError`, or running an `NSOpenPanel`/`NSSavePanel` (creating one to inspect its configuration is fine). App code that presents UI goes through an injectable seam (for example `AlertPresenting`, `NewImagePresenting`, or a `showsWindows` flag on the document controller), and tests record the request instead. Integration tests that build windows end with `HeadlessAssertions.noVisibleWindows()`.
+- **Driving UI code.** Call actions, responders, and view models directly: invoke a menu item's action on an explicit target, call `keyDown(with:)` / `mouseDown(with:)` / `mouseDragged(with:)` on an offscreen view with a synthesized `NSEvent`, or exercise the SwiftUI view model behind a panel. Persistence tests use a throwaway `UserDefaults(suiteName:)` instead of relaunching the app.
+- **Never touch the user's clipboard.** App code takes the pasteboard as a dependency (default `NSPasteboard.general`); tests pass a private `NSPasteboard(name: .init("PaintDotMacTests-\(UUID())"))` and release it at the end.
+- **Never touch the user's preferences.** The test host has the app's bundle ID, so app code reads and writes preferences only through `AppDefaults.shared` (a throwaway suite in test-host mode) and passes frame autosave names through `AppDefaults.frameAutosaveName(_:)`; never use `UserDefaults.standard` directly.
+- **No launch hooks.** There are no `-UITest*` launch arguments. Test-only configuration (memory cap, autosave delay, effect seed, appearance, reduce motion, palette folder, …) is passed in-process through initializers or injected dependencies.
+- **What only a person can check** (real windows and tabs, sheets, Finder and Dock integration, drag and drop from other apps, the look in Light and Dark mode, tablet hardware) goes into the spec's *Manual verification* checklist, which the user runs when convenient.
+
 ## Code style
 - Follow the Swift API Design Guidelines. Use 4-space indentation.
 - Prefer `struct` and value semantics in `Core`. Use classes only for identity-bearing objects (document, layer storage) and for AppKit subclasses.
@@ -94,7 +105,7 @@ A spec is done only when the quality gate is green:
 .agents/skills/spec-implementer/scripts/quality-gate.sh                          # after every spec
 .agents/skills/spec-implementer/scripts/quality-gate.sh --sanitizers --release   # end of every batch
 ```
-The gate runs a clean build with zero warnings, every unit, golden, integration, and UI test (none failed, none skipped), and launch smoke tests that open a PNG and a JPEG and check for crash reports. UI tests need Developer Mode (`sudo DevToolsSecurity -enable`) and the test runner's Accessibility permission, and take over the mouse and keyboard while they run. The sanitizer step reports a sanitizer as UNAVAILABLE when it doesn't work on this Mac (currently the case on macOS 26.6 with Xcode 26.3); no spec may depend on sanitizers to pass.
+The gate runs a clean build with zero warnings, then every headless unit, golden, and integration test (none failed, none skipped), and fails if a crash report was written during the test run. It never launches the app and never opens a window: it fails if `project.yml` declares a UI test target or if the test sources contain UI-test or window-showing calls (see *Headless testing*). The sanitizer step reports a sanitizer as UNAVAILABLE when it doesn't work on this Mac (currently the case on macOS 26.6 with Xcode 26.3); no spec may depend on sanitizers to pass.
 
 ## Commits
 - Conventional style: `feat(tools): add Magic Wand (T-4)`, `fix(canvas): …`, `test(core): …`. Commits that implement a spec end with the spec ID: `feat(tools): add Magic Wand (T-4) [spec 0012]`.

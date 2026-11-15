@@ -152,7 +152,7 @@ changed.
 143. 0051 All NF requirements count as P0 for the coverage test ✓
 144. 0051 Which statements without an ID count as P0 requirements ✓
 145. 0051 Use case 2's test starts from a PNG photo ✓
-146. 0051 New test hook `-UITestWindowContentSize` ✓
+146. 0051 ~~New test hook `-UITestWindowContentSize`~~ → withdrawn: tests are headless (PRD §4 Testing), so no launch hook is added
 147. 0053 Pixel Grid is ⌘' ✓
 148. 0053 Rulers is ⌥⌘R ✓
 149. 0053 Grid and ruler toggles are app-wide, saved, and off by default ✓

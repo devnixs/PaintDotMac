@@ -44,7 +44,7 @@ re-derive or guess.
 **Quality is the point.** The user must be able to open the app after any batch and find features
 that work and never crash. That only happens if every spec prescribes tests that would actually
 fail when the feature is broken: exact expected pixel values, round trips, undo/redo, failure
-paths, and UI tests that drive the real app. Vague specs lead to vague implementations, tests that
+paths, and headless integration tests that drive the real UI code in-process. Vague specs lead to vague implementations, tests that
 assert nothing, and "verified" claims that nobody checked. Those are the failures this skill
 prevents.
 
@@ -67,7 +67,7 @@ before spawning anything:
    PRD requirement IDs it covers. **Every P0 requirement in scope must land in exactly one spec**:
    make a coverage table (requirement ID → spec) and check that nothing is missing or duplicated.
 2. **Order them by dependency, milestone by milestone** (PRD §8, M0 → M7). Foundations first (Xcode
-   project, test targets and UI test harness, document app, tiled surface, history), then the
+   project, the headless test target and test-host mode, document app, tiled surface, history), then the
    features that build on them. A spec must never depend on a spec with a higher number, and no M(n+1)
    spec may come before the M(n) specs that its exit criteria need.
 3. List `docs/specs/todo/` and `docs/specs/done/`, find the next free ID (step 4), and assign one
@@ -103,8 +103,8 @@ before spawning anything:
 
 ### Slicing
 
-Every spec has to leave the app in a state that builds, passes the full quality gate (including
-the launch smoke test and UI tests), and runs without crashing. The implementer commits after each
+Every spec has to leave the app in a state that builds, passes the full quality gate (clean
+build, every headless test), and runs without crashing. The implementer commits after each
 spec. Prefer thin vertical slices over horizontal layers. For example, "Paintbrush paints on the
 active layer with undo" is better than "all the tool plumbing" followed by "all the brush math".
 Pure `Core` logic that later slices need (the tiled surface, the history stack, the blend math, the
@@ -114,21 +114,21 @@ about an hour. A spec that adds many similar items (adjustments, effects, blend 
 into groups of a handful each, after the spec that builds the shared framework.
 
 **The first spec is always the foundation** (M0): the Xcode project and how it is generated, the
-app, unit test, and UI test targets in one scheme, a `.gitignore` that ignores `build/` and
-generated project files, a document-based app shell that launches and opens a PNG/JPEG, and at
-least one UI test that launches the app and opens a fixture image. It must prove that the
+app and test targets in one scheme (no UI test target), a `.gitignore` that ignores `build/` and
+generated project files, a document-based app shell that opens a PNG/JPEG, the windowless
+test-host mode, and at least one headless integration test that reads a fixture image through
+`PaintDocument` and builds its window controller offscreen. It must prove that the
 quality gate (`.agents/skills/spec-implementer/scripts/quality-gate.sh`) runs green end to end,
 and record the real build and test commands in `AGENTS.md` (*Build and test*). Recommended
 defaults to propose to the user for that spec:
 - **XcodeGen** (`project.yml` as the source of truth, the generated `.xcodeproj` git-ignored, never
   hand-edit `project.pbxproj`). It is a build tool, not a runtime dependency, but it is still the
   user's call.
-- Scheme `PaintDotMac` with targets `PaintDotMac`, `PaintDotMacTests` (unit, golden-image, and
-  integration tests; Swift Testing, plus XCTest only for `measure` performance tests), and
-  `PaintDotMacUITests` (XCUITest). These are the names the quality gate expects.
-- Ad hoc signing for local builds. A test-only launch hook (for example a launch argument or
-  environment variable read in `#if DEBUG` code) that lets UI tests open a fixture document and
-  disables state restoration, so UI tests are deterministic.
+- Scheme `PaintDotMac` with targets `PaintDotMac` and `PaintDotMacTests` (unit, golden-image, and
+  integration tests; Swift Testing, plus XCTest only for `measure` performance tests). These are
+  the names the quality gate expects. There is no UI test target.
+- Ad hoc signing for local builds. A test-host mode (the scheme's test action sets
+  `PAINTDOTMAC_HEADLESS_TESTS=1`) in which the hosted app never activates or opens a window.
 
 ### 1. Read the source of truth first, and ask instead of guessing
 
@@ -173,7 +173,7 @@ the files and types the spec will create, following the layout in `AGENTS.md`:
   `xcodegen generate`.
 - `PaintDotMac/App/`, `UI/`, `Canvas/`, `Document/`, and `Core/` (`Model/`, `History/`, `Tools/`,
   `Effects/`, `Rendering/` with `Rendering/Shaders/*.metal`, `IO/`).
-- `PaintDotMacTests/` (with `Golden/` for reference PNGs) and `PaintDotMacUITests/`.
+- `PaintDotMacTests/` (with `Golden/` for reference PNGs).
 
 For every change, say which side of the **pure / platform boundary** it sits on:
 
@@ -182,9 +182,11 @@ For every change, say which side of the **pure / platform boundary** it sits on:
   selection paths and mask rasterization, flood fill, blend math and the compositor, resampling,
   effects and their parameter schemas, codecs and OpenRaster, coordinate transforms (view ↔ canvas
   ↔ pixel at every zoom and backing scale), shortcut mapping tables, settings defaults.
-- **Platform glue, covered by UI tests and manual checks:** SwiftUI panels and dialogs, the
-  `MTKView` canvas and event forwarding, `NSDocument`, menus/commands, `NSPasteboard`, drag and
-  drop, `NSColorSampler`, tablet and trackpad events.
+- **Platform glue, covered by headless integration tests and manual checks:** SwiftUI panels and
+  dialogs (through their view models), the `MTKView` canvas and event forwarding (synthesized
+  `NSEvent`s on an offscreen view), `NSDocument`, menus/commands (actions invoked on explicit
+  targets), `NSPasteboard` (a private named pasteboard), drag and drop (a fake `NSDraggingInfo`),
+  `NSColorSampler`, tablet and trackpad events.
 
 Push as much logic as you can into `Core`, and say so in the spec. That is what makes the behavior
 testable. Also call out the cross-cutting rules the change must respect: every pixel change goes
@@ -239,8 +241,9 @@ As a <PaintDotMac user>, <what they can do or see once this is done>.
 - <Keep Core logic and platform glue as separate bullets, and say which is which.>
 - <Exact user-facing names (menu items, history step names, dialog labels, option names) as
   Paint.NET spells them.>
-- <Accessibility identifiers the UI tests rely on (for example `canvas`, `historyList`,
-  `layersList`, `statusBar.imageSize`), and any test-only launch hooks.>
+- <Accessibility identifiers the app exposes (for example `canvas`, `historyList`, `layersList`,
+  `statusBar.imageSize`), and the injection seams the integration tests use (presenters, clocks,
+  a `UserDefaults` suite, memory caps). Never a `-UITest*` launch hook.>
 - <project.yml changes and "run `xcodegen generate`".>
 - <PRD update made in this change, if any: "PRD.md §N updated: …".>
 
@@ -248,8 +251,6 @@ As a <PaintDotMac user>, <what they can do or see once this is done>.
 - [ ] <Observable, checkable outcome, matching the PRD wording where possible. Each criterion
   names the test that proves it (`→ BrushToolTests.strokeIsClippedToSelection`), or is marked
   `→ manual` with a reason it can't be automated.>
-- [ ] The app launches, opens a PNG and a JPEG, and stays up with no crash report (quality gate
-  launch smoke).
 
 ## Edge cases
 - <Boundaries the implementer must handle and test: empty/0×0/1×1 images and selections, the
@@ -275,21 +276,24 @@ As a <PaintDotMac user>, <what they can do or see once this is done>.
   hand-computed image), and the ±1 per-channel tolerance. Goldens in `PaintDotMacTests/Golden/` are
   recorded only through an explicit opt-in (for example `RECORD_GOLDENS=1`) and only after the
   oracle has confirmed them.>
-- **Integration tests** (headless): <a scripted editing session through Core: create or load a
-  document, run tool events / effects / layer operations, undo/redo, save, reload, and assert on
-  pixels and history names.>
-- **UI tests** (`PaintDotMacUITests/<Feature>UITests.swift`): <launch the app with a fixture,
-  perform the user story through menus, keyboard shortcuts, panels, and canvas drags, and assert
-  through accessibility (history rows, layer rows, status bar values, enabled menu items) and,
-  where pixels matter, by exporting and checking the file. Every spec that adds or changes UI adds
-  at least one UI test.>
+- **Integration tests** (headless, `PaintDotMacTests/<Area>/<Feature>IntegrationTests.swift`): <a
+  scripted editing session through Core: create or load a document, run tool events / effects /
+  layer operations, undo/redo, save, reload, and assert on pixels and history names. For anything
+  the user sees or does, drive the real UI code in-process: build the document, window controller,
+  panels, and views offscreen, invoke menu actions on explicit targets, send synthesized `NSEvent`s
+  to the canvas and key handlers, drive SwiftUI panels through their view models, and record
+  alerts, sheets, and save panels through injected presenters. Assert on document state, history
+  rows, accessibility values, menu enablement, and exported files. Never show a window, never
+  launch the app, never use XCUITest (AGENTS.md *Headless testing*). Every spec that adds or
+  changes UI adds at least one such test.>
 - **Performance** (when NF-1 to NF-4 apply): <`measure` test or timed integration test with the
   target from PRD §6. Gate only on gross regressions (for example 3× the target); report the
   measured number in the Verification status.>
 - **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` is green: clean build
-  with no warnings, every test passes with none skipped, UI tests ran, launch smoke passes.
-- **Manual verification** (only what can't be automated): <step-by-step checks for look and feel
-  (marching ants, Retina sharpness, dark mode), trackpad pinch, tablet pressure, `NSColorSampler`,
+  with no warnings, every headless test passes with none skipped, no crash report.
+- **Manual verification** (only what can't be checked headlessly): <step-by-step checks the user
+  runs in the real app: windows, tabs, sheets, Finder/Dock integration, look and feel (marching
+  ants, Retina sharpness, dark mode), trackpad pinch, tablet pressure, `NSColorSampler`,
   perceived smoothness, with what to do and the expected result.>
 
 ## Open questions
@@ -319,8 +323,10 @@ while is fine. So the **Test plan** must:
   missing state each get a test that asserts the defined, non-crashing behavior.
 - **Include undo/redo** for every pixel-changing or document-changing operation: apply, undo
   (identical to before), redo (identical to after).
-- **Include at least one UI test** for every spec that adds or changes something the user can
-  see or do, driving the real app the way the user story describes.
+- **Include at least one headless integration test** for every spec that adds or changes something
+  the user can see or do, driving the real UI code in-process the way the user story describes.
+  Never prescribe XCUITest, a UI test target, a `-UITest*` launch hook, a launch smoke test, or any
+  test that shows a window or launches the app.
 - If a spec is purely platform glue with no logic to extract, say so explicitly and justify it.
   Don't just leave the unit tests out. (There is usually something worth extracting: a coordinate
   transform, a state machine, a mapping from options to behavior, a menu-enablement rule.)
@@ -355,10 +361,9 @@ From the repo root:
 ```
 
 It regenerates the project (if `project.yml` exists), checks that `Core` has no UI imports, makes
-a clean Debug build with zero warnings allowed, runs every test (unit, golden, integration, UI)
-and fails on any failed or skipped test, then launches the app empty, with a PNG, and with a JPEG
-and fails if it crashes. Logs and result bundles are in `build/gate/`. UI tests drive the real
-mouse and keyboard, so warn the user not to use the Mac while they run.
+a clean Debug build with zero warnings allowed, runs every headless test (unit, golden, integration)
+and fails on any failed or skipped test or a crash report. It never launches the app or opens a
+window. Logs and result bundles are in `build/gate/`.
 
 While iterating on one area, run the narrower commands from `AGENTS.md` (*Build and test*), for
 example `xcodebuild … test -only-testing:PaintDotMacTests/<Suite>`, but the final word is always
@@ -382,7 +387,7 @@ git mv docs/specs/todo/<name>_TODO.md docs/specs/done/<name>_COMPLETED.md
 ```
 
 Before moving it, add a **Verification status** section at the end of the spec that records the
-date, the gate result (the summary lines it prints: test counts, UI tests, launch smoke), any
+date, the gate result (the summary lines it prints: test counts, crash-report check), any
 performance numbers measured, and each manual verification step as `[ ] not yet run by user` (or
 `[x]` only if the user confirms they ran it). If the change affected the layout, commands, or
 architecture rules, update `AGENTS.md` in the same change.

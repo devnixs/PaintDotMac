@@ -52,7 +52,7 @@ public struct HistoryRow: Identifiable, Sendable, Equatable {
     public let state: HistoryRowState
     public var isUndone: Bool { state == .undone }
     public var isCurrent: Bool { state == .current }
-    /// Accessibility value used by VoiceOver and UI tests: "current", "done" or "undone".
+    /// Accessibility value used by VoiceOver and integration tests: "current", "done" or "undone".
     public var accessibilityValue: String { state.rawValue }
 }
 
@@ -124,7 +124,7 @@ public struct HistoryListModel: Sendable, Equatable {
 
 ### Platform glue: `PaintDotMac/UI/HistoryPanelView.swift` (new)
 
-- A SwiftUI view hosted by `PanelController` in the `PanelKind.history` panel (replacing 0006's `PanelPlaceholderView`). Panel title: **"History"**. Update 0006's `PanelsUITests.testPlaceholderText` and `PanelControllerTests.placeholderIdentifiers` to drop `historyPanel` (only Layers keeps its placeholder).
+- A SwiftUI view hosted by `PanelController` in the `PanelKind.history` panel (replacing 0006's `PanelPlaceholderView`). Panel title: **"History"**. Update 0006's `PanelsIntegrationTests.placeholderText` and `PanelControllerTests.placeholderIdentifiers` to drop `historyPanel` (only Layers keeps its placeholder).
 - Body: a `List` (or `ScrollView` + `LazyVStack`) of `HistoryRow`s, then a footer bar with two icon buttons, **Undo** (`arrow.uturn.backward`) and **Redo** (`arrow.uturn.forward`), with tooltips "Undo" / "Redo", disabled by `canUndo` / `canRedo`. There are no Rewind or Fast Forward buttons (see Context).
 - Each row: the icon (`Image(systemName: row.icon.symbolName)`) at 16 pt, then the name. Styling:
   - `.done`: normal text and icon.
@@ -132,7 +132,7 @@ public struct HistoryListModel: Sendable, Equatable {
   - `.undone`: greyed. Secondary text and icon colors on a grey background (`Color.secondary.opacity(0.15)` or similar), so they read as "undone" in both light and dark mode (APP-7).
 - A single click on a row calls `HistoryPanelModel.clickRow(row.index)`. The whole row is the hit target. Selection is driven by the model (`currentIndex`), not by SwiftUI's own `List` selection, so a click that results in a no-op leaves the highlight unchanged.
 - Whenever the current index changes, the list scrolls the current row into view (`ScrollViewReader.scrollTo(row.id)`).
-- Accessibility (NF-7 and UI tests):
+- Accessibility (NF-7 and the integration tests):
   - Panel content root: identifier `historyPanel`.
   - List: identifier `historyList`, label "History".
   - Each row: identifier `historyRow.<index>` (`index` = `row.index`, 0 = base step), label = `row.name`, value = `row.accessibilityValue` (`"current"`, `"done"` or `"undone"`), `.isSelected` trait on the current row, and a default accessibility action that calls `clickRow` (so VoiceOver can jump).
@@ -141,25 +141,24 @@ public struct HistoryListModel: Sendable, Equatable {
 
 ### Project
 
-- New files: `Core/History/HistoryListModel.swift`, `Core/History/HistoryIcon+Symbol.swift`, `UI/HistoryPanelModel.swift`, `UI/HistoryPanelView.swift`, `PaintDotMacTests/History/Support/BridgeToolContext.swift`, `PaintDotMacTests/History/HistoryListModelTests.swift`, `PaintDotMacTests/History/HistoryIconSymbolTests.swift`, `PaintDotMacTests/History/HistoryPanelIntegrationTests.swift`, `PaintDotMacUITests/HistoryPanelUITests.swift`. Modified: `App/PanelController.swift` (host the view), `App/AppModel.swift` (own `historyPanel: HistoryPanelModel` and start its active-session observation). Run `xcodegen generate`.
+- New files: `Core/History/HistoryListModel.swift`, `Core/History/HistoryIcon+Symbol.swift`, `UI/HistoryPanelModel.swift`, `UI/HistoryPanelView.swift`, `PaintDotMacTests/History/Support/BridgeToolContext.swift`, `PaintDotMacTests/History/HistoryListModelTests.swift`, `PaintDotMacTests/History/HistoryIconSymbolTests.swift`, `PaintDotMacTests/History/HistoryPanelIntegrationTests.swift`, `PaintDotMacTests/Integration/HistoryPanelWindowIntegrationTests.swift`. Modified: `App/PanelController.swift` (host the view), `App/AppModel.swift` (own `historyPanel: HistoryPanelModel` and start its active-session observation). Run `xcodegen generate`.
 - No PRD change. The Undo/Redo-only button choice mirrors current Paint.NET and adds no new product behavior beyond H-1/H-2.
 
 ## Acceptance criteria
 
-- [ ] The History panel lists every step of the active document, base step first ("Open Image" for an opened file, "New Image" for a new one), each with its name and an icon (H-1). → `HistoryListModelTests.rowsMirrorStepsInOrder`, `HistoryPanelIntegrationTests.strokesAppendPaintbrushRows`, `HistoryPanelUITests.testStrokesAppearAsRows`
+- [ ] The History panel lists every step of the active document, base step first ("Open Image" for an opened file, "New Image" for a new one), each with its name and an icon (H-1). → `HistoryListModelTests.rowsMirrorStepsInOrder`, `HistoryPanelIntegrationTests.strokesAppendPaintbrushRows`, `HistoryPanelWindowIntegrationTests.strokesAppearAsRows`
 - [ ] Every `HistoryIcon` case maps to an SF Symbol that exists on macOS 15, and tool cases use the Tools panel's symbols. → `HistoryIconSymbolTests.everyCaseHasAnExistingSymbol`, `.toolCasesMatchToolsPanel`
-- [ ] Rows before the current step are `done`, the current step is `current` (highlighted), and later steps are `undone` (greyed) (H-2). → `HistoryListModelTests.rowStatesAroundCurrentIndex`, `HistoryPanelUITests.testClickEarlierRowGreysLaterRows`
-- [ ] Clicking a row jumps the document to that state. The canvas pixels equal the pixels saved at that state. → `HistoryPanelIntegrationTests.jumpRestoresExactTiles`, `HistoryPanelUITests.testClickEarlierRowRestoresPixels`
-- [ ] Clicking the current row again steps back one state (Paint.NET toggle). Clicking the current base row does nothing. → `HistoryListModelTests.clickCurrentRowStepsBackOnce`, `HistoryListModelTests.clickCurrentBaseRowIsNoOp`, `HistoryPanelUITests.testClickCurrentRowTogglesToPrevious`
-- [ ] After a jump, `NSUndoManager` and the Edit menu agree with the panel: "Undo <name of current step>" / "Redo <name of first undone step>", enabled exactly when `canUndo` / `canRedo` (H-3). → `HistoryPanelIntegrationTests.jumpKeepsUndoManagerInSync`, `HistoryPanelUITests.testEditMenuFollowsPanelJump`
-- [ ] Edit > Undo / Redo (⌘Z / ⇧⌘Z) update the panel's row states immediately, with exactly one refresh per undo, redo, or jump. → `HistoryPanelIntegrationTests.undoRedoRefreshPanel`, `HistoryPanelUITests.testKeyboardUndoUpdatesRows`
-- [ ] The panel's Undo and Redo buttons behave like Edit > Undo/Redo and are disabled at the ends of the history. → `HistoryListModelTests.canUndoCanRedoAtEnds`, `HistoryPanelUITests.testFooterButtons`
-- [ ] A new action after a jump discards the greyed steps. They disappear from the list and can't be redone. → `HistoryPanelIntegrationTests.newStrokeDiscardsUndoneRows`, `HistoryPanelUITests.testNewStrokeDiscardsGreyedRows`
+- [ ] Rows before the current step are `done`, the current step is `current` (highlighted), and later steps are `undone` (greyed) (H-2). → `HistoryListModelTests.rowStatesAroundCurrentIndex`, `HistoryPanelWindowIntegrationTests.clickEarlierRowGreysLaterRows`
+- [ ] Clicking a row jumps the document to that state. The canvas pixels equal the pixels saved at that state. → `HistoryPanelIntegrationTests.jumpRestoresExactTiles`, `HistoryPanelWindowIntegrationTests.clickEarlierRowRestoresPixels`
+- [ ] Clicking the current row again steps back one state (Paint.NET toggle). Clicking the current base row does nothing. → `HistoryListModelTests.clickCurrentRowStepsBackOnce`, `HistoryListModelTests.clickCurrentBaseRowIsNoOp`, `HistoryPanelWindowIntegrationTests.clickCurrentRowTogglesToPrevious`
+- [ ] After a jump, `NSUndoManager` and the Edit menu agree with the panel: "Undo <name of current step>" / "Redo <name of first undone step>", enabled exactly when `canUndo` / `canRedo` (H-3). → `HistoryPanelIntegrationTests.jumpKeepsUndoManagerInSync`, `HistoryPanelWindowIntegrationTests.editMenuFollowsPanelJump`
+- [ ] Edit > Undo / Redo (⌘Z / ⇧⌘Z) update the panel's row states immediately, with exactly one refresh per undo, redo, or jump. → `HistoryPanelIntegrationTests.undoRedoRefreshPanel`, `HistoryPanelWindowIntegrationTests.keyboardUndoUpdatesRows`
+- [ ] The panel's Undo and Redo buttons behave like Edit > Undo/Redo and are disabled at the ends of the history. → `HistoryListModelTests.canUndoCanRedoAtEnds`, `HistoryPanelWindowIntegrationTests.footerButtons`
+- [ ] A new action after a jump discards the greyed steps. They disappear from the list and can't be redone. → `HistoryPanelIntegrationTests.newStrokeDiscardsUndoneRows`, `HistoryPanelWindowIntegrationTests.newStrokeDiscardsGreyedRows`
 - [ ] When the undo budget drops the oldest steps (H-5), they disappear from the panel. The base step stays at row 0, indices are re-based, row IDs of the surviving steps don't change, and the current row stays on the same step. → `HistoryPanelIntegrationTests.budgetDropRemovesOldestRows`, `HistoryListModelTests.rowIDsAreStableAcrossDrop`
-- [ ] The panel follows the active document. It shows the front document's history, switches when another document window becomes main, and shows an empty list with disabled buttons when no document is open. → `HistoryPanelUITests.testPanelFollowsActiveDocument`, `HistoryPanelIntegrationTests.emptyModelWhenNoDocument`
+- [ ] The panel follows the active document. It shows the front document's history, switches when another document window becomes main, and shows an empty list with disabled buttons when no document is open. → `HistoryPanelWindowIntegrationTests.panelFollowsActiveDocument`, `HistoryPanelIntegrationTests.emptyModelWhenNoDocument`
 - [ ] Out-of-range click indices and an out-of-range current index never crash. → `HistoryListModelTests.outOfRangeClickIsNil`, `HistoryListModelTests.currentIndexIsClamped`
-- [ ] Rows expose accessibility identifiers `historyRow.<index>`, labels = step names, and values `current`/`done`/`undone`. The list is `historyList` and the panel root is `historyPanel` (NF-7). → all `HistoryPanelUITests` query by these identifiers
-- [ ] The app launches, opens a PNG and a JPEG, and stays up with no crash report (quality gate launch smoke).
+- [ ] Rows expose accessibility identifiers `historyRow.<index>`, labels = step names, and values `current`/`done`/`undone`. The list is `historyList` and the panel root is `historyPanel` (NF-7). → all `HistoryPanelWindowIntegrationTests` query by these identifiers
 
 ## Edge cases
 
@@ -203,18 +202,18 @@ public struct HistoryListModel: Sendable, Equatable {
   - `newStrokeDiscardsUndoneRows`: after `clickRow(1)`, a new stroke at y = 200 → rows `["Open Image","Paintbrush","Paintbrush"]` (3 rows), none `undone`, last `current`, `undoManager.canRedo == false`. Pixels equal S1 plus the new stroke: rows y = 150 and y = 250 are white again, and row y = 200 is black at x = 100.
   - `budgetDropRemovesOldestRows`: a bridge with `budgetBytes: 2_500_000`. Strokes at y = 40, 80, 120, 160 (each from x = 100 to 290, so each touches exactly tiles (0,0) and (1,0)) cost 4 × 262,144 + 1,024 = 1,049,600 accounted bytes each (0008's rule), so two fit (2,099,200) and three don't (3,148,800). After 4 strokes, the rows are `["Open Image","Paintbrush","Paintbrush"]`, the ids are `[0, id3, id4]` (the ids strokes 3 and 4 got, recorded from `bridge.history.steps` right after each stroke), the current row is the last row, and clicking row 1 then row 0 never crashes. Row 0 shows "Open Image". Its pixels follow 0008's base-after-drop behavior, which 0008 asserts.
   - `emptyModelWhenNoDocument`: `HistoryPanelModel` after `bind(to: nil)` → `.empty`, and `undo()`/`redo()`/`clickRow(0)` are no-ops that don't crash. `bridgeIsHeldWeakly`: bind to a bridge, drop the last strong reference → the model's bridge is nil after the next refresh and the model is `.empty`.
-- **UI tests** (`PaintDotMacUITests/HistoryPanelUITests.swift`, XCUITest, via `UITestApp` from 0001). The fixture is a 200×200 opaque white PNG generated in a temp dir, opened with `-UITestOpen`, with `-UITestResetDefaults` and `-ApplePersistenceIgnoreState YES`. Show the panel with ⌥⌘2 if it's hidden. Select the Paintbrush (`tool.paintbrush`, or key B). Strokes are made with the `UITestApp` canvas-drag helper inside the `canvas` element. **Pixel oracle: ⌘S (PNG saves in place in its own format, single layer, no dialog), then decode the fixture file in the test with `CGImageSource` and compare full RGBA buffers.** That way no coordinates need predicting:
-  - `testStrokesAppearAsRows`: 3 strokes at different heights → `historyRow.0` label "Open Image", `historyRow.1`–`.3` label "Paintbrush", `historyRow.3` value "current", and no `historyRow.4`.
-  - `testClickEarlierRowRestoresPixels`: after each stroke, ⌘S and read the buffer → P1, P2, P3 (assert P1 ≠ P2 ≠ P3 and P1 ≠ all-white). Click `historyRow.1`, ⌘S → buffer == P1. Click `historyRow.0`, ⌘S → all pixels `FFFFFFFF`. Click `historyRow.3`, ⌘S → == P3.
-  - `testClickEarlierRowGreysLaterRows`: after the click on `historyRow.1`, the values are row 0 "done", row 1 "current", rows 2–3 "undone".
-  - `testClickCurrentRowTogglesToPrevious`: with row 3 current, click `historyRow.3` → row 2 "current", row 3 "undone". Click `historyRow.3` again → row 3 "current".
-  - `testEditMenuFollowsPanelJump`: after clicking `historyRow.1`, the Edit menu items "Undo Paintbrush" and "Redo Paintbrush" exist and are enabled. After clicking `historyRow.0`, Undo is disabled.
-  - `testKeyboardUndoUpdatesRows`: ⌘Z → row 3 "undone", row 2 "current". ⇧⌘Z → row 3 "current".
-  - `testFooterButtons`: `history.undo` click → row 2 "current". `history.redo` → row 3 "current", and `history.redo` is disabled. Click `historyRow.0` → `history.undo` disabled.
-  - `testNewStrokeDiscardsGreyedRows`: click `historyRow.1`, paint one more stroke → exactly 3 rows (`historyRow.3` doesn't exist), `historyRow.2` label "Paintbrush" value "current", and no row has value "undone". ⌘S → buffer ≠ P2 and ≠ P1. The Edit menu's Redo is disabled.
-  - `testPanelFollowsActiveDocument`: with 3 strokes in document A, press ⌘N, then Return (New Image dialog defaults, 0005) → the panel shows exactly one row, `historyRow.0` "New Image" value "current", and `history.undo` and `history.redo` are disabled. Bring A back to front (Window menu item for A, or ⌘\`) → 4 rows again, with row 3 "current". Bring the new document to front and close it with ⌘W (no prompt: it is untouched, APP-9) → the panel shows A's 4 rows.
+- **Window-level integration tests (headless)** (`PaintDotMacTests/Integration/HistoryPanelWindowIntegrationTests.swift`, `@MainActor`, `.serialized`). The fixture is a 200×200 opaque white PNG generated in a temp dir and opened with `DocumentHarness.open` (fresh-suite `AppModel`, Paintbrush selected with `shortcut("b")`). The History panel's real `NSHostingView(HistoryPanelView)` is laid out offscreen inside the app's History `NSPanel`, which is never ordered on screen; rows are found by walking its accessibility children and clicked with their default accessibility action (`accessibilityPerformPress()`, the same `clickRow` path as a mouse click). Strokes go through `harness.dragCanvas` at different heights. **Pixel oracle: `save(to: fileURL, ofType: "public.png", for: .saveOperation)` (no panel), then decode the fixture file with `CGImageSource` and compare full RGBA buffers.** Each test ends with `HeadlessAssertions.closeAllDocuments()` and `noVisibleWindows()`:
+  - `strokesAppearAsRows`: 3 strokes → `historyRow.0` label "Open Image", `historyRow.1`–`.3` label "Paintbrush", `historyRow.3` value "current", and no `historyRow.4`.
+  - `clickEarlierRowRestoresPixels`: after each stroke, save and read the buffer → P1, P2, P3 (assert P1 ≠ P2 ≠ P3 and P1 ≠ all-white). Press `historyRow.1`, save → buffer == P1. Press `historyRow.0`, save → all pixels `FFFFFFFF`. Press `historyRow.3`, save → == P3.
+  - `clickEarlierRowGreysLaterRows`: after pressing `historyRow.1`, the values are row 0 "done", row 1 "current", rows 2–3 "undone".
+  - `clickCurrentRowTogglesToPrevious`: with row 3 current, press `historyRow.3` → row 2 "current", row 3 "undone". Press `historyRow.3` again → row 3 "current".
+  - `editMenuFollowsPanelJump`: after pressing `historyRow.1`, `harness.isEnabled(undo)` and `isEnabled(redo)` are true and the undo manager's titles are "Undo Paintbrush" / "Redo Paintbrush". After pressing `historyRow.0`, Undo is disabled.
+  - `keyboardUndoUpdatesRows`: `perform(undo)` → row 3 "undone", row 2 "current". `perform(redo)` → row 3 "current".
+  - `footerButtons`: press `history.undo` → row 2 "current". `history.redo` → row 3 "current", and `history.redo` is disabled. Press `historyRow.0` → `history.undo` disabled.
+  - `newStrokeDiscardsGreyedRows`: press `historyRow.1`, paint one more stroke → exactly 3 rows (no `historyRow.3`), `historyRow.2` label "Paintbrush" value "current", and no row has value "undone". Save → buffer ≠ P2 and ≠ P1. Redo is disabled.
+  - `panelFollowsActiveDocument`: with 3 strokes in document A, `DocumentHarness.newImage` (defaults, OK) and make its window controller report main (`AppModel.setActiveSession` with its session, which is what `windowDidBecomeMain` does) → the panel shows exactly one row, `historyRow.0` "New Image" value "current", both footer buttons disabled. Set A's session active again → 4 rows, row 3 "current". Close the new document (untouched, no prompt, APP-9) → the panel shows A's 4 rows.
 - **Performance:** not applicable. The panel doesn't affect NF-1 to NF-4. Jumping replays 0008's tile diffs, whose cost 0008 measures.
-- **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` is green: clean build with no warnings, every test passes with none skipped, UI tests ran, launch smoke passes. No sanitizer dependency.
+- **Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` is green: clean build with no warnings, every test passes with none skipped, no crash report during the run. No sanitizer dependency.
 - **Manual verification** (look and feel can't be asserted automatically):
   1. Open a photo, paint 5 strokes, and open the History panel (⌥⌘2). Each row shows the paintbrush icon and "Paintbrush", and the first shows the photo icon and "Open Image".
   2. Click row 2. The canvas updates immediately, rows 3–5 have a grey background with dimmed text, and row 2 is highlighted. Check in **light and dark mode** that greyed and current rows are clearly distinguishable.

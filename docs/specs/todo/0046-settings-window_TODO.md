@@ -2,14 +2,14 @@
 
 > Source: PRD.md §5.1 APP-8 ("Settings window: default units, checkerboard style, undo memory limit, default JPEG quality, and the option to restore panel positions"), APP-5 (the unit "is chosen from a status-bar popup and persisted; its default comes from Settings"), APP-2 (panel frames remembered with frame autosave names); §5.4 H-5 / H-6 (dropping oldest steps; "1 GB" = 1 GiB); §6 NF-4 (configurable undo budget, default 1 GB); §5.2 CAN-4 (checkerboard); §12 D-4, D-9, D-23 (Settings built in M7), D-34; brief decision 32. Paint.NET: Settings dialog, https://www.getpaint.net/doc/latest/SettingsDialog.html (now served from https://paint.net/doc/latest/SettingsDialog.html). Its Canvas tab has a **"Transparency Checkerboard Brightness"** control that sets "the brightness of the transparency indicator (aka checkerboard)". The page lists no range or default. Paint.NET has no setting for checkerboard colors or size.
 > Milestone: M7
-> Depends on: 0045-shortcut-audit. Through it, this spec builds on 0001 (`MainMenu`, `LaunchOptions`, `UITestApp`), 0003 (`CheckerboardStyle`, `CanvasFrame`, `MetalCanvasRenderer`, `CanvasView`, `CanvasReferenceRenderer`), 0004 (`AppSettings`, `.appSettingsDidChange`, `MeasurementUnit`, `StatusBarModel`), 0006 (`PanelController`, `PanelKind.defaultFrame`), 0008 (`HistoryStack.setBudget`, `UndoBridge.setBudget`, `AppSettings.undoBudgetBytes`), 0009 (Paintbrush, for UI tests), 0010 (History panel rows), 0029 (`AppSettings.jpegQuality`, JPEG Options dialog), and 0031 (`UndoBridge.isBusy`).
+> Depends on: 0045-shortcut-audit. Through it, this spec builds on 0001 (`MainMenu`, `TestHost`, `AppDefaults`, `DocumentHarness`), 0003 (`CheckerboardStyle`, `CanvasFrame`, `MetalCanvasRenderer`, `CanvasView`, `CanvasReferenceRenderer`), 0004 (`AppSettings`, `.appSettingsDidChange`, `MeasurementUnit`, `StatusBarModel`), 0006 (`PanelController`, `PanelKind.defaultFrame`), 0008 (`HistoryStack.setBudget`, `UndoBridge.setBudget`, `AppSettings.undoBudgetBytes`), 0009 (Paintbrush, for the integration tests), 0010 (History panel rows), 0029 (`AppSettings.jpegQuality`, JPEG Options dialog), and 0031 (`UndoBridge.isBusy`).
 
 ## Context
 
 There is no application code yet. The specs this one builds on define the following pieces (names are from those specs and win over any other naming):
 
 - **`PaintDotMac/Core/Settings/AppSettings.swift`** was created by 0004 (`docs/specs/todo/0004-zoom-pan-and-status-bar_TODO.md:83-87`).
-  - `struct AppSettings: @unchecked Sendable` wraps an injected `UserDefaults`, via `init(defaults: UserDefaults = .standard, notificationCenter: NotificationCenter = .default)`.
+  - `struct AppSettings: @unchecked Sendable` wraps an injected `UserDefaults`, via `init(defaults: UserDefaults = AppDefaults.shared, notificationCenter: NotificationCenter = .default)`.
   - It declares `enum Key`, `Notification.Name.appSettingsDidChange` (`userInfo["key"]` = the changed key), and `measurementUnit` (`settings.measurementUnit`; missing or unknown → `.pixels`).
   - 0008 added `undoBudgetBytes` (`settings.undoBudgetBytes`, `docs/specs/todo/0008-history-stack-and-undo-bridge_TODO.md:174`). Its default is `HistoryStack.defaultBudgetBytes` = 1_073_741_824, and a missing, non-integer, or negative stored value reads as the default. It has no UI.
   - 0029 added `jpegQuality` (`settings.jpegQuality`, `static let defaultJPEGQuality = 95`, `docs/specs/todo/0029-flat-export-formats_TODO.md:138`). A missing or non-integer value reads as 95, and stored values are clamped to 0…100 on read. The setter clamps, writes, and posts. The JPEG Options dialog starts at the document's last quality this session, else at `AppSettings().jpegQuality`, and it never writes the key (`0029…:147`).
@@ -24,7 +24,7 @@ There is no application code yet. The specs this one builds on define the follow
   - The Tools panel size is its content's fitting size.
 - **History budget (0008, `0008…:158-171`, `:205-210`).** `HistoryStack.setBudget(_:)` stores `max(0, bytes)`, enforces the budget (folding `steps[1]` into the base while `totalBytes > budgetBytes && currentIndex >= 2`), and returns the dropped IDs. `UndoBridge.setBudget(_:)` forwards to it, removes the dropped steps' `NSUndoManager` actions, and bumps `historyRevision`. 0008's Out of scope line 390 says: "Settings UI for the undo budget and live budget changes across open documents (0046, calling `UndoBridge.setBudget`)."
 - **Menu (0001, `0001…:113`).** The app menu's "Settings…" item has key `,` with ⌘ and a `nil` action (a "placeholder → 0046"), and `MainMenuTests.placeholdersHaveNoAction` asserts that. 0045 moved all key equivalents into `Core/Shortcuts/ShortcutTable.swift` (row `app.settings`, ⌘,, status macStandard), gave the item the identifier `menu.app.settings`, and registered ⌘, in `SystemReservedShortcuts` with owner `app.settings`.
-- **`LaunchOptions.resettableKeyPrefixes`** = `["tool.", "panel.", "NSWindow Frame panel.", "colors.", "settings."]` (0007). Every key this spec adds starts with `settings.`, so `-UITestResetDefaults` already clears them.
+- **Preferences (0001):** settings live in `AppDefaults.shared` (a throwaway suite under tests). Every key this spec adds starts with `settings.`.
 - **0006's `CanvasInputRouter`** classifies any non-document, non-panel key window as `.other`, so single-key tool shortcuts don't fire while the Settings window is key.
 
 What's missing is the Settings window itself, settings for the checkerboard, and the live effect of changing the undo budget, the checkerboard, and the panel positions on what is already open.
@@ -85,7 +85,7 @@ Everything is saved and applies again after relaunch.
        - The decimal separator is always `"."` (the app is English-only, as in 0004).
      - Use `Int` arithmetic, which is 64-bit on all supported Macs.
 
-### Platform glue (AppKit/SwiftUI; hosted tests and UI tests)
+### Platform glue (AppKit/SwiftUI; hosted unit and headless integration tests)
 
 3. **`PaintDotMac/App/AppSettingsObserver.swift`** (new) is a small reusable subscription, `@MainActor final class AppSettingsObserver`.
    - `init(center: NotificationCenter = .default, keys: Set<String>, handler: @escaping @MainActor (String) -> Void)` adds an observer for `.appSettingsDidChange`. It calls `handler(key)` on the main actor only when `userInfo["key"]` is in `keys`.
@@ -114,14 +114,14 @@ Everything is saved and applies again after relaunch.
    - When each panel is built, record `defaultSize[kind]`, the size 0006 passes to `defaultFrame` when no autosaved frame exists (the panel's initial content size; for Tools, its fitting size).
    - Add `func resetPanelPositions(visibleFrame: CGRect? = NSScreen.main?.visibleFrame)`. For every kind, it calls `panel.setFrame(PanelKind.defaultFrame(for: kind, size: defaultSize[kind], visibleFrame: vf), display: true)`.
      - It does this whether the panel is currently shown or hidden. A hidden panel reappears at the default frame when it is next shown.
-     - With frame autosave active, AppKit rewrites `NSWindow Frame panel.<kind>` with the new frame, so the reset survives relaunch.
+     - With frame autosave active, AppKit rewrites `NSWindow Frame panel.<kind>` (under 0001's `AppDefaults.frameAutosaveName` mapping) with the new frame, so the reset survives relaunch.
      - Panel **visibility** (`panel.<kind>.visible`) is unchanged.
      - With `visibleFrame == nil` (no screen), it does nothing.
    - Expose it through `AppDelegate` as `@objc func resetPanelPositions(_ sender: Any?)` for the Settings view to call (through the model's injected closure, step 8).
 
 8. **`PaintDotMac/UI/SettingsView.swift`** (new) contains the SwiftUI view and its model.
    - **The model.** `@MainActor @Observable final class SettingsModel`.
-     - `init(settings: AppSettings = AppSettings(), center: NotificationCenter = .default, extraUndoPresetBytes: Int? = LaunchOptions.current.undoLimitExtraPresetBytes, resetPanelPositions: @escaping @MainActor () -> Void)`.
+     - `init(settings: AppSettings = AppSettings(), center: NotificationCenter = .default, extraUndoPresetBytes: Int? = nil, resetPanelPositions: @escaping @MainActor () -> Void)`.
      - It has observable `unit: MeasurementUnit`, `checkerboardBrightness`, `checkerboardSize`, `undoBudgetBytes: Int`, and `jpegQuality: Int`.
      - Each property's `didSet` writes through to `settings`, but only when the new value differs from the stored one, which avoids feedback loops.
      - An `AppSettingsObserver` on `AppSettings.allKeys` re-reads the changed value, so edits made elsewhere (the status bar) show up in the window.
@@ -150,7 +150,7 @@ Everything is saved and applies again after relaunch.
      - Style mask `[.titled, .closable]` (not resizable, not miniaturizable). Title "Settings".
      - `identifier = NSUserInterfaceItemIdentifier("settingsWindow")`, `isReleasedWhenClosed = false`, `tabbingMode = .disallowed`, `collectionBehavior` includes `.fullScreenAuxiliary`.
      - No frame autosave. It is centered (`center()`) the first time it is shown in each launch, and keeps its position until quit.
-   - `func show()` calls `showWindow(nil)` and `window?.makeKeyAndOrderFront(nil)`. It makes the window key, unlike the panels.
+   - `func show()` calls `showWindow(nil)` and `window?.makeKeyAndOrderFront(nil)`. It makes the window key, unlike the panels. **In test-host mode** (`TestHost.isActive`) it only loads the window and sets `private(set) var isShown = true` without ordering anything on screen; closing sets `isShown = false`. Outside tests `isShown` mirrors `window.isVisible`.
    - There is a single instance, owned lazily by `AppDelegate`. Choosing Settings… while the window is open brings it to the front and doesn't create a second one.
    - Closing it (the red button or ⌘W) only orders it out. Every control has already written its value, so there's no OK or Cancel, as is usual for Mac settings windows.
    - ⌘W works because `.closable` windows handle `performClose:`.
@@ -161,11 +161,7 @@ Everything is saved and applies again after relaunch.
     - Keep its key equivalent coming from 0045's `ShortcutTable` (⌘,). Don't add a second definition.
     - Update 0001's `MainMenuTests.placeholdersHaveNoAction`: 0005 already wired New…, so Settings… was the last placeholder — delete that test and add `settingsItemOpensSettings` (below). 0045 already gave the item the identifier `menu.app.settings` and the table row `app.settings` (⌘,); its `MainMenuShortcutTests` check key equivalents, not actions, so they need no change.
 
-11. **`PaintDotMac/App/LaunchOptions.swift`** (extend 0001, `#if DEBUG` only):
-    - Add `static let current: LaunchOptions`: in Debug `LaunchOptions(arguments: ProcessInfo.processInfo.arguments)`, in Release `LaunchOptions(arguments: [])` (so every hook reads nil/false). No earlier spec defines a shared instance; this one is the accessor later hooks use (0048's `perfFrameProbeOutput`, 0051's `windowContentSizeOverride`). Existing hook reads stay as their specs wrote them. Test: `LaunchOptionsTests.currentIsEmptyForTestRunner` — in the hosted unit tests (launched without hook arguments) `LaunchOptions.current.undoLimitExtraPresetBytes == nil` and `fixtureURLs == []`.
-    - Add `-UITestUndoLimitPreset <bytes>`, parsed into `undoLimitExtraPresetBytes: Int?`. Only positive integers are accepted; anything else is ignored.
-    - It adds one extra item to the Undo memory limit popup so that UI tests can pick a tiny limit (1 MiB, labelled "1 MB") through the real UI.
-    - In Release, `undoLimitExtraPresetBytes` is always nil.
+11. **Test seam (no launch hook):** `SettingsModel`'s `extraUndoPresetBytes` parameter adds one extra item to the Undo memory limit popup (for example 1 MiB, labelled "1 MB"); integration tests pass it when they build the model, so they can pick a tiny limit through the same popup binding the UI uses. The app always passes `nil`.
 
 12. **`project.yml`.** Nothing changes beyond the new files, which the existing source globs pick up. Run `xcodegen generate`.
 
@@ -174,30 +170,29 @@ Everything is saved and applies again after relaunch.
 ## Acceptance criteria
 
 **Menu and window**
-- [ ] PaintDotMac > Settings… (⌘,) is enabled with or without open documents and opens one window titled "Settings" (identifier `settingsWindow`). Choosing it again doesn't create a second window. ⌘W closes it. → `MainMenuTests.settingsItemOpensSettings`, `SettingsWindowControllerTests.singleInstance`, `SettingsUITests.testCommandCommaOpensSingleSettingsWindow`
-- [ ] While the Settings window is key, single-key tool shortcuts don't fire. → `SettingsUITests.testToolKeysIgnoredInSettings`
+- [ ] PaintDotMac > Settings… (⌘,) is enabled with or without open documents and opens one window titled "Settings" (identifier `settingsWindow`). Choosing it again doesn't create a second window. ⌘W closes it. → `MainMenuTests.settingsItemOpensSettings`, `SettingsWindowControllerTests.singleInstance`, `SettingsWindowIntegrationTests.settingsItemOpensSingleSettingsWindow`
+- [ ] While the Settings window is key, single-key tool shortcuts don't fire. → `SettingsWindowIntegrationTests.toolKeysIgnoredInSettings`
 
 **Default units**
-- [ ] The window shows Default units (Pixels by default). Changing it updates every open window's status-bar units at once, and new windows use it. It persists across relaunch. → `SettingsModelTests.unitWritesThrough`, `SettingsUITests.testDefaultUnitsAppliesToOpenWindows`, `SettingsUITests.testSettingsPersistAcrossRelaunch`
-- [ ] A unit chosen in a status bar shows up in the open Settings window. → `SettingsModelTests.externalChangeUpdatesModel`, `SettingsUITests.testStatusBarUnitUpdatesSettings`
+- [ ] The window shows Default units (Pixels by default). Changing it updates every open window's status-bar units at once, and new windows use it. It persists across relaunch. → `SettingsModelTests.unitWritesThrough`, `SettingsWindowIntegrationTests.defaultUnitsAppliesToOpenWindows`, `SettingsWindowIntegrationTests.settingsPersistForNewModel`
+- [ ] A unit chosen in a status bar shows up in the open Settings window. → `SettingsModelTests.externalChangeUpdatesModel`, `SettingsWindowIntegrationTests.statusBarUnitUpdatesSettings`
 
 **Checkerboard**
 - [ ] Checkerboard brightness is Light, Medium, or Dark, with the exact colors in step 1 (default Light = #FFFFFF / #CCCCCC). Checkerboard size is Small (4 pt), Medium (8 pt, default), or Large (16 pt). Defaults equal `CheckerboardStyle.standard`. → `CheckerboardStyleSettingsTests.*`, `AppSettingsTests.checkerboard*`
-- [ ] Changing either setting redraws every open canvas with the new style, without re-uploading tiles, and new windows use it. → `MetalCanvasRendererTests.customCheckerboardMatchesOracle`, `MetalCanvasRendererTests.checkerboardChangeUploadsNoTiles`, `CanvasCheckerboardBindingTests.*`, `SettingsUITests.testCheckerboardBrightnessRedrawsCanvas`
+- [ ] Changing either setting redraws every open canvas with the new style, without re-uploading tiles, and new windows use it. → `MetalCanvasRendererTests.customCheckerboardMatchesOracle`, `MetalCanvasRendererTests.checkerboardChangeUploadsNoTiles`, `CanvasCheckerboardBindingTests.*`, `SettingsWindowIntegrationTests.checkerboardBrightnessRedrawsCanvas`
 
 **Undo memory limit**
 - [ ] The Undo memory limit offers 256 MB, 512 MB, 1 GB (default), 2 GB, 4 GB, and 8 GB, plus the stored value labelled per `UndoLimitOption.label` when it isn't one of those. → `UndoLimitOptionTests.*`
-- [ ] Lowering the limit applies at once to every open document: the oldest steps are dropped (never the base step, the current step, or redo steps) and disappear from the History panel. Raising it drops nothing. → `UndoBudgetLiveTests.*`, `SettingsUITests.testLoweringUndoLimitDropsOldSteps`
+- [ ] Lowering the limit applies at once to every open document: the oldest steps are dropped (never the base step, the current step, or redo steps) and disappear from the History panel. Raising it drops nothing. → `UndoBudgetLiveTests.*`, `SettingsWindowIntegrationTests.loweringUndoLimitDropsOldSteps`
 
 **JPEG quality**
-- [ ] Default JPEG quality is 0–100 (default 95) through a slider and field. Invalid field input reverts. The JPEG Options dialog of a document that has no last-used quality starts at that value. → `SettingsModelTests.jpegQualityClampsAndWrites`, `SettingsUITests.testDefaultJPEGQualityUsedByDialog`, `SettingsUITests.testJPEGFieldRejectsInvalidInput`
+- [ ] Default JPEG quality is 0–100 (default 95) through a slider and field. Invalid field input reverts. The JPEG Options dialog of a document that has no last-used quality starts at that value. → `SettingsModelTests.jpegQualityClampsAndWrites`, `SettingsWindowIntegrationTests.defaultJPEGQualityUsedByDialog`, `SettingsWindowIntegrationTests.jpegFieldRejectsInvalidInput`
 
 **Panel positions**
-- [ ] Reset Panel Positions moves all four panels to `PanelKind.defaultFrame`, leaves their visibility unchanged, and the reset positions persist across relaunch. → `PanelControllerResetTests.*`, `SettingsUITests.testResetPanelPositions`
+- [ ] Reset Panel Positions moves all four panels to `PanelKind.defaultFrame`, leaves their visibility unchanged, and the reset positions persist across relaunch. → `PanelControllerResetTests.*`, `SettingsWindowIntegrationTests.resetPanelPositions`
 
 **Persistence, notifications, and smoke**
-- [ ] Every setting persists under its `settings.*` key and is cleared by `-UITestResetDefaults`. Every setter posts `.appSettingsDidChange` with its key. → `AppSettingsTests.allKeysArePrefixed`, `AppSettingsTests.everySetterPosts`, `AppSettingsTests.roundTripAll`, `SettingsUITests.testSettingsPersistAcrossRelaunch`, `SettingsUITests.testResetDefaultsRestoresSettings`
-- [ ] The app launches, opens a PNG and a JPEG, and stays up with no crash report (quality gate launch smoke).
+- [ ] Every setting persists under its `settings.*` key and is stored in `AppDefaults.shared`. Every setter posts `.appSettingsDidChange` with its key. → `AppSettingsTests.allKeysArePrefixed`, `AppSettingsTests.everySetterPosts`, `AppSettingsTests.roundTripAll`, `SettingsWindowIntegrationTests.settingsPersistForNewModel`
 
 ## Edge cases
 
@@ -236,7 +231,7 @@ All unit tests use Swift Testing. They isolate `UserDefaults(suiteName: "<Suite>
   - `checkerboardRoundTrip`: set `.dark` and `.small`; a new `AppSettings` on the same suite reads them; the stored strings are `"dark"` and `"small"`; `checkerboardStyle == CheckerboardStyle(brightness: .dark, size: .small)`.
   - `checkerboardUnknownFallsBack`: `"neon"` → `.light`; `Int` 7 under the size key → `.medium`.
   - `undoBudgetSetterClampsNegative`: set −5 → stored 0, reads 0. Set 2_147_483_648 → reads 2_147_483_648.
-  - `allKeysArePrefixed`: `allKeys` has 5 unique entries, all with prefix `"settings."`, and `LaunchOptions.shouldReset(key:)` is true for each.
+  - `allKeysArePrefixed`: `allKeys` has 5 unique entries, all with prefix `"settings."`.
   - `everySetterPosts`: for each of the five setters, set a value and assert exactly one `.appSettingsDidChange` arrives on the private center with `userInfo["key"]` equal to that key. Also check that the setter posts on a same-value set (documented behavior).
   - `roundTripAll`: set every property to a non-default value (cm, medium, large, 536_870_912, 40); a second instance reads all five identically.
 - **`PaintDotMacTests/Settings/UndoLimitOptionTests.swift`**
@@ -274,10 +269,10 @@ All unit tests use Swift Testing. They isolate `UserDefaults(suiteName: "<Suite>
   - `customCheckerboardMatchesOracle`: a 32×32 fully transparent image at zoom 1, 1× and 2× backing, styles (dark, small) and (medium, large). Every device pixel equals `CanvasReferenceRenderer` with the same style, exactly. Also check spot values by hand: device (0, 0) = light color, and device (side, 0) = dark color.
   - `semiTransparentOverCustomCheckerboard`: one pixel (255, 0, 0, 128) over the dark light-square #4D4D4D → expected `round(255·128/255 + (1 − 128/255)·77)` per channel (hand-computed R = 166, G = B = 38), ±1.
   - `checkerboardChangeUploadsNoTiles`: render, change `CanvasFrame.checkerboard`, render again → `tilesUploadedLastFrame == 0` and the output differs.
-- **`PaintDotMacTests/App/PanelControllerResetTests.swift`** (injected `AppModel` on a suite; remove `NSWindow Frame panel.*` keys from `.standard` before and after, as 0006's tests do):
+- **`PaintDotMacTests/App/PanelControllerResetTests.swift`** (injected `AppModel` on a suite; frames autosave under 0001's `test.` prefix, so the user's panel frames are never touched; no panel is ordered on screen):
   - `resetMovesAllToDefault`: move every panel to an arbitrary frame (`setFrame`), call `resetPanelPositions(visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 875))`. Each panel's frame equals `PanelKind.defaultFrame(for:size:visibleFrame:)` with its recorded default size. Also check by hand: History's origin x = 1440 − 16 − w and y = 875 − 16 − h.
-  - `resetPersists`: after reset, `UserDefaults.standard.string(forKey: "NSWindow Frame panel.history")` decodes (`NSRectFromString` of its first four fields) to the default frame.
-  - `hiddenPanelsResetWithoutShowing`: hide Layers, reset → frame is the default, `isPanelVisible(.layers) == false`, and the panel isn't on screen.
+  - `resetPersists`: after reset, `UserDefaults.standard.string(forKey: "NSWindow Frame test.panel.history")` decodes (`NSRectFromString` of its first four fields) to the default frame.
+  - `hiddenPanelsResetWithoutShowing`: hide Layers, reset → frame is the default, `isPanelVisible(.layers) == false`, and the panel isn't on screen (no panel ever is in the test host).
   - `noScreenIsNoOp`: `resetPanelPositions(visibleFrame: nil)` leaves frames unchanged.
 - **`PaintDotMacTests/UI/SettingsModelTests.swift`**
   - `initReadsEffectiveValues`: with corrupt stored values, the model shows the effective values.
@@ -290,51 +285,41 @@ All unit tests use Swift Testing. They isolate `UserDefaults(suiteName: "<Suite>
 - **`PaintDotMacTests/App/SettingsWindowControllerTests.swift`**
   - `windowConfigured`: title "Settings", identifier `settingsWindow`, style mask has `.titled`/`.closable` and not `.resizable`, `isReleasedWhenClosed == false`, `tabbingMode == .disallowed`.
   - `singleInstance`: calling `AppDelegate.showSettingsWindow` twice gives exactly one window with that identifier in `NSApp.windows`.
-  - `closeOrdersOut`: after `performClose`, `isVisible == false` and showing again reuses the same window object.
+  - `closeOrdersOut`: after `performClose`, `isShown == false` and showing again reuses the same window object; no window is ever visible in the test host (`HeadlessAssertions.noVisibleWindows()`).
 - **`PaintDotMacTests/App/MainMenuTests.swift`** (extend), `settingsItemOpensSettings`: the app menu's "Settings…" item has action `#selector(AppDelegate.showSettingsWindow(_:))`, target nil, identifier `menu.app.settings`, key equivalent "," with `[.command]` (from `ShortcutTable`).
-- **`PaintDotMacTests/App/LaunchOptionsTests.swift`** (extend):
-  - `undoLimitPresetParsed`: `["-UITestUndoLimitPreset", "1048576"]` → 1_048_576.
-  - `"abc"`, `"0"`, `"-5"`, or a missing value → nil.
 
 ### Integration (headless)
 
 Covered by `UndoBudgetLiveTests` above, which runs a real document session (commit, lower the limit, undo, assert pixels) through `PaintDocument` and `UndoBridge`.
 
-### UI tests: `PaintDotMacUITests/SettingsUITests.swift`
+### Window-level integration tests (headless): `PaintDotMacTests/Integration/SettingsWindowIntegrationTests.swift`
 
-All tests use `UITestApp` and launch with `-UITestResetDefaults YES` unless stated. Fixtures are generated at test time with `UITestFixtures.writePNG` / `writeJPEG`. The Settings window is opened with ⌘, unless stated, and found as `app.windows["settingsWindow"]`.
+Headless, in-process (AGENTS.md *Headless testing*): `@MainActor`, `.serialized`; documents open through `DocumentHarness` and are never shown; each step below maps to the real code path the UI uses: a menu shortcut or menu item (⌘R, ⇧⌘L, Image ▸ …) means `harness.perform` of that item's action (with its `representedObject` as sender), and enablement means `harness.isEnabled`; ⌘Z / ⇧⌘Z mean `perform(undo)` / `perform(redo)`; ⌘S means `save(to: fileURL, ofType: fileType, for: .saveOperation)` followed by decoding the file; tool keys go through `harness.shortcut`, canvas clicks and drags through `harness.clickCanvas` / `dragCanvas`; a dialog or sheet is captured by the recording `SheetPresenting` (0025) and driven through its model and its OK/Cancel actions, and "type X" into a field means setting that field's binding and committing it; Escape on a dialog means its Cancel action; a menu item's shown title or enabled state means its state after validation (`harness.isEnabled` and the item's validated title); an alert is recorded by `RecordingAlertPresenter` (0005) instead of being shown; history rows, layer rows, and status-bar values are read from the History and Layers panel models and the window's `StatusBarModel`. Each test ends with `HeadlessAssertions.closeAllDocuments()` and `noVisibleWindows()`. The Settings window comes from `AppDelegate.showSettingsWindow(_:)`, which in test-host mode loads the window without ordering it on screen (item 9); its controls are found by walking the hosting view's accessibility children, and their values are set through the `SettingsModel` bindings the controls use. Fixtures are generated at test time with `FixtureFiles.writePNG` / `writeJPEG`.
 
 - **Opening and focus**
-  - `testCommandCommaOpensSingleSettingsWindow`: with no document open, the menu item `menuItem("PaintDotMac", "Settings…")` is enabled. Press ⌘, → one `settingsWindow` exists, and all six controls exist by identifier. Press ⌘, again → there's still one. Press ⌘W → none.
-  - `testToolKeysIgnoredInSettings`: open a 64×64 PNG; the active tool is Paintbrush. Open Settings and click into `settings.jpegQualityField`, type "e" (Eraser key) → close Settings → `tool.paintbrush` is still selected (0006 selection state).
+  - `settingsItemOpensSingleSettingsWindow`: with no document open, `isEnabled(showSettingsWindow:)` is true. Performing it → `isShown`, one window with identifier `settingsWindow` in `NSApp.windows`, and all six controls exist by identifier. Performing it again → still one. `performClose` → `isShown == false`.
+  - `toolKeysIgnoredInSettings`: open a 64×64 PNG; the active tool is Paintbrush. With the Settings window passed as the key window and an `NSTextField` (standing in for `settings.jpegQualityField`) as its first responder, `shortcut("e", in: settingsWindow)` returns false → the Paintbrush is still active.
 - **Units**
-  - `testDefaultUnitsAppliesToOpenWindows`: open two 4000×2000 96-DPI fixtures. In Settings, set `settings.units` to "Inches" → both windows' `statusBar.units` read "Inches" and `statusBar.imageSize` reads "41.67 × 20.83". Open a third fixture → "Inches".
-  - `testStatusBarUnitUpdatesSettings`: open Settings and a fixture. Choose Centimeters in the status bar → `settings.units` value "Centimeters".
+  - `defaultUnitsAppliesToOpenWindows`: open two 4000×2000 96-DPI fixtures. Set the model's unit to Inches → both windows' `statusBar.unit == .inches` and `imageSizeText == "41.67 × 20.83"`. Open a third fixture → Inches.
+  - `statusBarUnitUpdatesSettings`: Settings open and a fixture open; `statusBar.selectUnit(.centimeters)` → the Settings model's unit and the `settings.units` control read "Centimeters".
 - **Checkerboard**
-  - `testCheckerboardBrightnessRedrawsCanvas`: open a 64×64 fully transparent PNG (at 100 % it's centered in the canvas).
-    - Take `canvas.screenshot()` and sample the pixel at the canvas center: each RGB component ≥ 190 (light checkerboard; tolerance for color management).
-    - Set `settings.checkerboardBrightness` to "Dark" → after redraw (poll up to 2 s) the same pixel's components are all ≤ 90.
-    - Set "Light" again → ≥ 190.
+  - `checkerboardBrightnessRedrawsCanvas`: open a 64×64 fully transparent PNG at 100 %. The window's `CanvasView.checkerboard` is `.standard`; render its `CanvasFrame` into an offscreen `MetalTestTarget` (as 0003's `CanvasIntegrationTests.checkerboardVisibleThroughTransparentPixels`) → the center pixel is #FFFFFF or #CCCCCC. Set brightness Dark → the view's `checkerboard.brightness == .dark` and `needsDisplay`; render again → the center pixel is one of the Dark colors from step 1, exactly. Set Light → back to the Light colors.
 - **Undo memory limit**
-  - `testLoweringUndoLimitDropsOldSteps`: launch with `-UITestUndoLimitPreset 1048576` and a 64×64 opaque white PNG.
-    - Make three short Paintbrush drags inside the image near the canvas center (`dragOnCanvas` from (0.48, 0.5) to (0.52, 0.5)). Each touches only tile (0, 0), costing 525_312 bytes.
-    - The History list shows 4 rows (Open Image + 3 × Paintbrush).
-    - In Settings, choose "1 MB" in `settings.undoLimit` → the History list shows 2 rows ("Open Image", "Paintbrush"). Edit > Undo is enabled once; after one ⌘Z, Undo is disabled.
+  - `loweringUndoLimitDropsOldSteps`: a `SettingsModel` built with `extraUndoPresetBytes: 1_048_576`; a 64×64 opaque white PNG.
+    - Three short Paintbrush drags inside the image near the canvas center (each touches only tile (0, 0), costing 525_312 bytes) → the History model shows 4 rows (Open Image + 3 × Paintbrush).
+    - Choose "1 MB" in `undoLimitOptions` → the History model shows 2 rows ("Open Image", "Paintbrush"). Undo is enabled once; after one undo, Undo is disabled.
     - Set "1 GB" → still 2 rows.
 - **JPEG quality**
-  - `testDefaultJPEGQualityUsedByDialog`: in Settings, type "50" + Return in `settings.jpegQualityField` → the slider value reads 50. Close Settings.
-    - Open a 64×64 JPEG fixture, paint one stroke, press ⌘S → the JPEG Options sheet's `jpegOptions.qualityField` value is "50". Cancel.
-  - `testJPEGFieldRejectsInvalidInput`: type "150" + Return → the field reverts to "95". Type "abc" + Return → "95".
+  - `defaultJPEGQualityUsedByDialog`: commit "50" in the JPEG quality field binding → the model's `jpegQuality == 50`. Close Settings.
+    - Open a 64×64 JPEG fixture, paint one stroke, save (`.saveOperation`) with 0029's `ScriptedSaveConfirmationPresenter` → it was asked `chooseJPEGQuality(initial: 50)`; it cancels.
+  - `jpegFieldRejectsInvalidInput`: commit "150" → the field reverts to "95". Commit "abc" → "95".
 - **Panel positions**
-  - `testResetPanelPositions`: open a fixture and record the History panel's frame (`app.windows["panel.history"].frame`, the default after reset).
-    - Drag its title bar by (−200, +150) and check the frame changed by ≥ 100 pt.
-    - In Settings, click `settings.resetPanelPositions` → the frame equals the recorded one within 1 pt, and all four panels are still visible.
-    - Terminate and relaunch with `resetDefaults: false` → the History frame still equals the recorded one within 1 pt.
-- **Persistence and reset**
-  - `testSettingsPersistAcrossRelaunch`: set units "Centimeters", brightness "Medium", size "Large", undo limit "2 GB", JPEG 40.
-    - Terminate and relaunch with `resetDefaults: false`, then open Settings → all five values read back (popup values "Centimeters", "Medium", "Large", "2 GB"; field "40").
-    - A newly opened fixture shows `statusBar.units` "Centimeters".
-  - `testResetDefaultsRestoresSettings`: after the above, relaunch with the default reset → Pixels, Light, Medium, 1 GB, 95.
+  - `resetPanelPositions`: open a fixture; record the History panel's frame (the default after a reset).
+    - `setFrame` it by (−200, +150) and check the frame changed.
+    - Press `settings.resetPanelPositions` (its accessibility press) → the frame equals the recorded one within 1 pt, and `isPanelVisible` is unchanged for all four panels.
+    - The frame autosaved under `NSWindow Frame test.panel.history` decodes to the recorded frame (what a relaunch restores).
+- **Persistence**
+  - `settingsPersistForNewModel`: set units Centimeters, brightness Medium, size Large, undo limit 2 GB, JPEG 40. A new `AppSettings` and `SettingsModel` on the same defaults (what a relaunch reads) → all five values read back. A newly opened fixture's status bar uses Centimeters.
 
 ### Performance
 
@@ -342,7 +327,7 @@ None of NF-1 to NF-4's measured paths change. A checkerboard change re-renders o
 
 ### Quality gate
 
-`.agents/skills/spec-implementer/scripts/quality-gate.sh` is green: a clean build with no warnings, every test passing with none skipped, UI tests run, and the launch smoke passing. Warn the user not to use the Mac while the UI tests run.
+`.agents/skills/spec-implementer/scripts/quality-gate.sh` is green: a clean build with no warnings, every test passing with none skipped, and no crash report during the run. Nothing is shown on screen, so the user can keep working.
 
 ### Manual verification
 
@@ -351,6 +336,7 @@ None of NF-1 to NF-4's measured paths change. A checkerboard change re-renders o
 3. **Undo limit feel.** With a large image and many strokes, lower the limit to 256 MB and check the History panel shrinks immediately without a hang. Undo still works down to the new oldest step.
 4. **Panel reset on a second display.** With panels moved to a second screen, Reset Panel Positions puts them on the main screen's default corners.
 5. **VoiceOver.** VoiceOver reads each control's label and the JPEG slider value.
+6. **Persistence across a real relaunch.** Set Centimeters, Dark, Large, 2 GB, JPEG 40, and move the History panel; quit and relaunch: the Settings window shows the same five values, the status bar uses Centimeters, and the History panel is where you left it. Then press ⌘, and use Reset Panel Positions; quit and relaunch: the panels stay at their default corners.
 
 ## Open questions
 

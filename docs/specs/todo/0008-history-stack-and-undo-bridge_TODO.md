@@ -7,7 +7,7 @@
 ## Context
 Not yet implemented: there is no history system. After 0001–0007, `PaintDocument` (`PaintDotMac/Document/PaintDocument.swift`, 0001/0002/0005) holds the opened or newly created `LayeredImage` (0002), saves PNG (0005), and prompts on close with unsaved changes (0005) — but nothing can change pixels yet, so nothing can be undone. `ToolContext` (`PaintDotMac/Core/Tools/ToolContext.swift`, 0006) reserves `commitHistory(_:)` and `performHistory(_:)` for this spec.
 
-**This spec supersedes 0005's interim rule 3** ("File > New marks the document edited"). From here on the edited state follows history only (PRD APP-9, D-30): an untouched new image (only its "New Image" base step) is clean and closes without a prompt, exactly like an untouched opened file. The 0005 code and tests that depend on the interim rule are rewritten here (Scope items 11 and 17); the close-prompt UI tests come back in 0009, which makes a real Paintbrush edit first.
+**This spec supersedes 0005's interim rule 3** ("File > New marks the document edited"). From here on the edited state follows history only (PRD APP-9, D-30): an untouched new image (only its "New Image" base step) is clean and closes without a prompt, exactly like an untouched opened file. The 0005 code and tests that depend on the interim rule are rewritten here (Scope items 11 and 17); the edited-state tests after a real edit come back in 0009, which makes a real Paintbrush edit first.
 
 This spec delivers the history engine every later pixel, selection, layer, and canvas operation records into:
 - **E-1:** undo/redo with ⌘Z / ⇧⌘Z, unlimited within a memory budget.
@@ -17,7 +17,7 @@ This spec delivers the history engine every later pixel, selection, layer, and c
 
 Paint.NET behavior mirrored: the first History row is "Open Image" (opened file) or "New Image" (File > New); undone steps remain (greyed, 0010) and redoable until a new action discards them.
 
-No pixel tool exists yet (Paintbrush is 0009), so the app-level UI test only proves Undo/Redo are disabled and the document is clean on a fresh document; the engine is proved by unit, property, and integration tests that drive `HistoryStack` with synthetic tile edits.
+No pixel tool exists yet (Paintbrush is 0009), so the app-level integration test only proves Undo/Redo are disabled and the document is clean on a fresh document; the engine is proved by unit, property, and integration tests that drive `HistoryStack` with synthetic tile edits.
 
 ### Types this spec relies on from earlier specs
 These are the real names from the earlier specs (read them in `docs/specs/done/`):
@@ -26,7 +26,7 @@ These are the real names from the earlier specs (read them in `docs/specs/done/`
 - **0002 test support:** `PaintDotMacTests/Support/SeededRandom.swift`.
 - **0003 `Canvas/CanvasView.swift`:** `var image: LayeredImage?` (assigning the edited image is all a pixel edit needs: the renderer finds changed tiles itself through 0002's `generation` / `changedTiles(since:)`), `func invalidateAll()` (whole-image replacements, revert, and `.structure` changes).
 - **0004 `Core/Settings/AppSettings.swift`:** injectable `UserDefaults`, keys under the `settings.` prefix (`settings.measurementUnit`), `.appSettingsDidChange`.
-- **0005:** `NewImageRequest.makeImage()`, `PaintDocumentController.newDocument(_:)` (step 4 creates the document), `PaintDocument.init(type:)` (untitled path), PNG save, `SaveUITests`, `PaintDocumentSavingTests`.
+- **0005:** `NewImageRequest.makeImage()`, `PaintDocumentController.newDocument(_:)` (step 4 creates the document), `PaintDocument.init(type:)` (untitled path), PNG save, `SaveIntegrationTests`, `NewImageIntegrationTests`, `PaintDocumentSavingTests`.
 - **0006:** `ToolContext`, `FakeToolContext` (test double), `CanvasToolSession` (the app-side conformer), `ToolDispatcher.commitPendingEdit()`, `AppModel.shared`, `PanelController`.
 
 This spec adds one helper to `LayeredImage` in its own new file `Core/History/LayeredImage+History.swift`: `func layerIndex(for id: Layer.ID) -> Int?`.
@@ -171,7 +171,7 @@ As a PaintDotMac user, every edit I make becomes a named step I can undo with �
    - **`setBudget`**: stores `max(0, bytes)`, enforces, returns dropped IDs.
    - **`markSaved(stepID:)`**: sets `savedStepID` to that ID if a step with it exists, else nil. `clearSavedState()` sets nil.
 
-8. **`Core/Settings/AppSettings.swift`** (extend 0004's type): `var undoBudgetBytes: Int`, UserDefaults key `"settings.undoBudgetBytes"` (`AppSettings.Key.undoBudgetBytes`, under 0004's `settings.` prefix so `-UITestResetDefaults` clears it, D-37), default `HistoryStack.defaultBudgetBytes`; a missing, non-integer, or negative stored value reads as the default. No UI (0046).
+8. **`Core/Settings/AppSettings.swift`** (extend 0004's type): `var undoBudgetBytes: Int`, UserDefaults key `"settings.undoBudgetBytes"` (`AppSettings.Key.undoBudgetBytes`, under 0004's `settings.` prefix), default `HistoryStack.defaultBudgetBytes`; a missing, non-integer, or negative stored value reads as the default. No UI (0046).
 
 9. **`Core/Tools/ToolContext.swift`** (extend 0006's protocol) with the history commit hook:
    ```swift
@@ -236,8 +236,7 @@ No PRD.md change is needed: E-1, H-3, H-5, H-6, APP-9, NF-4, D-9, D-30, and D-34
 
 17. **0005 tests rewritten (superseded interim rule 3):**
    - `PaintDocumentSavingTests.newDocumentIsEditedUntilSaved` → renamed `newDocumentIsCleanAndStaysCleanAfterSaveAs`: a document built through the new step-4 path → `isDocumentEdited == false`, one "New Image" step; after `save(to:ofType:for: .saveAsOperation)` to a temp URL → still clean, `fileURL` == that URL, `fileType == "public.png"`.
-   - `SaveUITests.closeNewImageDontSave`, `.closeNewImageCancel`, `.quitWithUnsavedNewImagePrompts` → removed here (an untouched new image no longer prompts); 0009 re-adds them as `closeEditedNewImageDontSave`, `closeEditedNewImageCancel`, `quitWithEditedNewImagePrompts` with a Paintbrush stroke first.
-   - `SaveUITests.closeNewImageSave` → rewritten as `saveAsNewImageWritesWhitePNG`: ⌘N, Return, ⌘S (untitled → save panel) → `saveThroughPanel(directory: tmp, name: "new.png")` → same decoded-file assertions as before (800×600, sampled pixels white, DPI within 0.05 of 96, sRGB profile); the window stays open and is clean.
+   - `SaveIntegrationTests.newImageIsEditedUntilSaved` → rewritten as `saveAsNewImageWritesWhitePNG`: a new image through `DocumentHarness.newImage` → `isDocumentEdited == false`; `save(to: tmp/new.png, ofType: "public.png", for: .saveAsOperation)` → same decoded-file assertions as before (800×600, sampled pixels white, DPI within 0.05 of 96, sRGB profile); the document is still clean. 0009 adds the edited-state tests after a Paintbrush stroke.
    - 0005's acceptance criterion "Closing (⌘W) or quitting (⌘Q) with an unsaved new image asks whether to save" is superseded by this spec's criterion that an untouched new image closes without a prompt; 0005's manual step that relies on the interim rule is replaced by manual step 2 below.
 
 ### Performance and memory (NF-1, NF-4)
@@ -260,9 +259,8 @@ No PRD.md change is needed: E-1, H-3, H-5, H-6, APP-9, NF-4, D-9, D-30, and D-34
 - [ ] `UndoBridge.historyRevision` bumps exactly once per recorded step, undo, redo, moving jump, dropping `setBudget`, `markSaved`, and `reset`, and never for no-ops. → `UndoBridgeTests.revisionBumpsOncePerOperation`
 - [ ] Undo then redo restores identical tiles over seeded random edit sessions, and every reachable state matches an independent pixel oracle. → `HistoryPropertyTests.randomSessionsMatchOracle`
 - [ ] `NSUndoManager` mirrors the stack: `canUndo`/`canRedo` and "Undo <name>"/"Redo <name>" titles match after every operation, including jumps and budget drops. → `UndoBridgeTests.*`, `UndoBridgePropertyTests.managerMirrorsStack`
-- [ ] The document's edited state follows the history: clean when opened or newly created (APP-9, superseding 0005's interim rule), dirty after a step, clean again after undoing back to the saved step, and clean after Save; autosave and Save To do not clear it; Save commits a pending tool edit first. → `PaintDocumentHistoryTests.*`, `PaintDocumentSavingTests.newDocumentIsCleanAndStaysCleanAfterSaveAs`, `SaveUITests.saveAsNewImageWritesWhitePNG`
-- [ ] On a freshly opened PNG and a fresh New Image, Edit > Undo and Edit > Redo are disabled and titled "Undo"/"Redo", and closing the window does not ask to save. → `HistoryUITests.freshOpenedDocumentHasNothingToUndo`, `freshNewImageHasNothingToUndo`
-- [ ] The app launches, opens a PNG and a JPEG, and stays up with no crash report (quality gate launch smoke).
+- [ ] The document's edited state follows the history: clean when opened or newly created (APP-9, superseding 0005's interim rule), dirty after a step, clean again after undoing back to the saved step, and clean after Save; autosave and Save To do not clear it; Save commits a pending tool edit first. → `PaintDocumentHistoryTests.*`, `PaintDocumentSavingTests.newDocumentIsCleanAndStaysCleanAfterSaveAs`, `SaveIntegrationTests.saveAsNewImageWritesWhitePNG`
+- [ ] On a freshly opened PNG and a fresh New Image, Edit > Undo and Edit > Redo are disabled and titled "Undo"/"Redo", and closing the window does not ask to save. → `HistoryIntegrationTests.freshOpenedDocumentHasNothingToUndo`, `.freshNewImageHasNothingToUndo`; the menus and no prompt on screen → manual steps 1–2
 
 ## Edge cases
 - **Sparse tiles:** painting into an absent tile records `before == nil` (cost = one tile); undo removes the tile again (`tile(at:) == nil`), so undo frees memory.
@@ -329,7 +327,7 @@ Shared test support (new):
   - `fakeCostSequence`: budget 10_000, `FakeHistoryItem` costs 3_000 (4_024 with overhead): A, B → 8_048; C → drops A, 8_048; undo once (current 1); `setBudget(0)` → returns [] (current < 2); redo; `setBudget(0)` → returns [idB], steps [base, C], `currentIndex 1`, `totalBytes 4_024`.
   - `redoStepsNeverDroppedByEnforcement`: 4 steps, undo to index 1, `setBudget(0)` → nothing dropped, `canRedo`.
   - `savedMarkerFollowsFold`: saved at A, fold A → `savedStepID == 0` and `isAtSavedState` when at base; saved at base, fold → nil.
-- `PaintDotMacTests/Settings/AppSettingsTests.swift` (extend 0004's suite, isolated `UserDefaults(suiteName:)`): `undoBudgetDefault == 1_073_741_824`; `undoBudgetReadsStoredValue` (stored 5_000_000 under `"settings.undoBudgetBytes"` → 5_000_000); `undoBudgetNegativeFallsBack` (−1 → default); `undoBudgetWrongTypeFallsBack` (`"abc"` → default); `undoBudgetKeyIsReset`: `LaunchOptions.shouldReset(key: "settings.undoBudgetBytes") == true`.
+- `PaintDotMacTests/Settings/AppSettingsTests.swift` (extend 0004's suite, isolated `UserDefaults(suiteName:)`): `undoBudgetDefault == 1_073_741_824`; `undoBudgetReadsStoredValue` (stored 5_000_000 under `"settings.undoBudgetBytes"` → 5_000_000); `undoBudgetNegativeFallsBack` (−1 → default); `undoBudgetWrongTypeFallsBack` (`"abc"` → default); `undoBudgetKeyHasSettingsPrefix`: `AppSettings.Key.undoBudgetBytes == "settings.undoBudgetBytes"`.
 
 **Round-trip and property tests** — `PaintDotMacTests/History/HistoryPropertyTests.swift`
 - `randomSessionsMatchOracle` (200 seeds × 40 operations, 600×520 image with 2 layers, layer 0 opaque white, layer 1 empty): each operation is chosen at random among *edit* (random layer, rect 1…300 px possibly crossing tiles and the canvas edge (clipped), random colour including alpha 0 and 128), *undo*, *redo*, *jump to random index*. The model keeps a list of `ReferenceCanvas` states and an expected index (edits truncate the list after the expected index). After every operation: `assertMatches(state.image, model[expectedIndex])`, `currentIndex`, `canUndo`, `canRedo`, and `undoStep?.name`/`redoStep?.name` match the model. Specifically, every undo-then-redo pair restores byte-identical tiles. Budget = default (no drops).
@@ -366,16 +364,16 @@ Shared test support (new):
   - `revertResetsHistory`: commit 2 steps, `revert(toContentsOf:ofType:)` with the temp PNG → one "Open Image" step, clean, `undoBridge.undoManager.canUndo == false`.
   - `windowControllerSuppliesBridgeUndoManager`: `DocumentWindowController.windowWillReturnUndoManager(window) === document.undoBridge.undoManager`.
 
-**UI tests** — `PaintDotMacUITests/HistoryUITests.swift` (via `UITestApp`, fixture PNG generated into a temp dir)
-- `freshOpenedDocumentHasNothingToUndo`: launch with `-UITestOpen <png>`; open the Edit menu: item "Undo" exists and `isEnabled == false`; item "Redo" exists and is disabled; no menu item titled with "Undo " prefix plus a name. Press ⌘W → the window closes with no "Do you want to save" sheet (`app.sheets.count == 0`, window count drops to 0).
-- `freshNewImageHasNothingToUndo` (APP-9): launch empty, ⌘N, confirm the New Image dialog with defaults; Edit > Undo and Redo disabled; ⌘W closes without a save sheet; ⌘N, Return, ⌘Q quits without a save prompt (`app.wait(for: .notRunning, timeout: 5)`).
-- `undoShortcutIsHarmlessOnFreshDocument`: with the PNG open, press ⌘Z and ⇧⌘Z; the canvas (`canvas`) and `statusBar.imageSize` are unchanged and the app is still running.
+**Integration tests (headless)** — `PaintDotMacTests/History/HistoryIntegrationTests.swift` (`@MainActor`, `.serialized`; fixture PNG from `FixtureFiles`; `DocumentHarness` with `display: false`, nothing shown; each test ends with `HeadlessAssertions.closeAllDocuments()` and `noVisibleWindows()`)
+- `freshOpenedDocumentHasNothingToUndo`: open the PNG; `harness.isEnabled(#selector(UndoManager.undo))` and `…redo` are false (their target is the window's undo manager from `windowWillReturnUndoManager`); `undoManager.undoMenuItemTitle == "Undo"`, `redoMenuItemTitle == "Redo"`; `isDocumentEdited == false`, so closing never prompts.
+- `freshNewImageHasNothingToUndo` (APP-9): `DocumentHarness.newImage` with a presenter that presses OK → the same assertions: Undo/Redo disabled, titles plain, `isDocumentEdited == false` (so neither ⌘W nor ⌘Q prompts).
+- `undoShortcutIsHarmlessOnFreshDocument`: with the PNG open, `perform(#selector(UndoManager.undo))` and `…redo` (which AppKit would only send if enabled; call the undo manager directly too) → the image's pixels and `statusBar.imageSizeText` are unchanged and nothing throws.
 
 **Performance** — `PaintDotMacTests/Performance/HistoryPerformanceTests.swift` (XCTest `measure`)
 - `testFullLayerDiffAndCommit`: 4000×3000 layer, every tile changed: `TileDiff.between` + `commit`. Report the time in Verification status; fail only above 150 ms (gross regression).
 - `testOneTileStrokeCommit`: 4000×3000, 1 changed tile among 192 candidates' worth of identity checks: report; fail above 5 ms (well within the NF-1 16 ms frame).
 
-**Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` is green: clean build with no warnings, every test passes with none skipped, UI tests ran, launch smoke passes.
+**Quality gate:** `.agents/skills/spec-implementer/scripts/quality-gate.sh` is green: clean build with no warnings, every test passes with none skipped, no crash report during the run.
 
 **Manual verification**
 1. Open a PNG; open the Edit menu: "Undo" and "Redo" are greyed out; ⌘W closes without prompting. (Automated too; a quick visual check of the menu titles.)
@@ -384,7 +382,7 @@ Shared test support (new):
 
 ## Out of scope
 - History panel UI, step icons, greyed-out undone rows, click-to-jump UI (0010; it uses `UndoBridge.jump(to:)`, `history.steps`, `history.currentIndex`, and observes `historyRevision`).
-- Close/quit prompt UI tests after a real edit (0009, with the Paintbrush).
+- Edited-state tests and close/quit prompt checks after a real edit (0009, with the Paintbrush).
 - Any pixel tool (Paintbrush 0009 is the first to commit `TileDiffHistoryItem`s).
 - Selection state and `SelectionHistoryItem` (0013), layer operations and `LayerHistoryItem` (0024), canvas-size operations (0022, 0035–0037) — they build on `DocumentSnapshotHistoryItem`/`HistoryItem` from this spec.
 - Settings UI for the undo budget and live budget changes across open documents (0046, calling `UndoBridge.setBudget`).
