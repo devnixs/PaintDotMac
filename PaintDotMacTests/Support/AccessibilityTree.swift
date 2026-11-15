@@ -87,6 +87,11 @@ enum AX {
         string(object, "accessibilityValue")
     }
 
+    /// The element's title (a `Button`'s visible label text).
+    static func title(of object: NSObject) -> String? {
+        string(object, "accessibilityTitle")
+    }
+
     /// The selected trait (SwiftUI `.isSelected`).
     static func isSelected(_ object: NSObject) -> Bool {
         boolValue(object, "isSelected")
@@ -96,6 +101,16 @@ enum AX {
 
     static func press(_ object: NSObject) -> Bool {
         boolValue(object, "accessibilityPerformPress")
+    }
+
+    /// VoiceOver's "raise value" on an adjustable element (spec 0007's sliders).
+    static func increment(_ object: NSObject) -> Bool {
+        boolValue(object, "accessibilityPerformIncrement")
+    }
+
+    /// VoiceOver's "lower value" on an adjustable element.
+    static func decrement(_ object: NSObject) -> Bool {
+        boolValue(object, "accessibilityPerformDecrement")
     }
 
     static func identifiers(inRoot root: NSObject) -> Set<String> {

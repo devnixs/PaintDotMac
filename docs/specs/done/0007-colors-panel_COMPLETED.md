@@ -278,6 +278,51 @@ Implemented 2026-11-15 on `main`, verified headlessly.
   click on the wheel, slider gradients and checkerboards, `More »`/`« Less` resizing the visible
   panel with the top-left corner fixed and `#123456` surviving a relaunch, light and dark mode,
   X/D/C in the real key windows, VoiceOver reading the swatches and incrementing a slider.
-- **Review:** please judge the compact panel's width (176 pt) and wheel diameter (160 pt), the
-  ⌘/⌥ drag feel, and whether `PanelWindow` should re-anchor the top edge for width-changing
-  resizes too (it currently leaves those to the pointer, on the assumption they are user drags).
+- **Review:** 2026-11-15 (independent). Every acceptance criterion and edge case was traced to a
+  test with independently derived expectations, and the spec's formulas were re-implemented in a
+  throwaway Swift oracle written from the spec text alone: RGB→HSV→RGB is the exact identity for
+  **all 16,777,216 8-bit colors** (exhaustive, and the oracle catches an injected sector-table
+  mutation), and every golden re-derives by hand — HSV↔RGB at 60° steps, grays/black/white,
+  half-away-from-zero (127.5→128), hue 359.9 stays sector 5, 359.6→360; hex 3/4/6/8-digit,
+  `#`-optional, whitespace-trimmed, all rejects (`##`, `0x`, full-width, 3/4-digit shorthand)
+  return `nil`; wheel geometry 0° at 3 o'clock counterclockwise (90 at 12, 180 at 9, 270 at 6),
+  rim clamp, exact center; drawn wheel pixels (255,8,8 east / 131,255,8 north / 131,8,255 south /
+  rim alphas 254·203·0) equal what the geometry hit-tests; ⌘/⌥/⇧⌘ constraints and the 15° snap
+  (52→45, 353→0, 7.5→15); persistence keys exactly `colors.primary` / `colors.secondary` /
+  `colors.panelExpanded`, values `#RRGGBBAA` uppercase, the active slot never persisted.
+  - Fixed: the More/Less button used state-flipped identifiers `colors.more`/`colors.less` —
+    spec pins one stable `colors.moreLess`; now it is, the explicit accessibilityLabel is gone so
+    VoiceOver reads the exact titles `More »`/`« Less`, and the test presses one identifier in
+    both states. Reset tooltip `Default Colors (D)` → the spec's `Reset to Default Colors (D)`.
+  - Acceptance criteria without a test, now added:
+    `ColorsPanelIntegrationTests.colorChangeDoesNotDirtyDocument` (real fixture open, X routed
+    through `CanvasInputRouter` with the document window key on the shared app model, hex commit →
+    `isDocumentEdited == false`, no undo actions), `.appStoreUsesAppDefaults` (the production
+    store writes `AppDefaults.shared`, never `UserDefaults.standard`),
+    `.colorKeyAutoRepeatIsConsumedButIgnored` (repeat consumed, colors stable, not consumed
+    behind a blocked gate), and `.voiceOverIncrementDrivesTheRedSlider` (255
+    `accessibilityPerformIncrement` calls on `colors.red` → `#FF0000FF` + field `255`, one
+    decrement back — the custom slider is genuinely adjustable; the slider's `Text` value is not
+    vended as a plain accessibility string, so the readout is pinned at `colors.redField`).
+  - Mutations tried and caught (7), each reverted: HSV sector-2 tuple swap (round-trip property +
+    exact sectors); 8-digit hex parsed AARRGGBB (`parsesEightDigits`, seeded round trip, editor +
+    store tests); wheel angle-sign flip (geometry `cardinalPoints`/`pointInverse` **and** image
+    `northIsHue90`/`southIsHue270` — drawn colors and hit-testing are anchored to the same real
+    direction); `swap()` dropping the HSV caches (`swapAlsoSwapsHSVCaches`);
+    `colors.panelExpanded` → `colors.expandedPanel` (`keyNamesAreTheDocumentedOnes`); auto-repeat
+    guard removed (the new repeat test); `textInputHasFocus: false` in the color-key gate (the
+    focused-field-editor test).
+  - `d165000`'s four pre-existing-warning fixes verified behavior-neutral: the selector-based
+    `AXEnhancedUserInterface` setter, the shared `AX.withAccessibilityClient`, the `@MainActor`
+    local `subviews(of:)`, and the dropped redundant `try` change nothing observable.
+  - Implementer flags answered: the per-slot HSV cache follows the spec's re-sync rules exactly;
+    hex bad-input is a true no-op (no write, field reverts); the wheel image is generated from the
+    geometry itself and pinned absolutely; X/D/C fire only through 0006's one gate (auto-repeat
+    consumed; ⌘/⌥/⌃ blocked; not tool keys); the 0006 field-editor stash is reused in
+    `ColorsPanelHarness.dispose()`; force-unwrap/NaN/zero-radius audit clean.
+  - Open questions: keep the 176 pt compact width and 160 pt wheel (Paint.NET proportions);
+    `PanelWindow` is right to re-anchor only height-driven resizes — width changes are pointer
+    drags and should follow it.
+  - Quality gate after the review fixes: **GREEN** — clean Debug build with no compiler
+    warnings, `tests: 661 passed, 0 failed, 0 skipped (of 661)`, `tests: no crash reports
+    during the run` (657 implementer tests + the 4 added here).

@@ -25,7 +25,7 @@ struct ColorsPanelIntegrationTests {
         defer { finish(harness) }
         let ids = harness.identifierSet()
         for id in ["colorsPanel", "colors.primary", "colors.secondary", "colors.wheel",
-                   "colors.swap", "colors.reset", "colors.more"] {
+                   "colors.swap", "colors.reset", "colors.moreLess"] {
             #expect(ids.contains(id), "missing \(id): \(ids)")
         }
         #expect(try harness.accessibilityValue("colors.primary") == "#3366CCFF")
@@ -91,6 +91,28 @@ struct ColorsPanelIntegrationTests {
         #expect(!harness.shortcut("c", in: other))
         #expect(harness.model.colors == before)
         #expect(harness.model.activeColorSlot == .primary)
+    }
+
+    /// Holding X/D/C: auto-repeat presses are consumed but ignored, so the colors never
+    /// flicker (spec 0007, CanvasInputRouter).
+    @Test func colorKeyAutoRepeatIsConsumedButIgnored() throws {
+        let harness = try ColorsPanelHarness(primary: blue())
+        defer { finish(harness) }
+        #expect(harness.shortcut("x"))
+        let swapped = harness.model.colors
+        #expect(swapped.primary == .white, "the first press acts")
+
+        #expect(harness.shortcut("x", isRepeat: true), "the repeat is consumed")
+        #expect(harness.model.colors == swapped, "but ignored: no flicker")
+        #expect(harness.shortcut("d", isRepeat: true))
+        #expect(harness.model.colors == swapped, "repeat D does not reset")
+        #expect(harness.shortcut("c", isRepeat: true))
+        #expect(harness.model.activeColorSlot == .primary, "repeat C does not toggle")
+
+        // Behind a blocked gate the repeat is not consumed at all (someone else may want it).
+        let other = harness.makeKeyWindow()
+        defer { other.close() }
+        #expect(!harness.shortcut("x", isRepeat: true, in: other))
     }
 
     @Test func typingInATextFieldBlocksColorAndToolKeys() throws {
@@ -219,6 +241,35 @@ struct ColorsPanelIntegrationTests {
             == ColorRGBA8(red: 32, green: 64, blue: 128, alpha: 128))
     }
 
+    /// The custom slider must answer VoiceOver's increment/decrement (`accessibilityPerformIncrement/Decrement`)
+    /// through its binding (C-2, spec 0007 `redSliderEditsPrimary`). The slider's `Text` value
+    /// is not vended as a plain string; the numeric box's `accessibilityValue` is.
+    @Test func voiceOverIncrementDrivesTheRedSlider() throws {
+        let harness = try ColorsPanelHarness(primary: .black, expanded: true)
+        defer { finish(harness) }
+        #expect(try harness.accessibilityValue("colors.redField") == "0")
+
+        let up = try harness.driveAdjustable("colors.red", up: true, limit: 300) {
+            $0.colors.primary.red < 255
+        }
+        pumpMainRunLoop()
+        #expect(up == 255, "one step per increment (bounded at 300): got \(up)")
+        #expect(harness.model.colors.primary
+            == ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 255))
+        #expect(try harness.accessibilityValue("colors.redField") == "255",
+                "the numeric box rides along")
+
+        let down = try harness.driveAdjustable("colors.red", up: false, limit: 300) {
+            $0.colors.primary.red > 254
+        }
+        pumpMainRunLoop()
+        #expect(down == 1, "one decrement: got \(down)")
+        #expect(harness.model.colors.primary.red == 254)
+        // Only Red moved; the other channels stay at 0.
+        #expect(harness.model.colors.primary.green == 0)
+        #expect(harness.model.colors.primary.blue == 0)
+    }
+
     @Test func wheelClickSetsActiveSlotFromGeometry() throws {
         let harness = try ColorsPanelHarness(primary: .black,
                                             secondary: ColorRGBA8(red: 229, green: 136, blue: 34))
@@ -300,16 +351,19 @@ struct ColorsPanelIntegrationTests {
         let harness = try ColorsPanelHarness(primary: blue())
         defer { finish(harness) }
         let collapsed = harness.identifierSet()
-        #expect(collapsed.contains("colors.more"))
+        #expect(collapsed.contains("colors.moreLess"))
+        #expect(try harness.accessibilityTitle("colors.moreLess") == "More »")
         #expect(!collapsed.contains(ColorHex.fieldIdentifier), "collapsed hides the hex box")
         #expect(!collapsed.contains(ColorChannel.red.sliderIdentifier))
         #expect(harness.textFields().isEmpty)
 
-        try harness.pressButton("colors.more")
+        try harness.pressButton("colors.moreLess")
         #expect(harness.model.colorsPanelExpanded)
         let expanded = harness.identifierSet()
         #expect(expanded.contains(ColorHex.fieldIdentifier))
-        #expect(expanded.contains("colors.less"))
+        // The one stable identifier (spec 0007), now titled « Less.
+        #expect(expanded.contains("colors.moreLess"))
+        #expect(try harness.accessibilityTitle("colors.moreLess") == "« Less")
         for channel in ColorChannel.allCases {
             #expect(expanded.contains(channel.sliderIdentifier), "missing \(channel.sliderIdentifier)")
             #expect(expanded.contains(channel.fieldIdentifier), "missing \(channel.fieldIdentifier)")
@@ -338,8 +392,9 @@ struct ColorsPanelIntegrationTests {
         plain.setFrame(NSRect(x: 0, y: 0, width: 100, height: 150), display: false)
         #expect(plain.frame.height == 150, "a panel that does not anchor content behaves as before")
 
-        try harness.pressButton("colors.less")
+        try harness.pressButton("colors.moreLess")
         #expect(!harness.model.colorsPanelExpanded)
+        #expect(try harness.accessibilityTitle("colors.moreLess") == "More »")
         #expect(UserDefaults(suiteName: harness.suiteName)?.bool(forKey: ColorSelectionStore.panelExpandedKey) == false)
 
         // Expanded state is app-wide and comes back on the next launch.
@@ -348,6 +403,63 @@ struct ColorsPanelIntegrationTests {
         defer { finish(relaunched) }
         #expect(relaunched.model.colorsPanelExpanded)
         #expect(relaunched.identifierSet().contains(ColorHex.fieldIdentifier))
+    }
+
+    /// C-1: color changes are not history steps and never mark a document edited — even when
+    /// the keys arrive through the router with the document window key, on the one app-wide
+    /// model the window routes through.
+    @Test func colorChangeDoesNotDirtyDocument() async throws {
+        let fixtures = try FixtureFiles()
+        defer { fixtures.removeAll() }
+        let url = try fixtures.writePNG(named: "colors-clean.png", width: 8, height: 8) { _, _ in
+            ColorRGBA8(red: 10, green: 20, blue: 30, alpha: 255)
+        }
+        let document = try await DocumentHarness.open(url)
+        let harness = try ColorsPanelHarness(primary: blue())
+        defer {
+            document.close()
+            harness.dispose()
+            HeadlessAssertions.closeAllDocuments()
+            HeadlessAssertions.noVisibleWindows()
+        }
+        // One app-wide model, as in production (0006's documented rewire).
+        document.windowController.appModel = harness.model
+
+        let before = harness.model.colors
+        // The document window is key: X routes through the `.document` window kind.
+        #expect(harness.shortcut("x", in: document.window))
+        #expect(harness.model.colors
+            == ColorSelection(primary: before.secondary, secondary: before.primary))
+
+        // And so does a hex commit on the same model.
+        harness.fields.beginHexEdit()
+        harness.fields.typeHex("#ABCDEF")
+        harness.fields.commitHex(in: harness.model)
+        #expect(harness.model.colors.primary == ColorRGBA8(red: 171, green: 205, blue: 239))
+
+        #expect(document.document.isDocumentEdited == false,
+                "color changes never mark the document edited (C-1)")
+        #expect(document.document.undoManager?.canUndo == false,
+                "color changes create no history steps")
+    }
+
+    /// AGENTS.md *Headless testing* / spec 0007: the production store writes to
+    /// `AppDefaults.shared` (a throwaway suite under tests), never the user's real preferences.
+    @Test func appStoreUsesAppDefaults() throws {
+        let standardBefore = UserDefaults.standard.string(forKey: ColorSelectionStore.primaryKey)
+        let store = ColorSelectionStore() // the default argument, as `AppModel` gets it
+        store.save(ColorSelection(primary: ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 255),
+                                  secondary: .white))
+        defer {
+            AppDefaults.shared.removeObject(forKey: ColorSelectionStore.primaryKey)
+            AppDefaults.shared.removeObject(forKey: ColorSelectionStore.secondaryKey)
+        }
+        #expect(AppDefaults.shared.string(forKey: ColorSelectionStore.primaryKey) == "#FF0000FF")
+        #expect(AppDefaults.shared !== UserDefaults.standard,
+                "the test host keeps colors out of the user's suite")
+        #expect(UserDefaults.standard.string(forKey: ColorSelectionStore.primaryKey)
+                == standardBefore,
+                "colors.* never reaches UserDefaults.standard")
     }
 
     /// The panel's accessibility labels, the ones VoiceOver reads for the wheel and swatches.

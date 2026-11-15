@@ -118,6 +118,36 @@ final class ColorsPanelHarness {
         return AX.withAccessibilityClient { AX.isSelected(inRoot: hosting, identifier: identifier) }
     }
 
+    /// The accessibility title of one element (a button's readable title text).
+    func accessibilityTitle(_ identifier: String) throws -> String {
+        pumpMainRunLoop()
+        return try AX.withAccessibilityClient {
+            let element = try #require(AX.first(inRoot: hosting, identifier: identifier),
+                                      "no accessibility element \(identifier)")
+            let title = AX.title(of: element) ?? AX.label(of: element)
+            return try #require(title, "\(identifier) exposes no title or label")
+        }
+    }
+
+    /// VoiceOver increment/decrement on one adjustable element, returning how many of the
+    /// `limit` calls the element accepted (one accessibility-client scope, no per-step pump:
+    /// the binding runs the model change synchronously).
+    func driveAdjustable(_ identifier: String, up: Bool, limit: Int,
+                         while condition: (AppModel) -> Bool) throws -> Int {
+        pumpMainRunLoop()
+        return try AX.withAccessibilityClient {
+            let element = try #require(AX.first(inRoot: hosting, identifier: identifier),
+                                       "no accessibility element \(identifier)")
+            var performed = 0
+            while performed < limit, condition(model) {
+                guard (up ? AX.increment(element) : AX.decrement(element)) else { break }
+                performed += 1
+            }
+            withExtendedLifetime(element) {}
+            return performed
+        }
+    }
+
     func pressButton(_ identifier: String) throws {
         pumpMainRunLoop()
         try AX.withAccessibilityClient {
@@ -232,13 +262,13 @@ final class ColorsPanelHarness {
     /// for the offscreen window (headless runs have no key window).
     @discardableResult
     func shortcut(_ characters: String, modifiers: NSEvent.ModifierFlags = [],
-                  in keyWindow: NSWindow? = nil) -> Bool {
+                  isRepeat: Bool = false, in keyWindow: NSWindow? = nil) -> Bool {
         let event = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: modifiers,
             timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: (keyWindow ?? window).windowNumber, context: nil,
             characters: characters, charactersIgnoringModifiers: characters,
-            isARepeat: false, keyCode: 0
+            isARepeat: isRepeat, keyCode: 0
         )
         guard let event else {
             Issue.record("could not synthesize a keyDown event")

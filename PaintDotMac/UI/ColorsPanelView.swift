@@ -127,7 +127,7 @@ struct ColorsPanelView: View {
                 .frame(width: Self.resetIconSide, height: Self.resetIconSide)
         }
         .buttonStyle(.borderless)
-        .help("Default Colors (D)")
+        .help("Reset to Default Colors (D)")
         .accessibilityLabel("Reset colors")
         .accessibilityIdentifier("colors.reset")
     }
@@ -196,12 +196,15 @@ struct ColorsPanelView: View {
         }
     }
 
+    /// One stable identifier across both states (spec 0007: `colors.moreLess`). No explicit
+    /// `accessibilityLabel`: the exact title (`More »` / `« Less`) is what VoiceOver reads.
+    static let moreLessIdentifier = "colors.moreLess"
+
     private var moreLessButton: some View {
         Button(model.colorsPanelExpanded ? "« Less" : "More »") {
             model.setColorsPanelExpanded(!model.colorsPanelExpanded)
         }
-        .accessibilityLabel(model.colorsPanelExpanded ? "Less color options" : "More color options")
-        .accessibilityIdentifier(model.colorsPanelExpanded ? "colors.less" : "colors.more")
+        .accessibilityIdentifier(Self.moreLessIdentifier)
     }
 }
 
