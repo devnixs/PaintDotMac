@@ -1,10 +1,10 @@
 import AppKit
 
 /// Input routing (spec 0006). The static `handleShortcutKeyDown` is the single entry point
-/// for single-key shortcuts (0007 adds X/D and 0009 adds `[`/`]` after the tool lookup
-/// returns false). The instance owns one document window's mouse/key routing: 0004 keeps
-/// magnify/scroll/Space-pan, everything else goes to the active tool through
-/// `ToolDispatcher`.
+/// for single-key shortcuts: the tool letters first (0006), then the Colors keys X, D, and C
+/// (0007), and 0009 adds `[`/`]` after the same lookup. The instance owns one document window's
+/// mouse/key routing: 0004 keeps magnify/scroll/Space-pan, everything else goes to the active
+/// tool through `ToolDispatcher`.
 @MainActor
 final class CanvasInputRouter {
     // MARK: - Single-key shortcuts (app-wide)
@@ -23,14 +23,46 @@ final class CanvasInputRouter {
             // Sheets, alerts, dialogs, Settings — no tool keys.
             windowKind = .other
         }
-        return model.dispatcher.handleShortcut(
+        let textInputHasFocus = hasTextInputFocus(in: keyWindow)
+        let modifiers = modifiers(from: event.modifierFlags)
+        if model.dispatcher.handleShortcut(
             charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
-            modifiers: modifiers(from: event.modifierFlags),
+            modifiers: modifiers,
             isRepeat: event.isARepeat,
             timestamp: event.timestamp,
             keyWindow: windowKind,
-            textInputHasFocus: hasTextInputFocus(in: keyWindow)
-        )
+            textInputHasFocus: textInputHasFocus
+        ) {
+            return true
+        }
+        return handleColorKey(event, model: model, modifiers: modifiers,
+                              keyWindow: windowKind, textInputHasFocus: textInputHasFocus)
+    }
+
+    /// X / D / C (C-1, D-31), behind the same gate as the tool letters: the Colors or Tools
+    /// panel or a document window is key, no text field is focused, no ⌘/⌥/⌃, no tool capturing
+    /// the keyboard, and no gesture in flight. Auto-repeat is consumed but ignored, so holding
+    /// X does not flicker. Paint.NET has no menu items for these, so none were added.
+    private static func handleColorKey(_ event: NSEvent, model: AppModel,
+                                       modifiers: ToolModifiers, keyWindow: ToolKeyWindowKind,
+                                       textInputHasFocus: Bool) -> Bool {
+        guard ToolShortcutGate.allows(
+            modifiers: modifiers, keyWindow: keyWindow,
+            textInputHasFocus: textInputHasFocus,
+            toolCapturesKeyboard: model.dispatcher.activeTool.capturesKeyboard,
+            gestureInProgress: model.dispatcher.isGestureInProgress
+        ), let command = ColorKeyCommand.command(
+            forCharactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
+            command: modifiers.contains(.command), option: modifiers.contains(.option),
+            control: modifiers.contains(.control)
+        ) else { return false }
+        guard !event.isARepeat else { return true }
+        switch command {
+        case .swap: model.swapColors()
+        case .reset: model.resetColors()
+        case .switchSlot: model.switchActiveColorSlot()
+        }
+        return true
     }
 
     /// The field editor of any `NSTextField`/SwiftUI `TextField` is an `NSText`; other text

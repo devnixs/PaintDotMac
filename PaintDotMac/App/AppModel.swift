@@ -2,8 +2,8 @@ import Foundation
 import Observation
 
 /// App-wide observable state (spec 0006): the tool dispatcher and its mirrors, the tool
-/// options store, the active document window's tool session, and the four panels'
-/// visibility. Later specs add init parameters with defaults (0007 adds its color store).
+/// options store, the active document window's tool session, the four panels'
+/// visibility, and the app-wide colors (0007).
 @MainActor
 @Observable
 final class AppModel {
@@ -32,11 +32,36 @@ final class AppModel {
 
     private var panelVisibility: [PanelKind: Bool] = [:]
 
-    init(defaults: UserDefaults = AppDefaults.shared, registry: ToolRegistry = .standard()) {
+    // MARK: - Colors (spec 0007)
+
+    @ObservationIgnored private let colorStore: ColorSelectionStore
+
+    /// The Colors panel's editing state: the two slots, the active slot, and the HSV caches
+    /// that keep a hue alive through grays and black.
+    private(set) var colorEditor: ColorEditorState
+
+    /// Whether the Colors panel shows the hex box and the sliders (`More »` / `« Less`).
+    private(set) var colorsPanelExpanded: Bool
+
+    /// The app-wide primary/secondary pair (C-1). Never a history step, never per document.
+    var colors: ColorSelection { colorEditor.selection }
+
+    /// The slot the panel edits; `C` moves it (D-31). Not persisted — every launch starts on
+    /// Primary.
+    var activeColorSlot: ColorSlot { colorEditor.activeSlot }
+
+    init(defaults: UserDefaults = AppDefaults.shared, registry: ToolRegistry = .standard(),
+         colorStore: ColorSelectionStore? = nil) {
         let dispatcher = ToolDispatcher(registry: registry)
         self.dispatcher = dispatcher
         self.registry = registry
         self.defaults = defaults
+        // The colors live in the same suite as everything else app-wide (AGENTS.md: never
+        // `UserDefaults.standard`); tests inject a throwaway `defaults`.
+        let colorStore = colorStore ?? ColorSelectionStore(defaults: defaults)
+        self.colorStore = colorStore
+        self.colorEditor = ColorEditorState(selection: colorStore.load())
+        self.colorsPanelExpanded = colorStore.loadPanelExpanded()
         self.activeToolID = dispatcher.activeToolID
         self.previousToolID = dispatcher.previousToolID
         self.hasPendingToolEdit = dispatcher.hasPendingEdit
@@ -112,5 +137,66 @@ final class AppModel {
 
     func togglePanel(_ kind: PanelKind) {
         setPanelVisible(kind, !isPanelVisible(kind))
+    }
+
+    // MARK: - Color edits (spec 0007)
+
+    /// X and the swap arrow (C-1).
+    func swapColors() {
+        colorEditor.swap()
+        saveColors()
+    }
+
+    /// D and the black/white reset icon (C-1).
+    func resetColors() {
+        colorEditor.reset()
+        saveColors()
+    }
+
+    /// An external color set: 0012's Color Picker and the panel's swatch/hex paths.
+    func setColor(_ color: ColorRGBA8, for slot: ColorSlot) {
+        colorEditor.setColor(color, for: slot)
+        saveColors()
+    }
+
+    /// One slider or numeric field, on the active slot.
+    func setColorChannel(_ channel: ColorChannel, to value: Int) {
+        colorEditor.set(channel, to: value)
+        saveColors()
+    }
+
+    /// The hex box's commit. `false` means the text was not a hex color: nothing changed and
+    /// nothing was written, so the field reverts with no alert (C-2).
+    @discardableResult
+    func applyHex(_ text: String) -> Bool {
+        guard colorEditor.applyHex(text) else { return false }
+        saveColors()
+        return true
+    }
+
+    /// A wheel click or drag (the view has already applied the ⌘/⌥/⇧⌘ constraint).
+    func applyWheel(hue: Double, saturation: Double, to slot: ColorSlot) {
+        colorEditor.applyWheel(hue: hue, saturation: saturation, to: slot)
+        saveColors()
+    }
+
+    func setActiveColorSlot(_ slot: ColorSlot) {
+        colorEditor.activeSlot = slot
+    }
+
+    /// C (C-1, D-31): colors and caches stay put, so nothing is written.
+    func switchActiveColorSlot() {
+        colorEditor.switchActiveSlot()
+    }
+
+    func setColorsPanelExpanded(_ expanded: Bool) {
+        colorsPanelExpanded = expanded
+        colorStore.savePanelExpanded(expanded)
+    }
+
+    /// Every change goes straight to the store: `UserDefaults` writes are cheap, and a quit
+    /// must never lose a color (C-1).
+    private func saveColors() {
+        colorStore.save(colorEditor.selection)
     }
 }

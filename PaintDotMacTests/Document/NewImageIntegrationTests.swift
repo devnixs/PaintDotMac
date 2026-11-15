@@ -68,7 +68,8 @@ struct NewImageIntegrationTests {
     }
 
     @Test func newImageCancelCreatesNothing() async throws {
-        try await TestRunGate.withLock {
+        // Nothing in this body throws, so no `try` — Xcode 27 flags the redundant marker.
+        await TestRunGate.withLock {
             defer { cleanup() }
             let before = NSDocumentController.shared.documents.count
             let presenter = ScriptedNewImagePresenter(steps: [.cancel])

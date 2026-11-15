@@ -8,12 +8,29 @@ enum AX {
     /// SwiftUI vends accessibility elements only while an accessibility client is active —
     /// exactly what the `AXEnhancedUserInterface` flag signals (VoiceOver sets it). Wrap any
     /// SwiftUI-tree read in this (the pattern proven by 0004's status-bar test).
+    ///
+    /// The setter goes in through the selector, like every other accessor in this file:
+    /// `accessibilitySetValue(_:forAttribute:)` is a 10.10-era deprecation with no replacement
+    /// for this attribute, and the build must stay warning-free.
     @MainActor
     static func withAccessibilityClient<T>(_ body: () throws -> T) rethrows -> T {
-        let attribute = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
-        NSApp.accessibilitySetValue(true, forAttribute: attribute)
-        defer { NSApp.accessibilitySetValue(false, forAttribute: attribute) }
+        setEnhancedUserInterface(true)
+        defer { setEnhancedUserInterface(false) }
         return try body()
+    }
+
+    private static let enhancedUserInterfaceSelector = NSSelectorFromString(
+        "accessibilitySetValue:forAttribute:"
+    )
+
+    @MainActor
+    private static func setEnhancedUserInterface(_ enabled: Bool) {
+        // AppKit answers this on every app; the guard only keeps a hypothetical future
+        // removal from crashing a test run.
+        guard NSApp.responds(to: enhancedUserInterfaceSelector) else { return }
+        NSApp.perform(enhancedUserInterfaceSelector,
+                      with: NSNumber(value: enabled),
+                      with: "AXEnhancedUserInterface" as NSString)
     }
 
     /// Presses the button with `identifier`, releasing the (possibly SwiftUI-owned) element

@@ -172,7 +172,8 @@ struct PanelsIntegrationTests {
             defer { finish(harness) }
 
             let controller = PanelController(model: harness.appModel)
-            for kind in [PanelKind.history, .layers, .colors] {
+            // Colors has real content since 0007; only History and Layers are placeholders (D-36).
+            for kind in [PanelKind.history, .layers] {
                 let panel = try #require(controller.panels[kind])
                 let content = try #require(panel.contentView)
                 pumpMainRunLoop()
@@ -192,7 +193,7 @@ struct PanelsIntegrationTests {
             let second = try await openFixture(fixtures, named: "bar-two.png")
             defer { finish(first); finish(second) }
 
-            func subviews(of view: NSView) -> [NSView] {
+            @MainActor func subviews(of view: NSView) -> [NSView] {
                 view.subviews.flatMap { [$0] + subviews(of: $0) }
             }
 

@@ -77,10 +77,7 @@ struct ZoomPanStatusBarIntegrationTests {
                 subviews(of: content).first { $0 is NSHostingView<StatusBarView> },
                 "the content view has no hosted status bar"
             )
-            let enhanced = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
-            NSApp.accessibilitySetValue(true, forAttribute: enhanced)
-            defer { NSApp.accessibilitySetValue(false, forAttribute: enhanced) }
-            let identifiers = accessibilityIdentifiers(of: hosting)
+            let identifiers = AX.withAccessibilityClient { accessibilityIdentifiers(of: hosting) }
             for id in ["statusBar.cursor", "statusBar.selectionSize", "statusBar.imageSize",
                        "statusBar.zoom", "statusBar.units"] {
                 #expect(identifiers.contains(id), "missing accessibility element \(id): \(identifiers)")

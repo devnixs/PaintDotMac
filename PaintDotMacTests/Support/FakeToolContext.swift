@@ -63,6 +63,8 @@ final class FakeToolContext: ToolContext {
     var options: any ToolOptionStore { memoryOptions }
     var transform: CanvasTransform { nav.transform }
     var previousToolID: ToolID?
+    /// Settable so a tool test can drive one pair of colors (0007).
+    var colors: ColorSelection = .default
 
     private(set) var activatedTools: [ToolID] = []
     private(set) var overlays: [ToolOverlay?] = []

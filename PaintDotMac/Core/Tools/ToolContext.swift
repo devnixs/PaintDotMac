@@ -4,12 +4,11 @@ import Foundation
 /// What a tool may touch (spec 0006). The main document window's canvas session
 /// (`Canvas/CanvasToolSession.swift`) implements it; tests use `FakeToolContext`.
 ///
-/// Reserved extensions owned by later specs: 0007 adds `var colors: ColorSelection { get }`;
-/// 0008 adds `commitHistory(_:)`, `performHistory(_:)`, and `updateImage(_:)`; 0009 adds
-/// `var paintClipMask` and the `.brushOutline` overlay case; 0012 adds `setColor(_:for:)`;
-/// 0013 adds the selection. Each spec that grows this protocol implements the new members in
-/// `CanvasToolSession` and `FakeToolContext`. `activateTool(_:)` and `previousToolID` live
-/// here so 0012 does not re-declare them.
+/// Reserved extensions owned by later specs: 0008 adds `commitHistory(_:)`, `performHistory(_:)`,
+/// and `updateImage(_:)`; 0009 adds `var paintClipMask` and the `.brushOutline` overlay case;
+/// 0012 adds `setColor(_:for:)`; 0013 adds the selection. Each spec that grows this protocol
+/// implements the new members in `CanvasToolSession` and `FakeToolContext`. `activateTool(_:)`
+/// and `previousToolID` live here so 0012 does not re-declare them.
 @MainActor
 protocol ToolContext: AnyObject {
     /// The document's image (read; pixel writes arrive with 0008's history).
@@ -19,6 +18,9 @@ protocol ToolContext: AnyObject {
     var navigation: any CanvasNavigating { get }
     /// `tool.<id>.<option>` persistence (TOOL-C).
     var options: any ToolOptionStore { get }
+    /// The app-wide primary/secondary pair (C-1); 0009 reads it at stroke start (TOOL-A) and
+    /// 0012 adds the setter path through `AppModel.setColor(_:for:)`.
+    var colors: ColorSelection { get }
     /// The tool that was active before the current one (T-14's "switch to previous tool").
     var previousToolID: ToolID? { get }
     /// Requests a tool switch, deferred until the current event handler returns

@@ -83,7 +83,8 @@ struct PanelControllerTests {
         let (controller, _, suiteName) = makeController()
         defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
         #expect(PanelPlaceholderView.message == "Not available yet.")
-        for kind in [PanelKind.history, .layers, .colors] {
+        // Colors has the real Colors panel since spec 0007, so only these two are placeholders.
+        for kind in [PanelKind.history, .layers] {
             let panel = try #require(controller.panels[kind])
             let hosting = try #require(panel.contentView)
             #expect(String(describing: hosting).contains("NSHostingView"))

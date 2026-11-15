@@ -32,6 +32,8 @@ final class CanvasToolSession: ToolContext {
 
     var options: any ToolOptionStore { model.toolOptions }
 
+    var colors: ColorSelection { model.colors }
+
     var previousToolID: ToolID? { model.previousToolID }
 
     func activateTool(_ id: ToolID) {

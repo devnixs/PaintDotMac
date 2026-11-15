@@ -145,8 +145,10 @@ final class PanelController: NSObject, NSWindowDelegate {
         switch kind {
         case .tools:
             AnyView(ToolsPanelView(model: model))
-        case .history, .layers, .colors:
-            // 0007, 0010, and 0025 replace their case with real content (D-36).
+        case .colors:
+            AnyView(ColorsPanelView(model: model))
+        case .history, .layers:
+            // 0010 and 0025 replace their case with real content (D-36).
             AnyView(PanelPlaceholderView(kind: kind))
         }
     }
@@ -160,10 +162,11 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         var styleMask: NSWindow.StyleMask = [.titled, .closable, .utilityWindow]
         if kind.isResizable { styleMask.insert(.resizable) }
-        let panel = NSPanel(
+        let panel = PanelWindow(
             contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: styleMask, backing: .buffered, defer: false
         )
+        panel.keepsTopLeftOnResize = kind.isResizable
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = true
         // Clicking a tool button must not take key status from the document window, so
@@ -189,5 +192,39 @@ final class PanelController: NSObject, NSWindowDelegate {
         }
         panel.setFrameAutosaveName(autosaveName)
         return panel
+    }
+}
+
+/// A panel window that keeps its **top-left** corner fixed when its SwiftUI content drives a
+/// resize. AppKit's content-driven resize anchors the bottom-left, which would drag the title bar
+/// down as the Colors panel grows under `More »` (spec 0007: "the panel window resizes to fit,
+/// keeping its top-left corner fixed"). Only height-only changes are re-anchored, so a
+/// user's drag of a panel edge keeps following the pointer.
+@MainActor
+final class PanelWindow: NSPanel {
+    var keepsTopLeftOnResize = false
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        guard keepsTopLeftOnResize, frameRect.width == frame.width,
+              frameRect.height != frame.height
+        else {
+            super.setFrame(frameRect, display: flag)
+            return
+        }
+        var pinned = frameRect
+        pinned.origin.y = frame.maxY - frameRect.height
+        super.setFrame(pinned, display: flag)
+    }
+
+    /// AppKit's content-driven resize may arrive here instead of `setFrame(_:display:)`.
+    override func setContentSize(_ size: NSSize) {
+        guard keepsTopLeftOnResize, size != contentView?.frame.size else {
+            super.setContentSize(size)
+            return
+        }
+        let top = frame.maxY
+        let left = frame.minX
+        super.setContentSize(size)
+        setFrameTopLeftPoint(NSPoint(x: left, y: top))
     }
 }
