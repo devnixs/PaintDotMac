@@ -1,0 +1,106 @@
+name: PaintDotMac
+
+options:
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Ad hoc signing, no team, no sandbox, hardened runtime off (PRD §4 Distribution, D-3).
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    ENABLE_HARDENED_RUNTIME: NO
+    ENABLE_APP_SANDBOX: NO
+    DEAD_CODE_STRIPPING: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+  configs:
+    # Debug builds the native architecture only; Release is universal (PRD §4 Hardware).
+    Debug:
+      ONLY_ACTIVE_ARCH: YES
+    Release:
+      ONLY_ACTIVE_ARCH: NO
+
+targets:
+  PaintDotMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: PaintDotMac
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thera-engineering.paintdotmac
+        PRODUCT_NAME: PaintDotMac
+    info:
+      path: PaintDotMac/Info.plist
+      properties:
+        CFBundleName: PaintDotMac
+        CFBundleDisplayName: PaintDotMac
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleIdentifier: $(PRODUCT_BUNDLE_IDENTIFIER)
+        CFBundlePackageType: APPL
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: $(MACOSX_DEPLOYMENT_TARGET)
+        NSPrincipalClass: NSApplication
+        LSApplicationCategoryType: public.app-category.graphics-design
+        NSHumanReadableCopyright: ""
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: "PNG image"
+            LSItemContentTypes:
+              - public.png
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            NSDocumentClass: $(PRODUCT_MODULE_NAME).PaintDocument
+          - CFBundleTypeName: "JPEG image"
+            LSItemContentTypes:
+              - public.jpeg
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            NSDocumentClass: $(PRODUCT_MODULE_NAME).PaintDocument
+
+  PaintDotMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - PaintDotMacTests
+    dependencies:
+      - target: PaintDotMac
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.thera-engineering.paintdotmac.tests
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/PaintDotMac.app/Contents/MacOS/PaintDotMac
+        BUNDLE_LOADER: $(TEST_HOST)
+
+schemes:
+  PaintDotMac:
+    build:
+      targets:
+        PaintDotMac: all
+        PaintDotMacTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - name: PaintDotMacTests
+          parallelizable: false
+      environmentVariables:
+        # Windowless test-host mode (AGENTS.md "Headless testing").
+        PAINTDOTMAC_HEADLESS_TESTS: "1"
+      commandLineArguments:
+        "-ApplePersistenceIgnoreState YES": true
+    archive:
+      config: Release
+    profile:
+      config: Release
+    analyze:
+      config: Debug

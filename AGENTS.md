@@ -50,15 +50,14 @@ project.yml          XcodeGen spec
 9. **Shortcuts** follow PRD §5.12: Ctrl → ⌘ and Alt → ⌥, macOS-reserved shortcuts win, and single-key tool shortcuts only fire when no text field has focus.
 
 ## Build and test
-The Xcode project or Swift package is created in milestone M0. Until then, these commands are the intended setup:
+`project.yml` is the source of truth. All tests are headless (no UI tests; the hosted app runs
+windowless — see *Headless testing*). Run the app by hand for the manual checks in each spec.
 ```bash
-# Build
-xcodebuild -scheme PaintDotMac -destination 'platform=macOS' build
-
-# Test
-xcodebuild -scheme PaintDotMac -destination 'platform=macOS' test
+xcodegen generate                                                     # after adding/removing files or targets
+xcodebuild -scheme PaintDotMac -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath build/DerivedData build
+xcodebuild -scheme PaintDotMac -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath build/DerivedData test -only-testing:PaintDotMacTests
+.agents/skills/spec-implementer/scripts/quality-gate.sh                # the final word, after every spec
 ```
-Keep this section updated as soon as the real project exists.
 
 ## Testing expectations
 - New `Core` code needs unit tests: blending math, flood fill, selection operations, resampling, and codec round-trips.

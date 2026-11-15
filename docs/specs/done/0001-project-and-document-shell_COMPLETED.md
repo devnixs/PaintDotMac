@@ -411,3 +411,58 @@ Sanitizers are not part of the bar: they are UNAVAILABLE on this Mac. The gate n
 - The Image, Layers, Adjustments, and Effects menus: added by **0022/0024/0031** and others, inserted between View and Window.
 - Drops on the Dock icon, the app, and windows (FMT-C): **0030**. The Settings window: **0046**. Crash-recovery autosave: **0047**. The app icon: **0050**. Formats other than PNG/JPEG: **0028/0029**.
 - Shortcut table centralization: **0045**.
+
+## Verification status
+
+Implemented 2026-11-15 on Xcode 27.2 (27B52) / macOS 27.2 (26B118) / XcodeGen 2.46.0 (the
+*Context* section's 26.x toolchain is superseded; nothing in this spec depended on the
+difference beyond the notes below).
+
+Quality gate (`quality-gate.sh`, default run, no flags) — **GREEN**:
+
+- `Core imports: OK`; `Test sources: headless`
+- `No compiler warnings.` (clean Debug build)
+- `tests: 61 passed, 0 failed, 0 skipped (of 61)`
+- `tests: no crash reports during the run`
+
+Performance: not applicable (no canvas, compositing, or history in this spec).
+
+Implementation notes (settled during the build):
+
+- Test-host activation policy `.prohibited` works for the hosted test run; the `.accessory`
+  fallback was **not** needed.
+- On macOS 27 ImageIO reports `statusComplete` and returns a decodable image even for PNG/JPEG
+  truncated mid-scan (verified against data-, URL-, and incremental-backed sources), so the
+  spec's `CGImageSourceGetStatusAtIndex` guard alone cannot reject truncated files.
+  `PaintDotMac/Core/IO/ContainerCompleteness.swift` (pure Foundation) checks the PNG chunk list
+  and the JPEG marker walk instead; `PaintDocument.read` keeps every guard the spec lists and
+  adds this one. Covered by `rejectsTruncatedPNG` and an added `rejectsTruncatedJPEG`.
+- `NSApplication` manages the Services menu instance itself once a main menu is set on a
+  running app, so `installSetsSpecialMenus` asserts the Services menu by title (the uninstall
+  → `install` → assert sequence still fails if `MainMenu.install` drops an assignment); object
+  identity of the constructed submenu is not observable.
+- The Swift overlay renames `NSDocument.saveDocument(_:)`/`saveDocumentAs(_:)` to
+  `save(_:)`/`saveAs(_:)`; the menu pins the AppKit action names via
+  `NSSelectorFromString("saveDocument:")` / `("saveDocumentAs:")`, matching the spec table.
+- Submenu parent items carry AppKit's own `submenuAction:` (AppKit assigns it when a submenu is
+  attached); the menu-table tests list it for Services and Open Recent.
+- `AGENTS.md` *Build and test* now lists the real commands (spec-mandated text). No PRD change,
+  as planned.
+- Mutation spot-checks, each caught by ≥1 test and restored: removing
+  `makeWindowControllers()`'s controller (6 tests fail), removing the `app.windowsMenu`
+  assignment in `MainMenu.install` (1), stubbing the `ContainerCompleteness` guard (2), and
+  changing the shared `tabbingIdentifier` (2).
+
+Manual verification steps (never run by the agent; the user runs them when convenient):
+
+- [ ] 1. The gate stays off screen: while the gate runs, no PaintDotMac window, Dock icon, or alert appears, and `pgrep -fl PaintDotMac.app` prints nothing afterwards.
+- [ ] 2. Empty launch of `build/DerivedData/Build/Products/Debug/PaintDotMac.app`: only the menu bar, no window; the app keeps running.
+- [ ] 3. Signing/architectures: `codesign -dv --verbose=2` shows `Signature=adhoc`, no `TeamIdentifier`, no `runtime` flag; `lipo -archs` on the Debug binary prints only `arm64`; after the end-of-batch `--release` gate, `build/PaintDotMac.app` prints `x86_64 arm64`.
+- [ ] 4. Finder integration: Open With → PaintDotMac for a PNG and a JPEG (own titled windows, image shown); ⌘W closes without prompt; New…, Save, Save As…, Undo, Cut, Copy, Paste disabled; ⌘S/⌘N do nothing; Open panel offers only PNG/JPEG; Open Recent lists files and "Clear Menu" empties it.
+- [ ] 5. Tabs: separate windows by default, Window > Merge All Windows tabs them, View > Show Tab Bar / Show All Tabs work; with "Prefer tabs" set to "Always", new images join as tabs (restore the preference afterwards).
+- [ ] 6. No duplicate menu items in View/Window; Help shows the search field.
+- [ ] 7. Corrupt file from Finder (`broken.png`): "couldn’t be opened" alert, app keeps running.
+- [ ] 8. Light and Dark mode: the placeholder background follows the window background color.
+
+Review: _(to be filled by the reviewer: criteria traced, mutations tried, issues found, final
+gate lines)_
