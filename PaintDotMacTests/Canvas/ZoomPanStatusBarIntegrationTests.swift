@@ -181,7 +181,8 @@ struct ZoomPanStatusBarIntegrationTests {
                 MainMenu.make().items.first { $0.identifier == MainMenu.viewMenuIdentifier }?.submenu
             )
             let zoomActions: [Selector] = [MainMenu.zoomInAction, MainMenu.zoomOutAction,
-                                           MainMenu.zoomToWindowAction, MainMenu.actualSizeAction]
+                                           MainMenu.zoomToWindowAction, MainMenu.zoomToSelectionAction,
+                                           MainMenu.actualSizeAction]
             var itemsByAction: [String: NSMenuItem] = [:]
             for item in viewMenu.items {
                 if let action = item.action, zoomActions.contains(action),
@@ -192,7 +193,8 @@ struct ZoomPanStatusBarIntegrationTests {
                     itemsByAction[NSStringFromSelector(action)] = item
                 }
             }
-            #expect(itemsByAction.count == 4)
+            #expect(itemsByAction.count == 5,
+                    "Zoom to Selection (0014) joins the routed View actions")
 
             @MainActor func performItem(_ selector: String) throws {
                 let item = try #require(itemsByAction[selector], "no menu item for \(selector)")

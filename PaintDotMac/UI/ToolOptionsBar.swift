@@ -45,7 +45,8 @@ struct ToolOptionsBar: View {
 
             Divider()
 
-            ToolOptionsContent(toolID: model.activeToolID, model: model)
+            ToolOptionsContent(toolID: model.activeToolID, model: model,
+                               onEndEditing: onEndEditing)
 
             Spacer()
 
@@ -72,9 +73,21 @@ struct ToolOptionsBar: View {
 struct ToolOptionsContent: View {
     let toolID: ToolID
     let model: AppModel
+    /// Forwarded to the views with numeric fields (0014) so Return/Escape restore the
+    /// canvas as first responder.
+    var onEndEditing: () -> Void = {}
 
     var body: some View {
         switch toolID {
+        case .rectangleSelect:
+            // T-1 / D-44d: mode + clipping are shared with the other selection tools;
+            // only Rectangle Select has the draw-mode controls.
+            SelectionToolOptionsView(model: model, showsDrawMode: true,
+                                     onEndEditing: onEndEditing)
+        case .ellipseSelect:
+            // T-3: Paint.NET's Ellipse Select has no draw-mode options.
+            SelectionToolOptionsView(model: model, showsDrawMode: false,
+                                     onEndEditing: onEndEditing)
         case .paintbrush:
             BrushToolOptionsView(model: model, tool: .paintbrush, showsBlendMode: true)
         case .eraser:

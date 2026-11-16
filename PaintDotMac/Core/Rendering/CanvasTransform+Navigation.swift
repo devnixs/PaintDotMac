@@ -84,4 +84,25 @@ extension CanvasTransform {
         updated.viewSize = newViewSize
         return updated.clampedScroll()
     }
+
+    /// Zoom to Selection (CAN-1, spec 0014): Paint.NET's "Zoom to Selection" — the rect
+    /// fitted into the view with `ZoomLevels.fitZoom(…, allowsEnlargement: true)` (clamped
+    /// 1 %–3200 % by `fitZoom`), the rect centered, then `clampedScroll` (the selection is
+    /// "as centered as the image edges allow"). A rect with a zero or non-finite side or
+    /// origin, or a zero view size, changes nothing.
+    func zoomedToFit(_ rect: CGRect) -> CanvasTransform {
+        guard rect.origin.x.isFinite, rect.origin.y.isFinite,
+              rect.width.isFinite, rect.height.isFinite,
+              rect.width > 0, rect.height > 0,
+              viewSize.width > 0, viewSize.height > 0 else { return self }
+        let drawable = drawableSize
+        var updated = self
+        updated.setZoom(ZoomLevels.fitZoom(
+            contentSize: CGSize(width: rect.width, height: rect.height),
+            viewportSize: CGSize(width: Double(drawable.width), height: Double(drawable.height)),
+            allowsEnlargement: true
+        ))
+        updated.center = CGPoint(x: rect.midX, y: rect.midY)
+        return updated.clampedScroll()
+    }
 }

@@ -219,8 +219,10 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
             MainActor.assumeIsolated { self?.refreshCanvas(for: change) }
         }
         // A document attached to a fresh (or rewired) window shows its current selection
-        // (0013) — opens and Revert reset it to nil, so this starts the ants hidden.
+        // (0013) — opens and Revert reset it to nil, so this starts the ants hidden and the
+        // status-bar selection size from the document's selection (0014).
         updateMarchingAnts()
+        toolSession?.refreshSelectionSize()
     }
 
     /// Pushes the post-undo/redo/jump state to the canvas: `pixels` re-uploads only the
@@ -246,6 +248,9 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         }
         statusBarModel.update(image: document.image)
         if change.affectsSelection { updateMarchingAnts() }
+        // 0014: every step, undo, redo, jump, and reset re-reads the status-bar selection
+        // size (the size also follows the image size for `structure` changes).
+        toolSession?.refreshSelectionSize()
     }
 
     /// Re-reads the marching-ants outline from the document's selection under the current
@@ -266,6 +271,10 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         if let canvasView, let navigation, let overlayView {
             let session = CanvasToolSession(canvasView: canvasView, navigation: navigation,
                                             overlayView: overlayView, model: wiredModel)
+            // 0014: the selection tools keep the status-bar selection size live and hide
+            // the ants during a Replace-mode preview.
+            session.statusBar = statusBarModel
+            session.marchingAntsOverlay = marchingAntsOverlay
             let router = CanvasInputRouter(canvasView: canvasView, navigation: navigation,
                                            session: session, model: wiredModel)
             session.router = router
@@ -388,12 +397,21 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
 
     @objc func zoomToWindow(_ sender: Any?) { navigation?.zoomToWindow() }
 
+    /// View > Zoom to Selection (0014, CAN-1, ⇧⌘B): fit the selection's tight bounds into
+    /// the window. Disabled with no selection (PRD D-44b).
+    @objc func zoomToSelection(_ sender: Any?) {
+        guard let selection = (document as? PaintDocument)?.undoBridge.state.selection else { return }
+        navigation?.zoomToSelection(selection.bounds)
+    }
+
     @objc func actualSize(_ sender: Any?) { navigation?.actualSize() }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(zoomIn(_:)): return navigation?.canZoomIn ?? false
         case #selector(zoomOut(_:)): return navigation?.canZoomOut ?? false
+        case #selector(zoomToSelection(_:)):
+            return (document as? PaintDocument)?.undoBridge.state.selection != nil
         case #selector(selectAll(_:)): return selectionCommandIsEnabled(.selectAll)
         case #selector(deselect(_:)): return selectionCommandIsEnabled(.deselect)
         case #selector(invertSelection(_:)): return selectionCommandIsEnabled(.invertSelection)

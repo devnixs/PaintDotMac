@@ -173,6 +173,7 @@ struct MainMenuTests {
             Row(title: "Zoom In", key: "+", modifiers: [.command], action: "zoomIn:"),
             Row(title: "Zoom Out", key: "-", modifiers: [.command], action: "zoomOut:"),
             Row(title: "Zoom to Window", key: "b", modifiers: [.command], action: "zoomToWindow:"),
+            Row(title: "Zoom to Selection", key: "b", modifiers: [.command, .shift], action: "zoomToSelection:"),
             Row(title: "Actual Size", key: "0", modifiers: [.command], action: "actualSize:"),
             .separator,
             Row(title: "Enter Full Screen", key: "f", modifiers: [.command, .control], action: "toggleFullScreen:"),

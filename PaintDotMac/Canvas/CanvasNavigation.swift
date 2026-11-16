@@ -78,6 +78,16 @@ final class CanvasNavigation {
         apply(transform.fittedToWindow())
     }
 
+    /// Zoom to Selection (CAN-1, spec 0014): fit `bounds` into the window, centered as far
+    /// as the image edges allow. The usual after-transform-change path follows (redraw,
+    /// status-bar zoom) through `apply`.
+    func zoomToSelection(_ bounds: PixelRect) {
+        guard let transform = currentTransform else { return }
+        apply(transform.zoomedToFit(
+            CGRect(x: Double(bounds.x), y: Double(bounds.y),
+                   width: Double(bounds.width), height: Double(bounds.height))))
+    }
+
     /// The shared zoom entry point (0006's Zoom tool and 0014's Zoom to Selection use it).
     func setZoom(_ zoom: Double, anchoredAtView point: CGPoint) {
         guard let transform = currentTransform else { return }

@@ -76,6 +76,25 @@ enum ToolOverlay: Sendable, Equatable {
     /// Canvas space, the brush circle's bounding square (spec 0009, D-38); drawn as the
     /// ellipse inscribed in the view-mapped rect, hidden below `BrushOutline.minimumViewDiameter`.
     case brushOutline(CGRect)
+    /// The shape a selection tool drags (spec 0014), drawn in the marquee style.
+    case selectionShape(SelectionShapePreview)
+}
+
+/// The rectangle/ellipse outline a selection tool previews while dragging (spec 0014; the
+/// Lasso 0015 previews a path instead). `rect` is a canvas-space pixel rect — an ellipse is
+/// the ellipse inscribed in it, and for the ellipse tool the rect may run past the canvas
+/// (the shape keeps its true form; 0013's mask clips). `hidesCurrentSelection` is the
+/// Replace mode's "reset at mouse-down": the current selection's ants stay hidden while
+/// the preview lives (Escape restores them — the selection itself is untouched).
+struct SelectionShapePreview: Sendable, Equatable {
+    enum Shape: String, Sendable, Equatable {
+        case rectangle
+        case ellipse
+    }
+
+    var shape: Shape
+    var rect: PixelRect
+    var hidesCurrentSelection: Bool
 }
 
 /// The cursor a tool requests. `location nil` in `Tool.cursor(at:modifiers:)` means the

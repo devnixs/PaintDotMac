@@ -56,11 +56,13 @@ struct AppModelToolTests {
         defer { discard(name) }
         let model = AppModel(defaults: suite)
         // 0011 registered the Eraser and the Pencil after the Paintbrush; 0012 the Color
-        // Picker.
+        // Picker; 0014 the two selection tools (ToolID.allCases order puts them first).
         #expect(model.implementedTools.map(\.id)
-                    == [.zoom, .pan, .paintbrush, .eraser, .pencil, .colorPicker])
+                    == [.rectangleSelect, .ellipseSelect, .zoom, .pan, .paintbrush, .eraser,
+                        .pencil, .colorPicker])
         #expect(model.implementedTools.map(\.displayName)
-                    == ["Zoom", "Pan", "Paintbrush", "Eraser", "Pencil", "Color Picker"])
+                    == ["Rectangle Select", "Ellipse Select", "Zoom", "Pan", "Paintbrush",
+                        "Eraser", "Pencil", "Color Picker"])
     }
 
     /// D-35: selecting a tool writes nothing; a relaunch starts on the default tool.

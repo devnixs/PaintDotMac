@@ -21,8 +21,23 @@ final class MarchingAntsOverlay: NSView {
 
     private let underlineLayer = CAShapeLayer()
     private var selection: Selection?
+    private var transform: CanvasTransform?
     private var reduceMotionObserver: NotificationObserverBox?
     private(set) var mode: MarchingAnts.Mode = .hidden
+
+    /// While a selection tool previews a Replace-mode shape (0014), the current
+    /// selection's ants are hidden — the selection itself is untouched, so clearing this
+    /// (drag ends or Escape) shows them again without waiting for a state change.
+    var suppressesSelection = false {
+        didSet {
+            guard suppressesSelection != oldValue else { return }
+            applyPaths()
+            applyMode()
+        }
+    }
+
+    /// What the layers show: `nil` while suppressed.
+    private var displaySelection: Selection? { suppressesSelection ? nil : selection }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -76,20 +91,32 @@ final class MarchingAntsOverlay: NSView {
     /// `reset` — open / Revert), after every transform change, and on Reduce Motion flips.
     func update(selection: Selection?, transform: CanvasTransform) {
         self.selection = selection
-        let path = selection.map { MarchingAnts.viewPath(for: $0, transform: transform) }
+        self.transform = transform
+        applyPaths()
+        applyBackingScale()
+        applyMode()
+    }
+
+    /// Points the two shape layers at the outline under the last transform, or clears them
+    /// while `suppressesSelection` holds (0014).
+    private func applyPaths() {
+        let path: CGPath?
+        if let displaySelection, let transform {
+            path = MarchingAnts.viewPath(for: displaySelection, transform: transform)
+        } else {
+            path = nil
+        }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         underlineLayer.path = path
         dashLayer?.path = path
         CATransaction.commit()
-        applyBackingScale()
-        applyMode()
     }
 
     /// `.animated`: `lineDashPhase` 0 → `phasePeriod` every 0.5 s, forever; `.static`:
     /// no animation, phase 0; `.hidden`: no stroke at all.
     private func applyMode() {
-        let hasSelection = selection != nil
+        let hasSelection = displaySelection != nil
         let reduceMotion = reduceMotionOverride
             ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let newMode = MarchingAnts.mode(hasSelection: hasSelection, reduceMotion: reduceMotion)

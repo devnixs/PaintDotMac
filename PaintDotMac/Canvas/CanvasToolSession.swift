@@ -17,8 +17,19 @@ final class CanvasToolSession: ToolContext {
     private weak var canvasView: CanvasView?
     private let canvasNavigation: CanvasNavigation
     private weak var overlayView: ToolOverlayView?
+    /// The window's status bar (0014): the selection tools keep `selectionSize` live while
+    /// dragging; wired by `DocumentWindowController.installToolWiring`.
+    weak var statusBar: StatusBarModel?
+    /// The window's marching-ants overlay (0014): the Replace-mode preview hides the
+    /// current selection's ants for the duration of the drag.
+    weak var marchingAntsOverlay: MarchingAntsOverlay?
     weak var router: CanvasInputRouter?
     let model: AppModel
+
+    /// The selection-shape preview the tool is currently drawing (`nil` otherwise); the
+    /// status-bar selection size follows it while it lives, else the document's selection
+    /// (0014, APP-5).
+    private(set) var selectionPreview: SelectionShapePreview?
 
     init(canvasView: CanvasView, navigation: CanvasNavigation,
          overlayView: ToolOverlayView, model: AppModel) {
@@ -68,6 +79,31 @@ final class CanvasToolSession: ToolContext {
 
     func setOverlay(_ overlay: ToolOverlay?) {
         overlayView?.overlay = overlay
+        // 0014: a selection-shape preview (or its removal) drives the status-bar selection
+        // size, and the Replace mode hides the current ants for the drag's duration.
+        switch overlay {
+        case .selectionShape(let preview):
+            selectionPreview = preview
+            marchingAntsOverlay?.suppressesSelection = preview.hidesCurrentSelection
+            refreshSelectionSize()
+        case nil:
+            selectionPreview = nil
+            marchingAntsOverlay?.suppressesSelection = false
+            refreshSelectionSize()
+        default:
+            break
+        }
+    }
+
+    /// Re-reads the status bar's selection size (0014, APP-5): the live preview wins, then
+    /// the document's selection bounds (0013's tight mask bounds); empty with no selection.
+    /// Called on preview changes and on every `UndoBridge.onStateChange` (any step, undo,
+    /// redo, jump) through `DocumentWindowController.refreshCanvas(for:)`.
+    func refreshSelectionSize() {
+        statusBar?.selectionSize = SelectionSizeDisplay.size(
+            preview: selectionPreview,
+            selectionBounds: undoBridge?.state.selection?.bounds,
+            imageSize: image.size)
     }
 
     func invalidateCursor() {

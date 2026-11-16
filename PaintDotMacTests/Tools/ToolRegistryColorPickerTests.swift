@@ -20,8 +20,8 @@ struct ToolRegistryColorPickerTests {
     @Test func implementedOrderAndDescriptor() {
         let registry = ToolRegistry.standard()
         #expect(registry.implementedIDs
-                    == [.zoom, .pan, .paintbrush, .eraser, .pencil, .colorPicker],
-                "exactly once, right after .pencil (ToolID.allCases order)")
+                    == [.rectangleSelect, .ellipseSelect, .zoom, .pan, .paintbrush, .eraser,
+                        .pencil, .colorPicker])
         #expect(registry.implementedIDs.filter { $0 == .colorPicker }.count == 1)
         #expect(registry.isImplemented(.colorPicker))
         #expect(registry.makeTool(.colorPicker) is ColorPickerTool)

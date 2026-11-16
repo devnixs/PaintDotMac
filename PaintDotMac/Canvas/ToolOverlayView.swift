@@ -25,6 +25,8 @@ final class ToolOverlayView: NSView {
             drawZoomRectangle(rect, transform: canvasView.transform)
         case .brushOutline(let rect)?:
             drawBrushOutline(rect, transform: canvasView.transform)
+        case .selectionShape(let preview)?:
+            drawSelectionShape(preview, transform: canvasView.transform)
         case nil:
             break
         }
@@ -43,6 +45,34 @@ final class ToolOverlayView: NSView {
         underline.stroke()
 
         let dashes = NSBezierPath(rect: viewRect)
+        dashes.lineWidth = 1
+        dashes.setLineDash([4, 4], count: 2, phase: 0)
+        NSColor.black.setStroke()
+        dashes.stroke()
+    }
+
+    /// The shape a selection tool drags (spec 0014): the rect (Rectangle) or the ellipse
+    /// inscribed in the view-mapped rect (Ellipse), stroked in the Zoom-rectangle style —
+    /// 1 pt white under a 1 pt black dashed `[4, 4]`, static (the ants come back on
+    /// release, marching).
+    private func drawSelectionShape(_ preview: SelectionShapePreview,
+                                    transform: CanvasTransform) {
+        let viewRect = transform.pixelRectToView(preview.rect).insetBy(dx: 0.5, dy: 0.5)
+        guard viewRect.width > 0, viewRect.height > 0 else { return }
+        NSGraphicsContext.current?.imageInterpolation = .none
+
+        func shape() -> NSBezierPath {
+            preview.shape == .rectangle
+                ? NSBezierPath(rect: viewRect)
+                : NSBezierPath(ovalIn: viewRect)
+        }
+
+        let underline = shape()
+        underline.lineWidth = 1
+        NSColor.white.setStroke()
+        underline.stroke()
+
+        let dashes = shape()
         dashes.lineWidth = 1
         dashes.setLineDash([4, 4], count: 2, phase: 0)
         NSColor.black.setStroke()

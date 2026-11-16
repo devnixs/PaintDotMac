@@ -29,6 +29,8 @@ enum MainMenu {
     static let zoomInItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomIn")
     static let zoomOutItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomOut")
     static let zoomToWindowItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomToWindow")
+    // Zoom to Selection (0014, ⇧⌘B — Paint.NET's Ctrl+Shift+B).
+    static let zoomToSelectionItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomToSelection")
     static let actualSizeItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.actualSize")
     // Edit > selection items (0013; 0018 inserts Erase Selection / Fill Selection between
     // Deselect and Invert Selection, as in Paint.NET's Edit menu).
@@ -45,6 +47,7 @@ enum MainMenu {
     static let zoomInAction = NSSelectorFromString("zoomIn:")
     static let zoomOutAction = NSSelectorFromString("zoomOut:")
     static let zoomToWindowAction = NSSelectorFromString("zoomToWindow:")
+    static let zoomToSelectionAction = NSSelectorFromString("zoomToSelection:")
     static let actualSizeAction = NSSelectorFromString("actualSize:")
 
     /// The Edit menu's selection actions (0013), sent first-responder-style to
@@ -159,7 +162,7 @@ enum MainMenu {
     }
 
     /// Paint.NET's order (ViewMenu.html): Zoom In, Zoom Out, Zoom to Window,
-    /// (Zoom to Selection → 0014 inserts here), Actual Size, separator, Enter Full Screen.
+    /// Zoom to Selection (0014), Actual Size, separator, Enter Full Screen.
     private static func viewMenu() -> NSMenu {
         let menu = NSMenu(title: "View")
         let zoomIn = makeItem("Zoom In", key: "=", modifiers: .command, action: zoomInAction)
@@ -179,6 +182,11 @@ enum MainMenu {
                                     action: zoomToWindowAction)
         zoomToWindow.identifier = zoomToWindowItemIdentifier
         menu.addItem(zoomToWindow)
+        // Zoom to Selection (0014, CAN-1): Paint.NET's Ctrl+Shift+B → ⇧⌘B (PRD §5.12).
+        let zoomToSelection = makeItem("Zoom to Selection", key: "b",
+                                       modifiers: [.command, .shift], action: zoomToSelectionAction)
+        zoomToSelection.identifier = zoomToSelectionItemIdentifier
+        menu.addItem(zoomToSelection)
         let actualSize = makeItem("Actual Size", key: "0", modifiers: .command,
                                   action: actualSizeAction)
         actualSize.identifier = actualSizeItemIdentifier

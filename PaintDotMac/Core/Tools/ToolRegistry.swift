@@ -101,6 +101,8 @@ struct ToolRegistry {
     /// The app's registry. Each later tool spec adds one line here.
     static func standard() -> ToolRegistry {
         ToolRegistry(factories: [
+            .rectangleSelect: { RectangleSelectTool() },
+            .ellipseSelect: { EllipseSelectTool() },
             .zoom: { ZoomTool() },
             .pan: { PanTool() },
             .paintbrush: { PaintbrushTool() },
