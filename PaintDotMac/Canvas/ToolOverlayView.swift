@@ -27,6 +27,8 @@ final class ToolOverlayView: NSView {
             drawBrushOutline(rect, transform: canvasView.transform)
         case .selectionShape(let preview)?:
             drawSelectionShape(preview, transform: canvasView.transform)
+        case .lassoPath(let points, let rubberBand)?:
+            drawLassoPath(points: points, rubberBand: rubberBand, transform: canvasView.transform)
         case nil:
             break
         }
@@ -77,6 +79,40 @@ final class ToolOverlayView: NSView {
         dashes.setLineDash([4, 4], count: 2, phase: 0)
         NSColor.black.setStroke()
         dashes.stroke()
+    }
+
+    /// The lasso outline in progress (spec 0015): the kept points as an open polyline in
+    /// the Zoom-rectangle style — 1 pt white under a 1 pt black dashed `[4, 4]`, static —
+    /// plus the closing segment from the last point (via the Polygon rubber-band hover
+    /// point while hovering) back to the first point at 50 % opacity, so the user sees how
+    /// the shape will close. One point without a rubber band draws nothing.
+    private func drawLassoPath(points: [CGPoint], rubberBand: CGPoint?,
+                               transform: CanvasTransform) {
+        let mapped = points.map(transform.canvasToView)
+        let tail = rubberBand.map(transform.canvasToView)
+        guard let first = mapped.first, let last = mapped.last,
+              mapped.count > 1 || tail != nil else { return }
+        NSGraphicsContext.current?.imageInterpolation = .none
+
+        func strokePolyline(_ pathPoints: [CGPoint], alpha: CGFloat) {
+            guard pathPoints.count > 1 else { return }
+            for dashed in [false, true] {
+                let path = NSBezierPath()
+                path.move(to: pathPoints[0])
+                for point in pathPoints.dropFirst() { path.line(to: point) }
+                path.lineWidth = 1
+                if dashed { path.setLineDash([4, 4], count: 2, phase: 0) }
+                (dashed ? NSColor.black : NSColor.white)
+                    .withAlphaComponent(alpha).setStroke()
+                path.stroke()
+            }
+        }
+
+        strokePolyline(mapped, alpha: 1)
+        var closing: [CGPoint] = [last]
+        if let tail { closing.append(tail) }
+        closing.append(first)
+        strokePolyline(closing, alpha: 0.5)
     }
 
     /// The brush circle (spec 0009, D-38): the ellipse inscribed in the view-mapped square

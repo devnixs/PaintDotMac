@@ -78,6 +78,9 @@ enum ToolOverlay: Sendable, Equatable {
     case brushOutline(CGRect)
     /// The shape a selection tool drags (spec 0014), drawn in the marquee style.
     case selectionShape(SelectionShapePreview)
+    /// The Lasso outline in progress (spec 0015), canvas space: the kept points in order
+    /// plus the Polygon rubber-band hover point (`nil` while Freeform dragging).
+    case lassoPath(points: [CGPoint], rubberBand: CGPoint?)
 }
 
 /// The rectangle/ellipse outline a selection tool previews while dragging (spec 0014; the

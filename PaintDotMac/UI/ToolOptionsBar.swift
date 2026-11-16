@@ -77,6 +77,14 @@ struct ToolOptionsContent: View {
     /// canvas as first responder.
     var onEndEditing: () -> Void = {}
 
+    /// The stored Lasso mode; reading `revision` registers the observation, an unknown
+    /// stored string reads as the default (Freeform, spec 0015).
+    static func lassoMode(in model: AppModel) -> LassoMode {
+        _ = model.toolOptions.revision
+        return LassoMode(rawValue: model.toolOptions.value(LassoSelectTool.lassoModeKey))
+            ?? .freeform
+    }
+
     var body: some View {
         switch toolID {
         case .rectangleSelect:
@@ -88,6 +96,30 @@ struct ToolOptionsContent: View {
             // T-3: Paint.NET's Ellipse Select has no draw-mode options.
             SelectionToolOptionsView(model: model, showsDrawMode: false,
                                      onEndEditing: onEndEditing)
+        case .lassoSelect:
+            // T-2 / 0015: the shared selection options (mode + clipping, no draw-mode
+            // controls) plus the Lasso mode picker (Freeform / Polygon, `tool.lassoSelect
+            // .lassoMode`, TOOL-C).
+            HStack(spacing: 8) {
+                SelectionToolOptionsView(model: model, showsDrawMode: false,
+                                         onEndEditing: onEndEditing)
+                Picker("Lasso mode", selection: Binding(
+                    get: { Self.lassoMode(in: model) },
+                    set: { model.toolOptions.setValue($0.rawValue,
+                                                      for: LassoSelectTool.lassoModeKey) }
+                )) {
+                    ForEach(LassoMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("Lasso mode")
+                .accessibilityIdentifier("toolOptions.lassoMode")
+                .accessibilityLabel("Lasso mode")
+                .accessibilityValue(Self.lassoMode(in: model).displayName)
+            }
         case .paintbrush:
             BrushToolOptionsView(model: model, tool: .paintbrush, showsBlendMode: true)
         case .eraser:

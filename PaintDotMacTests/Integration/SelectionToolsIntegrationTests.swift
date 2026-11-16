@@ -152,6 +152,8 @@ struct SelectionToolsIntegrationTests {
             #expect(harness.shortcut("s"))
             #expect(harness.appModel.activeToolID == .rectangleSelect)
             #expect(harness.shortcut("s"))
+            #expect(harness.appModel.activeToolID == .lassoSelect)
+            #expect(harness.shortcut("s"))
             #expect(harness.appModel.activeToolID == .ellipseSelect)
             #expect(harness.shortcut("s"))
             #expect(harness.appModel.activeToolID == .rectangleSelect)
@@ -160,6 +162,13 @@ struct SelectionToolsIntegrationTests {
             #expect(identifiers.contains("toolOptions.selectionMode"))
             #expect(identifiers.contains("toolOptions.drawMode"), "Rectangle shows draw modes")
             #expect(optionValue(harness, identifier: "toolOptions.selectionMode") == "Replace")
+
+            #expect(harness.shortcut("s"))   // → Lasso Select (0015 joined the group)
+            #expect(harness.appModel.activeToolID == .lassoSelect)
+            let lassoIdentifiers = optionIdentifiers(harness)
+            #expect(lassoIdentifiers.contains("toolOptions.selectionMode"))
+            #expect(!lassoIdentifiers.contains("toolOptions.drawMode"),
+                    "Lasso has no draw-mode options")
 
             #expect(harness.shortcut("s"))   // → Ellipse Select
             #expect(harness.appModel.activeToolID == .ellipseSelect)
@@ -231,6 +240,7 @@ struct SelectionToolsIntegrationTests {
             defer { finish(harness) }
 
             #expect(harness.shortcut("s"))
+            #expect(harness.shortcut("s"))   // Rectangle → Lasso → Ellipse (0015)
             #expect(harness.shortcut("s"))
             #expect(harness.appModel.activeToolID == .ellipseSelect)
             selectDrag(harness,
@@ -340,6 +350,7 @@ struct SelectionToolsIntegrationTests {
             // Ellipse Select sets the shared mode and clipping (the same writes the
             // SwiftUI pickers make), plus the Rectangle-only draw mode.
             #expect(harness.shortcut("s"))
+            #expect(harness.shortcut("s"))   // Rectangle → Lasso → Ellipse (0015)
             #expect(harness.shortcut("s"))
             let options = harness.appModel.toolOptions
             options.setValue(SelectionCombineMode.exclude, for: SelectionToolOptions.combineMode)

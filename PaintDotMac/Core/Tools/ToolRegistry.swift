@@ -102,6 +102,7 @@ struct ToolRegistry {
     static func standard() -> ToolRegistry {
         ToolRegistry(factories: [
             .rectangleSelect: { RectangleSelectTool() },
+            .lassoSelect: { LassoSelectTool() },
             .ellipseSelect: { EllipseSelectTool() },
             .zoom: { ZoomTool() },
             .pan: { PanTool() },

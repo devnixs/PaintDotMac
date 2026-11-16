@@ -66,13 +66,15 @@ struct ToolRegistryTests {
 
     @Test func standardRegistersPaintbrush() {
         // Later tool specs extend this list as they register their tool (0011 added the
-        // Eraser and the Pencil; 0012 the Color Picker; 0014 the two selection tools).
+        // Eraser and the Pencil; 0012 the Color Picker; 0014 the two selection tools;
+        // 0015 the Lasso).
         #expect(ToolRegistry.standard().implementedIDs
-                    == [.rectangleSelect, .ellipseSelect, .zoom, .pan, .paintbrush, .eraser,
-                        .pencil, .colorPicker])
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .zoom, .pan,
+                        .paintbrush, .eraser, .pencil, .colorPicker])
         #expect(ToolRegistry.standard().makeTool(.zoom) is ZoomTool)
         #expect(ToolRegistry.standard().makeTool(.pan) is PanTool)
         #expect(ToolRegistry.standard().makeTool(.rectangleSelect) is RectangleSelectTool)
+        #expect(ToolRegistry.standard().makeTool(.lassoSelect) is LassoSelectTool)
         #expect(ToolRegistry.standard().makeTool(.ellipseSelect) is EllipseSelectTool)
         #expect(ToolRegistry.standard().makeTool(.paintbrush) is PaintbrushTool)
         #expect(ToolRegistry.standard().makeTool(.eraser) is EraserTool)
@@ -82,26 +84,30 @@ struct ToolRegistryTests {
         #expect(ToolRegistry.standard().isImplemented(.zoom))
     }
 
-    /// 0014 *Acceptance*: S cycles the two implemented selection tools (D-13 — Lasso and
-    /// Magic Wand slot in later by `ToolID.allCases` order with no further change).
-    @Test func selectionGroupHasRectangleAndEllipse() {
+    /// 0014/0015 *Acceptance*: S cycles the three implemented selection tools (D-13 —
+    /// Magic Wand slots in later by `ToolID.allCases` order with no further change).
+    @Test func selectionGroupHasRectangleLassoEllipse() {
         let registry = ToolRegistry.standard()
-        #expect(registry.shortcutGroup(for: "s") == [.rectangleSelect, .ellipseSelect])
+        #expect(registry.shortcutGroup(for: "s")
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect])
         var resolver = ToolShortcutResolver()
-        // 1st S (fresh) → Rectangle; within 1 s again → Ellipse; again → Rectangle.
+        // 1st S (fresh) → Rectangle; within 1 s again → Lasso, then Ellipse, then back.
         #expect(resolver.resolve(key: "s", shift: false,
-                                 group: [.rectangleSelect, .ellipseSelect],
+                                 group: [.rectangleSelect, .lassoSelect, .ellipseSelect],
                                  activeTool: .paintbrush, timestamp: 0.0) == .rectangleSelect)
         #expect(resolver.resolve(key: "s", shift: false,
-                                 group: [.rectangleSelect, .ellipseSelect],
-                                 activeTool: .rectangleSelect, timestamp: 0.5) == .ellipseSelect)
+                                 group: [.rectangleSelect, .lassoSelect, .ellipseSelect],
+                                 activeTool: .rectangleSelect, timestamp: 0.5) == .lassoSelect)
         #expect(resolver.resolve(key: "s", shift: false,
-                                 group: [.rectangleSelect, .ellipseSelect],
-                                 activeTool: .ellipseSelect, timestamp: 0.9) == .rectangleSelect)
+                                 group: [.rectangleSelect, .lassoSelect, .ellipseSelect],
+                                 activeTool: .lassoSelect, timestamp: 0.9) == .ellipseSelect)
+        #expect(resolver.resolve(key: "s", shift: false,
+                                 group: [.rectangleSelect, .lassoSelect, .ellipseSelect],
+                                 activeTool: .ellipseSelect, timestamp: 1.3) == .rectangleSelect)
         // Shift+S with no recent press → the group's last implemented tool.
         var fresh = ToolShortcutResolver()
         #expect(fresh.resolve(key: "s", shift: true,
-                              group: [.rectangleSelect, .ellipseSelect],
+                              group: [.rectangleSelect, .lassoSelect, .ellipseSelect],
                               activeTool: .paintbrush, timestamp: 5.0) == .ellipseSelect)
     }
 
@@ -113,8 +119,8 @@ struct ToolRegistryTests {
         #expect(registry.shortcutGroup(for: "p") == [.pencil])
         #expect(registry.shortcutGroup(for: "e") == [.eraser])
         #expect(registry.implementedIDs
-                    == [.rectangleSelect, .ellipseSelect, .zoom, .pan, .paintbrush, .eraser,
-                        .pencil, .colorPicker],
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .zoom, .pan,
+                        .paintbrush, .eraser, .pencil, .colorPicker],
                 "paintbrush, eraser, pencil, color picker consecutively — ToolID.allCases order")
         #expect(registry.defaultToolID == .paintbrush)
     }
