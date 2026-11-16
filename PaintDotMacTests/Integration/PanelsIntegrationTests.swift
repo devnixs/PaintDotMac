@@ -172,8 +172,9 @@ struct PanelsIntegrationTests {
             defer { finish(harness) }
 
             let controller = PanelController(model: harness.appModel)
-            // Colors has real content since 0007; only History and Layers are placeholders (D-36).
-            for kind in [PanelKind.history, .layers] {
+            // Colors has real content since 0007 and History since 0010; only Layers is a
+            // placeholder now (D-36).
+            for kind in [PanelKind.layers] {
                 let panel = try #require(controller.panels[kind])
                 let content = try #require(panel.contentView)
                 pumpMainRunLoop()

@@ -29,6 +29,10 @@ final class AppModel {
     @ObservationIgnored private(set) weak var activeSession: CanvasToolSession?
     private(set) var activeSessionGeneration: Int = 0
 
+    /// The History panel's model (0010): follows `activeSession`, holds that document's
+    /// rows, and forwards Undo/Redo/clicks to its `UndoBridge`.
+    let historyPanel: HistoryPanelModel
+
     /// The tool options bar / active tool changed while a pointer may sit over a canvas;
     /// routers register here to re-query their cursor immediately.
     @ObservationIgnored private var cursorRefreshHooks: [UUID: @MainActor () -> Void] = [:]
@@ -57,6 +61,9 @@ final class AppModel {
          colorStore: ColorSelectionStore? = nil) {
         let dispatcher = ToolDispatcher(registry: registry)
         self.dispatcher = dispatcher
+        // Initialized first so `self` may be captured below; `follow(self)` runs at the
+        // end of `init`, once the model is whole.
+        self.historyPanel = HistoryPanelModel()
         self.registry = registry
         self.defaults = defaults
         // The colors live in the same suite as everything else app-wide (AGENTS.md: never
@@ -81,6 +88,8 @@ final class AppModel {
         dispatcher.onStateChange = { [weak self] in
             self?.mirrorDispatcherState()
         }
+        // The History panel follows this model's active session from the first change on.
+        historyPanel.follow(self)
     }
 
     private func mirrorDispatcherState() {

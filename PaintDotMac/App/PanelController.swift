@@ -164,8 +164,11 @@ final class PanelController: NSObject, NSWindowDelegate {
             AnyView(ToolsPanelView(model: model))
         case .colors:
             AnyView(ColorsPanelView(model: model))
-        case .history, .layers:
-            // 0010 and 0025 replace their case with real content (D-36).
+        case .history:
+            // The History panel has real content since 0010.
+            AnyView(HistoryPanelView(panel: model.historyPanel))
+        case .layers:
+            // 0025 replaces this case with real content (D-36).
             AnyView(PanelPlaceholderView(kind: kind))
         }
     }

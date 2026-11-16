@@ -229,3 +229,27 @@ public struct HistoryListModel: Sendable, Equatable {
 - Panel window management, docking, and the Window menu toggles: 0006 (APP-2) and 0052 (APP-3).
 - Icons for step kinds that later specs add (selection, layers, effects, and so on): each later spec adds its `HistoryIcon` case and symbol to the exhaustive switch.
 - Rewind / Fast Forward buttons (removed in Paint.NET 4+), history thumbnails, and saving history to a file: not planned.
+
+## Verification status
+
+- 2026-11-16 — implemented; full quality gate (`.agents/skills/spec-implementer/scripts/quality-gate.sh`, no `--incremental`): **GREEN**
+  - `tests: 862 passed, 0 failed, 0 skipped (of 862)`
+  - `tests: no crash reports during the run`
+  - Clean Debug build: `No compiler warnings.`; `Core imports: OK`; `Test sources: headless`
+- Performance: not applicable per the spec's Test plan (the panel does no per-row pixel work; jumping replays 0008's measured tile diffs).
+- Implementation notes:
+  - The new Core types are `internal`, matching the repo's access convention — the spec's `public` sketch predates the code and cannot compile over the internal `HistoryStack`/`HistoryIcon`; tests use `@testable import`.
+  - `HistoryPanelModel` follows the **owning `AppModel` instance**'s active session rather than the literal `AppModel.shared` (the spec text predates the injectable model; the shared model behaves identically in the app, and per-test models would otherwise be invisible to the panel). The `withObservationTracking` + re-arm pattern, the `historyRevision` refresh path, and the token-guarded chains keep exactly one refresh per history change (`undoRedoRefreshPanel` counts it).
+  - `refresh()` on `HistoryPanelModel` is the rebuild-from-weak-bridge seam the `bridgeIsHeldWeakly` test drives after dropping the last strong reference.
+  - `HistoryPanelView` puts `.accessibilityElement(children: .contain)` on the panel root and the list (the 0007 Colors-panel pattern): a bare container `.accessibilityIdentifier` leaks into descendant elements, which merged the footer buttons into `historyPanel` in tests.
+  - The window-level tests run the document's `UndoManager` with `groupsByEvent = false` (0008's bridge convention): headless synthesized events bypass `NSWindow.sendEvent`, so AppKit's per-event `beginEvent`/`endEvent` bracketing never runs and every stroke would land in one event group; in the running app the event loop brackets each stroke.
+- Review: pending
+
+Manual verification (not yet run by user):
+
+- [ ] 1. Open a photo, paint 5 strokes, and open the History panel (⌥⌘2). Each row shows the paintbrush icon and "Paintbrush", and the first shows the photo icon and "Open Image".
+- [ ] 2. Click row 2. The canvas updates immediately, rows 3–5 have a grey background with dimmed text, and row 2 is highlighted. Check in **light and dark mode** that greyed and current rows are clearly distinguishable.
+- [ ] 3. Click row 2 repeatedly. The canvas flips between states 1 and 2, showing what that stroke changed.
+- [ ] 4. With 60+ strokes, use ⌘Z repeatedly. The list keeps the current row scrolled into view.
+- [ ] 5. Turn VoiceOver on and navigate the list. Each row reads its name and "current"/"done"/"undone", and VO-Space on a row jumps to it.
+- [ ] 6. Move and resize the History panel, quit, and relaunch. The frame is restored (0006 autosave; regression check only).

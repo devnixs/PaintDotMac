@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The "Not available yet." placeholder panel content (PRD APP-2, D-36) shown by History,
-/// Layers, and Colors until their specs land (0010, 0025, 0007).
+/// The "Not available yet." placeholder panel content (PRD APP-2, D-36) shown by Layers
+/// until its spec lands (0025); Tools, History, and Colors have real content (0006, 0010,
+/// 0007).
 struct PanelPlaceholderView: View {
     static let message = "Not available yet."
 
