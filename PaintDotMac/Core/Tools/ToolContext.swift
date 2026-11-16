@@ -4,14 +4,15 @@ import Foundation
 /// What a tool may touch (spec 0006). The main document window's canvas session
 /// (`Canvas/CanvasToolSession.swift`) implements it; tests use `FakeToolContext`.
 ///
-/// Reserved extensions owned by later specs: 0008 adds `commitHistory(_:)`, `performHistory(_:)`,
-/// and `updateImage(_:)`; 0009 adds `var paintClipMask` and the `.brushOutline` overlay case;
-/// 0012 adds `setColor(_:for:)`; 0013 adds the selection. Each spec that grows this protocol
-/// implements the new members in `CanvasToolSession` and `FakeToolContext`. `activateTool(_:)`
-/// and `previousToolID` live here so 0012 does not re-declare them.
+/// Reserved extensions owned by later specs: 0009 adds `var paintClipMask` and the
+/// `.brushOutline` overlay case; 0012 adds `setColor(_:for:)`; 0013 adds the selection.
+/// Each spec that grows this protocol implements the new members in `CanvasToolSession`
+/// and `FakeToolContext`. `activateTool(_:)` and `previousToolID` live here so 0012 does
+/// not re-declare them.
 @MainActor
 protocol ToolContext: AnyObject {
-    /// The document's image (read; pixel writes arrive with 0008's history).
+    /// The document's image. Pixel writes go through `updateImage(_:)` +
+    /// `commitHistory(_:)` — or `performHistory(_:)` — never any other way (AGENTS rule 2).
     var image: LayeredImage { get }
     /// The current view ↔ canvas mapping.
     var transform: CanvasTransform { get }
@@ -30,6 +31,17 @@ protocol ToolContext: AnyObject {
     func setOverlay(_ overlay: ToolOverlay?)
     /// Re-query the effective tool's cursor now.
     func invalidateCursor()
+
+    // MARK: - History (spec 0008)
+
+    /// Records a step whose changes are already in `image` (live drawing). No-op items
+    /// are ignored (H-6).
+    func commitHistory(_ item: any HistoryItem)
+    /// Applies the item to the document, then records it.
+    func performHistory(_ item: any HistoryItem)
+    /// Live drawing (in-progress strokes): mutates the document's image without recording
+    /// a step. The only way tools write live pixels.
+    func updateImage(_ body: (inout LayeredImage) -> Void)
 }
 
 /// The navigation surface tools use — 0004's `CanvasNavigation` semantics, clamped

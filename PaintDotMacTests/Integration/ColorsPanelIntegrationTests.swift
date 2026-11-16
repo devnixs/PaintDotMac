@@ -439,8 +439,10 @@ struct ColorsPanelIntegrationTests {
 
         #expect(document.document.isDocumentEdited == false,
                 "color changes never mark the document edited (C-1)")
-        #expect(document.document.undoManager?.canUndo == false,
-                "color changes create no history steps")
+        // 0008: `PaintDocument.hasUndoManager == false` — the history bridge is the only
+        // undo system, and color changes create no history steps.
+        #expect(document.document.undoManager?.canUndo != true,
+                "color changes create no undoable changes")
     }
 
     /// AGENTS.md *Headless testing* / spec 0007: the production store writes to

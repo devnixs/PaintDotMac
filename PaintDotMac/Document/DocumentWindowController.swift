@@ -6,7 +6,7 @@ import SwiftUI
 /// the Metal `CanvasView` (0003) filling the window above the SwiftUI status bar (0004,
 /// APP-5), or a label in place of the canvas when Metal is unavailable.
 @MainActor
-final class DocumentWindowController: NSWindowController, NSMenuItemValidation {
+final class DocumentWindowController: NSWindowController, NSMenuItemValidation, NSWindowDelegate {
     /// The become-main/close hooks. AppKit never makes a programmatic window controller
     /// its window's delegate, so these notifications are observed directly — with the
     /// same box pattern `CanvasNavigation` already uses (spec 0006).
@@ -176,7 +176,52 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation {
         }
 
         shouldCascadeWindows = true
+        // The window's undo manager comes from the document's bridge (0008), and the
+        // field editor keeps typing on the window's own manager.
+        window.delegate = self
         window.center()
+    }
+
+    // MARK: - Undo manager and history refresh (spec 0008)
+
+    /// Edit > Undo/Redo validate and act through this manager (PRD E-1: the Edit menu and
+    /// the History panel stay in sync).
+    func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
+        (document as? PaintDocument)?.undoBridge.undoManager
+    }
+
+    /// Called from the `document` setter: hand the bridge to the session and hook the
+    /// canvas refresh (0003 re-uploads exactly the changed tiles) and the save-time tool
+    /// commit. `weak self`: the document outlives no window, and the document owns the
+    /// bridge, so a stale window must not extend the bridge's life.
+    private func attachBridge() {
+        let bridge = (document as? PaintDocument)?.undoBridge
+        toolSession?.attachUndoBridge(bridge)
+        bridge?.prepareForNavigation = { [weak self] in
+            guard let self, let session = self.toolSession,
+                  self.wiredModel.activeSession === session
+            else { return }
+            self.wiredModel.dispatcher.commitPendingEdit()
+        }
+        bridge?.onStateChange = { [weak self] change in
+            MainActor.assumeIsolated { self?.refreshCanvas(for: change) }
+        }
+    }
+
+    /// Pushes the post-undo/redo/jump state to the canvas: `pixels` re-uploads only the
+    /// touched tiles (0003 `changedTiles(since:)`), `structure` redraws everything; the
+    /// zoom stays put (H-6), and the status bar's size/DPI fields follow.
+    private func refreshCanvas(for change: HistoryChange) {
+        guard let document = document as? PaintDocument else { return }
+        if let canvasView {
+            switch change {
+            case .pixels: canvasView.image = document.image
+            case .structure:
+                canvasView.image = document.image
+                canvasView.needsDisplay = true
+            }
+        }
+        statusBarModel.update(image: document.image)
     }
 
     // MARK: - Tool wiring (spec 0006)
@@ -220,6 +265,7 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation {
         set {
             super.document = newValue
             toolSession?.document = newValue as? PaintDocument
+            attachBridge()
         }
     }
 

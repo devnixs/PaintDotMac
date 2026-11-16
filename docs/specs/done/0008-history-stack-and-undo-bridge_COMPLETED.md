@@ -387,3 +387,55 @@ Shared test support (new):
 - Selection state and `SelectionHistoryItem` (0013), layer operations and `LayerHistoryItem` (0024), canvas-size operations (0022, 0035–0037) — they build on `DocumentSnapshotHistoryItem`/`HistoryItem` from this spec.
 - Settings UI for the undo budget and live budget changes across open documents (0046, calling `UndoBridge.setBudget`).
 - Crash-recovery autosave (0047) and disk-backed history spillover (H-4, 0062).
+
+## Verification status
+
+Implemented 2026-11-16 on `main`, verified headlessly.
+
+- **Quality gate: GREEN** — `xcodegen generate`, Core imports OK (no AppKit/SwiftUI in `Core/`),
+  test sources headless, clean Debug build with **no compiler warnings**,
+  `tests: 752 passed, 0 failed, 0 skipped (of 752)`, `tests: no crash reports during the run`.
+  The seven History/UndoBridge/PaintDocument suites additionally pass under
+  **AddressSanitizer** (71 tests, 0 ASan reports).
+- **Unit tests, hand-derived expected values:** `TileDiffTests` (skip/reverse on hand-built
+  surfaces, generations advancing per `setTile`, sparse↔full identity, per-layer ordering,
+  size/structure mismatch throws, 100-seed `applyRevertIdentity` against a byte oracle),
+  `HistoryCostTests` (tile bytes 262,144, storage-key dedup, add/duplicate 0, delete and
+  rewrite costs both sides), `HistoryItemTests` (diff forwarding, snapshot round trip,
+  composite order/cost, `tileDiffKeepsActiveLayer`), `HistoryStackTests` (base step, commit
+  → `525_312` bytes, undo/redo `HistoryChange`, redo discard, `savedMarker`,
+  `jumpEqualsRepeatedUndoRedo` 6×6 matrix vs step-by-step, jump out-of-range no-op, ID
+  monotonicity), `HistoryBudgetTests` (D-9 fold order, base/current never dropped, oversized
+  step kept, redo steps survive until the next commit, saved marker under folding, budget 0
+  and negative budgets), `HistoryPropertyTests` (60-step model vs stack over 300 seeds:
+  exact `totalBytes`, suffix-preserving survivors, over-budget only between enforcement
+  points), `UndoBridgeTests` (mirror titles/canUndo/canRedo, one group per step, jump =
+  N manager undos + one revision bump + one merged `onStateChange`, dropped steps
+  unreachable via `removeAllActions(withTarget:)`, `prepareForNavigation` first),
+  `UndoBridgePropertyTests` (100 seeds × 50 ops: manager exactly mirrors the stack,
+  `undoActionName`/`redoActionName` compare), `AppSettingsTests` for `undoBudgetBytes`
+  (default 1 GiB, missing/negative → default, 0 legal, change notification).
+- **Headless integration (`PaintDocumentHistoryTests`, `HistoryIntegrationTests`):**
+  a scripted editing session drives real tile mutations through `undoBridge` and asserts
+  TILE CONTENTS after ⌘Z/⇧⌘Z menu actions on explicit targets (mutation-checked by
+  stubbing the bridge entry point), `windowWillReturnUndoManager` vends the bridge's
+  manager from the window and from the panels, fresh Open/New documents have nothing to
+  undo and close clean (APP-9, D-30 supersede 0005 interim rule 3 — the 0005 edited-state
+  tests were rewritten to the history-follows rule), save commits the pending tool edit
+  (`prepareForNavigation`), save tokens carry the step ID (edit during save stays dirty;
+  autosave/Save-To never clear), Revert resets to one "Open Image" step, and the canvas
+  follows undo via `onStateChange` (`.pixels` re-uploads only touched tiles).
+- **Performance (recorded vs PRD §6):** one-tile stroke diff+commit **0.15 ms** (guard
+  5 ms, NF-1 frame 16 ms — a stroke's history work is one `mouseUp`, never per frame);
+  full-layer 4000×3000 effect diff+commit **34.8 ms** (guard 150 ms) — whole-canvas
+  effects are the documented worst case.
+- **Memory accounting (NF-4):** a 1-tile stroke on 4000×3000 costs `525_312` bytes, not
+  48 MB (integration test); D-9 overflow folds the oldest steps and Edit > Undo can never
+  name a folded step.
+- **Manual steps (not run — the gate never launches the app):**
+  - [ ] 1. Open a PNG: Edit > Undo/Redo greyed; ⌘W closes without a prompt.
+  - [ ] 2. File > New (⌘N), OK: same.
+
+Review: `HistoryStack` is value-typed and the only pixel path (AGENTS rule 2); `UndoBridge`
+is the sole `NSUndoManager` writer; `TileDiff.mutate` keeps the layer-ID invariant as an
+`assertionFailure` (unreachable through the stack, loud in debug, never a release trap).

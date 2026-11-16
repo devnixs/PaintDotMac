@@ -16,6 +16,8 @@ extension Notification.Name {
 struct AppSettings: @unchecked Sendable {
     enum Key {
         static let measurementUnit = "settings.measurementUnit"
+        /// The undo memory budget in bytes (NF-4; the UI is 0046).
+        static let undoBudgetBytes = "settings.undoBudgetBytes"
     }
 
     /// The `userInfo` key carrying the changed key's raw value in
@@ -46,6 +48,26 @@ struct AppSettings: @unchecked Sendable {
                 name: .appSettingsDidChange,
                 object: self,
                 userInfo: [Self.changedKeyUserInfoKey: Key.measurementUnit]
+            )
+        }
+    }
+
+    /// The per-document undo budget in bytes (NF-4, H-6: default 1 GiB, shown as "1 GB";
+    /// the Settings UI is 0046). A missing, non-integer, or negative stored value reads as
+    /// the default; `0` is a legal stored value.
+    var undoBudgetBytes: Int {
+        get {
+            guard let stored = defaults.object(forKey: Key.undoBudgetBytes) as? Int,
+                  stored >= 0
+            else { return HistoryStack.defaultBudgetBytes }
+            return stored
+        }
+        nonmutating set {
+            defaults.set(newValue, forKey: Key.undoBudgetBytes)
+            notificationCenter.post(
+                name: .appSettingsDidChange,
+                object: self,
+                userInfo: [Self.changedKeyUserInfoKey: Key.undoBudgetBytes]
             )
         }
     }

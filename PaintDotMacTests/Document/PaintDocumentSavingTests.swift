@@ -84,7 +84,13 @@ struct PaintDocumentSavingTests {
     /// PNG; with no fileURL the folder is left to `NSSavePanel`.
     @Test func prepareSavePanelUntitled() throws {
         let document = PaintDocument()
-        document.image = NewImageRequest(size: PixelSize(width: 16, height: 12), dpi: 96).makeImage()
+        // 0008: the state arrives through the bridge (what step 4 of `newDocument` does).
+        document.undoBridge.reset(
+            state: DocumentState(
+                image: NewImageRequest(size: PixelSize(width: 16, height: 12), dpi: 96).makeImage()
+            ),
+            base: .newImage
+        )
         let panel = NSSavePanel()
         #expect(document.prepareSavePanel(panel))
         #expect(panel.nameFieldStringValue == "Untitled.png")
@@ -222,8 +228,10 @@ struct PaintDocumentSavingTests {
         #expect(document.isDocumentEdited == false)
     }
 
-    /// Interim rule 3: a document created through New is edited until a save clears it.
-    @Test func newDocumentIsEditedUntilSaved() async throws {
+    /// 0008 supersedes 0005's interim rule 3: the edited state follows history only, so a
+    /// document built through the New path (step 4's `undoBridge.reset`) is clean (APP-9,
+    /// D-30) and stays clean through a Save As.
+    @Test func newDocumentIsCleanAndStaysCleanAfterSaveAs() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("PaintDotMacTests", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -231,9 +239,12 @@ struct PaintDocumentSavingTests {
         let url = directory.appendingPathComponent("Untitled.png")
 
         let document = PaintDocument()
-        document.image = NewImageRequest(size: PixelSize(width: 16, height: 12), dpi: 96).makeImage()
-        document.updateChangeCount(.changeDone)  // what PaintDocumentController.newDocument does
-        #expect(document.isDocumentEdited == true)
+        // Step 4 of `PaintDocumentController.newDocument(_:)`, verbatim (0008 item 11).
+        document.undoBridge.reset(state: DocumentState(
+            image: NewImageRequest(size: PixelSize(width: 16, height: 12), dpi: 96).makeImage()
+        ), base: .newImage)
+        #expect(document.isDocumentEdited == false)
+        #expect(document.undoBridge.history.steps.map(\.name) == ["New Image"])
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try await saveDocument(document, to: url, ofType: "public.png", for: .saveAsOperation)

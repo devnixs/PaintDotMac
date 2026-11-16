@@ -49,11 +49,15 @@ final class FakeCanvasNavigation: CanvasNavigating {
 
 /// The `ToolContext` for unit tests (spec 0006 test support): an
 /// `InMemoryToolOptionStore`, a `FakeCanvasNavigation`, a 64×64 `LayeredImage`, recorded
-/// activation/overlay/cursor calls, and a settable `previousToolID`. Later specs extend it
-/// with their added requirements.
+/// activation/overlay/cursor calls, and a settable `previousToolID`. Since 0008 it also
+/// owns a real `HistoryStack` (base `.newImage`) and a `DocumentState`, so tools exercise
+/// the official history path. Later specs extend it with their added requirements.
 @MainActor
 final class FakeToolContext: ToolContext {
-    let image: LayeredImage
+    /// The fake's undoable document state; `image` is `state.image`.
+    private(set) var state: DocumentState
+    /// The recorded history of `performHistory`/`commitHistory` calls.
+    private(set) var history: HistoryStack
     /// The concrete fake (settable `transform`, recorded calls); `navigation` is the
     /// protocol-typed witness.
     let nav = FakeCanvasNavigation()
@@ -61,6 +65,7 @@ final class FakeToolContext: ToolContext {
     /// The concrete store (tests assert on it); `options` is the protocol-typed witness.
     let memoryOptions = InMemoryToolOptionStore()
     var options: any ToolOptionStore { memoryOptions }
+    var image: LayeredImage { state.image }
     var transform: CanvasTransform { nav.transform }
     var previousToolID: ToolID?
     /// Settable so a tool test can drive one pair of colors (0007).
@@ -71,7 +76,8 @@ final class FakeToolContext: ToolContext {
     private(set) var cursorInvalidations = 0
 
     init(size: PixelSize = PixelSize(width: 64, height: 64)) {
-        image = .blank(size: size, fill: .clear)
+        state = DocumentState(image: .blank(size: size, fill: .clear))
+        history = HistoryStack(base: .newImage)
     }
 
     func activateTool(_ id: ToolID) { activatedTools.append(id) }
@@ -79,4 +85,16 @@ final class FakeToolContext: ToolContext {
     func setOverlay(_ overlay: ToolOverlay?) { overlays.append(overlay) }
 
     func invalidateCursor() { cursorInvalidations += 1 }
+
+    func commitHistory(_ item: any HistoryItem) {
+        history.commit(item)
+    }
+
+    func performHistory(_ item: any HistoryItem) {
+        history.perform(item, on: &state)
+    }
+
+    func updateImage(_ body: (inout LayeredImage) -> Void) {
+        body(&state.image)
+    }
 }

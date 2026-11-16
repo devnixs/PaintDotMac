@@ -22,15 +22,18 @@ struct SaveIntegrationTests {
                           blue: UInt8((x &* y) % 256), alpha: alpha)
     }
 
-    @Test func newImageIsEditedUntilSaved() async throws {
+    /// 0008 (APP-9, D-30) supersedes 0005's interim rule 3: a new image is clean; Save As
+    /// writes the white PNG and the document stays clean. The close/quit prompts after a
+    /// real edit are tested in 0009 with the Paintbrush.
+    @Test func saveAsNewImageWritesWhitePNG() async throws {
         try await TestRunGate.withLock {
             defer { cleanup() }
             let presenter = ScriptedNewImagePresenter(steps: [.ok])
             let harness = try #require(
                 DocumentHarness.newImage(presenter: presenter, pasteboard: makePrivatePasteboard())
             )
-            // The edited state is what drives NSDocument's standard close/quit prompts.
-            #expect(harness.document.isDocumentEdited == true)
+            // The edited state follows history: untouched → clean (no close prompt).
+            #expect(harness.document.isDocumentEdited == false)
 
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("PaintDotMacTests", isDirectory: true)
@@ -62,8 +65,8 @@ struct SaveIntegrationTests {
         }
     }
 
-    /// Opened documents are always clean in this spec (interim rule 3: only New marks
-    /// edited).
+    /// Documents opened from disk are always clean (0008: the edited state follows history,
+    /// and opening marks the base step saved).
     @Test func openedPNGIsNotEdited() async throws {
         try await TestRunGate.withLock {
             defer { cleanup() }

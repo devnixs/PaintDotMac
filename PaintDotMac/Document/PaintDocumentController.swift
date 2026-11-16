@@ -57,15 +57,15 @@ final class PaintDocumentController: NSDocumentController {
             return
         }
         // The placeholder image is replaced before any window exists (interim rule: New
-        // starts from the dialog's request, never from the 1×1 placeholder).
-        document.image = request.makeImage()
+        // starts from the dialog's request, never from the 1×1 placeholder), and the
+        // history begins at "New Image" — the document is clean (0008 item 11; APP-9,
+        // D-30 supersede 0005's interim rule 3).
+        document.undoBridge.reset(state: DocumentState(image: request.makeImage()),
+                                  base: .newImage)
         addDocument(document)
         document.makeWindowControllers()
         if showsWindows {
             document.showWindows()
         }
-        // Interim rule 3 until 0008's history-driven edited state: a new image is edited
-        // until saved, so the close and quit prompts (PRD §5.11) are live now.
-        document.updateChangeCount(.changeDone)
     }
 }
