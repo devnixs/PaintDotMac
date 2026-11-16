@@ -55,8 +55,10 @@ struct AppModelToolTests {
         let (suite, name) = makeSuite()
         defer { discard(name) }
         let model = AppModel(defaults: suite)
-        #expect(model.implementedTools.map(\.id) == [.zoom, .pan, .paintbrush])
-        #expect(model.implementedTools.map(\.displayName) == ["Zoom", "Pan", "Paintbrush"])
+        // 0011 registered the Eraser and the Pencil after the Paintbrush.
+        #expect(model.implementedTools.map(\.id) == [.zoom, .pan, .paintbrush, .eraser, .pencil])
+        #expect(model.implementedTools.map(\.displayName)
+                    == ["Zoom", "Pan", "Paintbrush", "Eraser", "Pencil"])
     }
 
     /// D-35: selecting a tool writes nothing; a relaunch starts on the default tool.

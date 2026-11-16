@@ -189,3 +189,20 @@ Expected values below are hand-computed from the formulas in this spec and Paint
 - Shift-constrained straight lines for Pencil/Eraser: not in the PRD.
 - Paint.NET's tool-only Overwrite blend mode (not in v1.0, PRD D-27) and any blend mode other than the ones the Paintbrush offers (0026/0027/0059 grow the shared list).
 - Color Picker's "switch back to Pencil" option: 0012.
+
+## Verification status
+
+- Date: 2026-11-16. Quality gate (`.agents/skills/spec-implementer/scripts/quality-gate.sh`, full, no `--incremental`): **GREEN** — clean Debug build with zero warnings (`No compiler warnings.`); `tests: 926 passed, 0 failed, 0 skipped (of 926)`; `tests: no crash reports during the run`.
+- NF-1 performance (from the gated run, `EraserPerformanceTests`, Debug test host, 4000×3000 seeded-noise layer, width 50, hardness 75, AA, 200-point diagonal drag): mean **1.608 ms**, p95 **1.682 ms**, max 1.717 ms per `mouseDragged` event (gate ≤ 48 ms). `measure` block (23-event width-50 erase stroke on 1024×1024): 0.028 s average per block. The Pencil's per-event cost is O(segment length) — no perf test (per *Test plan*).
+- Implementation notes:
+  - `PencilTool` stamps its first pixel through `BrushStroke.begin` + `mark(x:y:coverage:255)` (idempotent max-combined coverage); later events mark the `PixelLine` between mapped pixels, so a stroke leaving and re-entering the canvas draws correctly where it is inside.
+  - `ToolOptionsBar`: `PaintbrushToolOptionsView` became the parameterized `BrushToolOptionsView(model:tool:showsBlendMode:)` (Paintbrush `showsBlendMode: true`, Eraser `false`), with a new `PencilToolOptionsView` (blend mode only). The width field now writes the store keys directly instead of `BrushOptions.save`, so committing an Eraser width never stores `tool.eraser.blendMode` (D-27); both blend-mode pickers share `ToolOptionsBar.selectableBlendModes` (D-15).
+  - 0009 contract tests pinned to the old registry were updated as the spec-mandated contract change: `ToolRegistryTests.standardRegistersPaintbrush` / new `pencilAndEraserKeys` and `AppModelToolTests.implementedToolsOrder` now expect `[.zoom, .pan, .paintbrush, .eraser, .pencil]` (the `ToolID.allCases` order); `defaultToolID` stays `.paintbrush` (D-35).
+  - Window tests: `pumpMainRunLoop()` after tool-key switches before reading the options-bar accessibility tree (the never-shown window re-renders on the next run-loop turn); the fixture's base history row is `"Open Image"` (file-open base step), rows 1–2 are `"Pencil"`/`"Eraser"`.
+- Review: pending
+- Manual verification (not yet run by a person):
+  - [ ] 1. Open a photo, press P, zoom to 800%, drag slowly and quickly: lines are gap-free, exactly one device-aligned image pixel wide, no antialiasing; the cursor is a crosshair whose center sits on the pixel that gets painted, and no circle is drawn. Right-drag paints the secondary color.
+  - [ ] 2. Set the primary alpha to ~50% in the Colors panel, draw a self-crossing Pencil scribble: crossings are not darker.
+  - [ ] 3. Press E on a single-layer photo: the checkerboard shows through; antialiasing on gives soft edges that sharpen as hardness goes up; antialiasing off gives a hard stair-stepped edge; `[`/`]` resize the brush-outline cursor.
+  - [ ] 4. Set the primary alpha to 60 and erase: the area becomes visibly semi-transparent (≈ 76% opaque), not fully cleared.
+  - [ ] 5. Quit and relaunch: Eraser width/hardness/antialiasing and Pencil blend mode are restored.

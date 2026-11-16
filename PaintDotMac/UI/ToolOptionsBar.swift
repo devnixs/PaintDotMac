@@ -20,6 +20,11 @@ struct ToolOptionsBar: View {
 
     static func finishEnabled(hasPendingEdit: Bool) -> Bool { hasPendingEdit }
 
+    /// The blend-mode list both blend-mode pickers offer — the Paintbrush's and the
+    /// Pencil's are the same list by D-15 (the implemented layer blend modes in L-3
+    /// order; 0026/0027/0059 grow it).
+    static var selectableBlendModes: [BlendMode] { BlendMode.allCases }
+
     var body: some View {
         let descriptor = ToolRegistry.descriptor(for: model.activeToolID)
         HStack(spacing: 8) {
@@ -62,7 +67,7 @@ struct ToolOptionsBar: View {
 }
 
 /// One `case` per tool that has options, hand-built controls reading and writing through
-/// `model.toolOptions` (identifiers `toolOptions.<option>`). 0011/0012… add theirs; 0006's
+/// `model.toolOptions` (identifiers `toolOptions.<option>`). 0012… add theirs; 0006's
 /// tools (Zoom, Pan) have none.
 struct ToolOptionsContent: View {
     let toolID: ToolID
@@ -71,27 +76,39 @@ struct ToolOptionsContent: View {
     var body: some View {
         switch toolID {
         case .paintbrush:
-            PaintbrushToolOptionsView(model: model)
+            BrushToolOptionsView(model: model, tool: .paintbrush, showsBlendMode: true)
+        case .eraser:
+            // T-12/D-27: width, hardness, antialiasing under `tool.eraser.*`, no blend mode.
+            BrushToolOptionsView(model: model, tool: .eraser, showsBlendMode: false)
+        case .pencil:
+            // T-13: the always-aliased one-pixel Pencil has only the blend mode (D-15).
+            PencilToolOptionsView(model: model)
         case .zoom, .pan:
             // Paint.NET shows no Zoom/Pan options.
             EmptyView()
         default:
-            // Options arrive with each tool's spec (0011 Eraser/Pencil, 0012 Color Picker, …).
+            // Options arrive with each tool's spec (0012 Color Picker, …).
             EmptyView()
         }
     }
 }
 
-/// Paintbrush options (spec 0009, PRD T-11), Paint.NET's labels left to right: **Brush
-/// width** (decimal field + ∓1 stepper, clamped to 1–2000 on commit; non-numeric input is
-/// ignored by reverting), **Hardness** (slider 0–100 + `NN%` field, greyed while
-/// antialiasing is off because it is ignored then), **Antialiasing enabled** toggle, and
-/// the **Blend Mode** popup listing the implemented modes in L-3 order (D-15 — today only
-/// "Normal"). The view observes `toolOptions.revision`, so `[`/`]` update it immediately.
-struct PaintbrushToolOptionsView: View {
+/// The brush-shaped tools' options (spec 0009 for the Paintbrush, PRD T-11; spec 0011 for
+/// the Eraser, T-12), Paint.NET's labels left to right: **Brush width** (decimal field +
+/// ∓1 stepper, clamped to 1–2000 on commit; non-numeric input is ignored by reverting),
+/// **Hardness** (slider 0–100 + `NN%` field, greyed while antialiasing is off because it
+/// is ignored then), and **Antialiasing enabled**. The Paintbrush additionally shows the
+/// **Blend Mode** popup listing the implemented modes in L-3 order (D-15 — today only
+/// "Normal"); the Eraser has no blend mode (D-27), so `showsBlendMode` is false. All
+/// values live under `tool.<tool>.*` (TOOL-C) and the view observes
+/// `toolOptions.revision`, so `[`/`]` update it immediately.
+struct BrushToolOptionsView: View {
     private enum Field { case width, hardness }
 
     let model: AppModel
+    /// `.paintbrush` or `.eraser` — picks the `tool.<id>.*` key prefix.
+    let tool: ToolID
+    let showsBlendMode: Bool
 
     @State private var widthDraft = ""
     @State private var hardnessDraft = ""
@@ -99,13 +116,13 @@ struct PaintbrushToolOptionsView: View {
 
     private var keys: (width: ToolOptionKey<Double>, hardness: ToolOptionKey<Int>,
                        antialiasing: ToolOptionKey<Bool>,
-                       blendMode: ToolOptionKey<BlendMode>) { BrushOptions.keys(for: .paintbrush) }
+                       blendMode: ToolOptionKey<BlendMode>) { BrushOptions.keys(for: tool) }
 
     /// Reading the store here also registers the observation: every write bumps
     /// `revision`, and the `onChange` below re-syncs the two text drafts.
     private var options: BrushOptions {
         _ = model.toolOptions.revision
-        return BrushOptions.load(from: model.toolOptions, tool: .paintbrush)
+        return BrushOptions.load(from: model.toolOptions, tool: tool)
     }
 
     var body: some View {
@@ -139,21 +156,23 @@ struct PaintbrushToolOptionsView: View {
             ))
             .toggleStyle(.checkbox)
             .accessibilityIdentifier("toolOptions.antialiasing")
-            HStack(spacing: 4) {
-                Text("Blend Mode:")
-                Picker("", selection: Binding(
-                    get: { value.blendMode },
-                    set: { model.toolOptions.setValue($0, for: keys.blendMode) }
-                )) {
-                    // D-15: the list is the implemented layer modes, in L-3 order; 0026/
-                    // 0027/0059 add theirs as they land.
-                    ForEach(BlendMode.allCases, id: \.self) { mode in
-                        Text(mode.displayName).tag(mode)
+            if showsBlendMode {
+                HStack(spacing: 4) {
+                    Text("Blend Mode:")
+                    Picker("", selection: Binding(
+                        get: { value.blendMode },
+                        set: { model.toolOptions.setValue($0, for: keys.blendMode) }
+                    )) {
+                        // D-15: the list is the implemented layer modes, in L-3 order;
+                        // 0026/0027/0059 add theirs as they land.
+                        ForEach(ToolOptionsBar.selectableBlendModes, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
                     }
+                    .labelsHidden()
+                    .fixedSize()
+                    .accessibilityIdentifier("toolOptions.blendMode")
                 }
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityIdentifier("toolOptions.blendMode")
             }
         }
         .onAppear { syncDrafts(from: value) }
@@ -212,8 +231,16 @@ struct PaintbrushToolOptionsView: View {
         }
         var updated = options
         updated.width = parsed
-        updated.save(to: model.toolOptions, tool: .paintbrush)  // clamps to 1–2000
-        widthDraft = Self.widthText(updated.width)
+        // Write only the keys this view owns — the Eraser must never store
+        // `tool.eraser.blendMode` (D-27), so this must not use `BrushOptions.save`.
+        let clamped = updated.clamped()
+        model.toolOptions.setValue(clamped.width, for: keys.width)
+        model.toolOptions.setValue(clamped.hardness, for: keys.hardness)
+        model.toolOptions.setValue(clamped.antialiasing, for: keys.antialiasing)
+        if showsBlendMode {
+            model.toolOptions.setValue(clamped.blendMode, for: keys.blendMode)
+        }
+        widthDraft = Self.widthText(clamped.width)
     }
 
     private func commitHardness() {
@@ -247,5 +274,36 @@ struct PaintbrushToolOptionsView: View {
         while text.hasSuffix("0") { text.removeLast() }
         if text.hasSuffix(".") { text.removeLast() }
         return text
+    }
+}
+
+/// Pencil options (spec 0011, PRD T-13, D-15): the **Blend Mode** popup only. The Pencil
+/// is always aliased and one pixel wide, so it has no width, hardness, or antialiasing
+/// controls; the list is the Paintbrush's (D-15) and the value persists as
+/// `tool.pencil.blendMode` (TOOL-C). Paint.NET's tool-only Overwrite is not in v1.0 (D-27).
+struct PencilToolOptionsView: View {
+    let model: AppModel
+
+    /// Reading the store here registers the observation (every write bumps `revision`).
+    private var blendMode: BlendMode {
+        _ = model.toolOptions.revision
+        return model.toolOptions.value(PencilTool.blendModeKey)
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("Blend Mode:")
+            Picker("", selection: Binding(
+                get: { blendMode },
+                set: { model.toolOptions.setValue($0, for: PencilTool.blendModeKey) }
+            )) {
+                ForEach(ToolOptionsBar.selectableBlendModes, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .accessibilityIdentifier("toolOptions.blendMode")
+        }
     }
 }

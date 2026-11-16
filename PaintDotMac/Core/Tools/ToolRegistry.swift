@@ -104,6 +104,8 @@ struct ToolRegistry {
             .zoom: { ZoomTool() },
             .pan: { PanTool() },
             .paintbrush: { PaintbrushTool() },
+            .eraser: { EraserTool() },
+            .pencil: { PencilTool() },
         ])
     }
 
