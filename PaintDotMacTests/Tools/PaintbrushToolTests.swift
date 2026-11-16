@@ -38,7 +38,7 @@ struct PaintbrushToolTests {
     @Test func optionsRoundTripThroughStore() throws {
         let context = makeContext()
         let keys = BrushOptions.keys(for: .paintbrush)
-        var tool = PaintbrushTool()
+        let tool = PaintbrushTool()
         var options = BrushOptions.default
         options.width = 37.5
         options.hardness = 20
@@ -144,7 +144,7 @@ struct PaintbrushToolTests {
         tool.mouseDragged(event(CGPoint(x: 130, y: 32.5)), context: context)
         tool.mouseUp(event(CGPoint(x: 130, y: 32.5)), context: context)
         var reference = LayeredImage.blank(size: PixelSize(width: 200, height: 64), fill: .clear)
-        var plainTool = PaintbrushTool()
+        let plainTool = PaintbrushTool()
         let fake = makeContext(width: 200, height: 64)
         fake.options.setValue(10.0, for: widthKey)
         plainTool.mouseDown(event(CGPoint(x: 100, y: 32.5)), context: fake)

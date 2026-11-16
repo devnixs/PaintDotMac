@@ -30,8 +30,8 @@ struct StrokeCoverageBufferTests {
 
     @Test func rowsArePerCoordinateAndRemoveAllClears() {
         var buffer = StrokeCoverageBuffer()
-        buffer.raise(x: 5, y: 5, to: 200)                       // tile (0,0)
-        buffer.raise(x: 515, y: 5, to: 128)                     // tile (2,0)
+        _ = buffer.raise(x: 5, y: 5, to: 200)                       // tile (0,0)
+        _ = buffer.raise(x: 515, y: 5, to: 128)                     // tile (2,0)
         #expect(buffer.touchedTiles
                     == Set([TileCoordinate(column: 0, row: 0), TileCoordinate(column: 2, row: 0)]))
         buffer.removeAll()

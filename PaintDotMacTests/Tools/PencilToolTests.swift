@@ -235,6 +235,47 @@ struct PencilToolTests {
         #expect(polluted.history.steps.map(\.name) == plain.history.steps.map(\.name))
     }
 
+    /// The "own layer" boundary is one stroke: a SECOND mouse-down snapshots the layer
+    /// again, so a semi-transparent color composes a second time over the first stroke's
+    /// result (every stroke behaves as if it were on its own layer, Pencil.html).
+    @Test func secondStrokeRepaintsOverFirstResult() {
+        let context = makeContext()
+        let redHalf = ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 128)
+        context.colors = ColorSelection(primary: redHalf, secondary: .white)
+        let tool = PencilTool()
+        tool.mouseDown(event(CGPoint(x: 5.5, y: 5.5)), context: context)
+        tool.mouseUp(event(CGPoint(x: 5.5, y: 5.5)), context: context)
+        #expect(pixel(context, 5, 5) == ColorRGBA8(red: 255, green: 127, blue: 127, alpha: 255))
+        tool.mouseDown(event(CGPoint(x: 5.5, y: 5.5)), context: context)
+        tool.mouseUp(event(CGPoint(x: 5.5, y: 5.5)), context: context)
+        // Source-over of red@128 onto (255,127,127,255): fa = 128×255 + 255×127 = 65025,
+        // outA = 255, R = (255·128·255 + 255·255·127 + 32512)/65025 = 255,
+        // G = B = (127·255·127 + 32512)/65025 = 63.
+        #expect(pixel(context, 5, 5) == ColorRGBA8(red: 255, green: 63, blue: 63, alpha: 255),
+                "the second stroke composes onto the first stroke's result")
+        #expect(context.history.steps.map(\.name) == ["New Image", "Pencil", "Pencil"],
+                "two strokes, two steps")
+    }
+
+    @Test func secondMouseDownIsIgnored() {
+        let context = makeContext()
+        context.colors = ColorSelection(
+            primary: ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 255),
+            secondary: ColorRGBA8(red: 0, green: 0, blue: 255, alpha: 255))
+        let tool = PencilTool()
+        tool.mouseDown(event(CGPoint(x: 1.5, y: 1.5)), context: context)
+        // A second button pressed mid-stroke must not restart the stroke or switch color.
+        tool.mouseDown(event(CGPoint(x: 5.5, y: 5.5), button: .secondary), context: context)
+        tool.mouseDragged(event(CGPoint(x: 3.5, y: 3.5)), context: context)
+        tool.mouseUp(event(CGPoint(x: 3.5, y: 3.5)), context: context)
+        #expect(changedPoints(context, background: Self.white)
+                    == points([(1, 1), (2, 2), (3, 3)]),
+                "the ignored mouse-down painted nothing and the stroke continued")
+        #expect(pixel(context, 5, 5) == Self.white, "no secondary color appeared")
+        #expect(context.history.steps.map(\.name) == ["New Image", "Pencil"],
+                "one stroke, one step")
+    }
+
     // MARK: - Canvas bounds, tiles, clip
 
     @Test func crossesTileBoundary() throws {

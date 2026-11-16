@@ -160,6 +160,36 @@ struct PencilEraserWindowIntegrationTests {
         }
     }
 
+    // MARK: - Options-bar stepper writes the Eraser's own keys (D-27)
+
+    @Test func eraserStepperWritesEraserKeysOnly() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openWhiteFixture(fixtures)
+            defer { finish(harness) }
+            #expect(harness.shortcut("e"))
+            pumpMainRunLoop()
+            let content = try #require(harness.window.contentView)
+            // The parameterized bar must step `tool.eraser.width`, not the Paintbrush's,
+            // and the Eraser must never store a blend-mode key (T-12/D-27).
+            #expect(AX.pressButton(inRoot: content, identifier: "toolOptions.width.increase"),
+                    "the + stepper exists for the Eraser")
+            pumpMainRunLoop()
+            let eraserWidth = BrushOptions.keys(for: .eraser).width.defaultsKey
+            let brushWidth = BrushOptions.keys(for: .paintbrush).width.defaultsKey
+            #expect(harness.appModel.defaultsForTests.double(forKey: eraserWidth) == 3,
+                    "default 2 + one step, under the eraser prefix")
+            #expect(harness.appModel.defaultsForTests.object(forKey: brushWidth) == nil,
+                    "the Paintbrush's keys stay untouched")
+            #expect(harness.appModel.defaultsForTests.object(forKey: "tool.eraser.blendMode") == nil,
+                    "the Eraser has no blend mode (D-27)")
+            #expect(AX.pressButton(inRoot: content, identifier: "toolOptions.width.decrease"))
+            pumpMainRunLoop()
+            #expect(harness.appModel.defaultsForTests.double(forKey: eraserWidth) == 2)
+        }
+    }
+
     // MARK: - `[`/`]` persistence
 
     @Test func eraserWidthPersists() async throws {

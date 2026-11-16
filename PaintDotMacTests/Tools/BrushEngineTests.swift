@@ -222,7 +222,7 @@ struct BrushEngineTests {
     @Test func aliasedDabShapes() {
         func check(width: Double, at point: CGPoint, expect expected: Set<PixelPoint>) {
             var surface = TestImages.surface(width: 32, height: 32) { _, _ in .clear }
-            paint(surface: &surface, points: [point], color: .black,
+            _ = paint(surface: &surface, points: [point], color: .black,
                   options: options(width: width, hardness: 50, antialiasing: false))
             var painted: Set<PixelPoint> = []
             for y in 0..<32 {
@@ -264,9 +264,9 @@ struct BrushEngineTests {
         }
         var soft = TestImages.surface(width: 32, height: 32) { _, _ in .clear }
         var hard = TestImages.surface(width: 32, height: 32) { _, _ in .clear }
-        paint(surface: &soft, points: points, color: .black,
+        _ = paint(surface: &soft, points: points, color: .black,
               options: options(width: 7, hardness: 0, antialiasing: false))
-        paint(surface: &hard, points: points, color: .black,
+        _ = paint(surface: &hard, points: points, color: .black,
               options: options(width: 7, hardness: 100, antialiasing: false))
         #expect(soft == hard, rng.comment)
     }
@@ -275,7 +275,7 @@ struct BrushEngineTests {
 
     @Test func horizontalSegmentHandValues() {
         var surface = TestImages.surface(width: 100, height: 100) { _, _ in .clear }
-        paint(surface: &surface,
+        _ = paint(surface: &surface,
               points: [CGPoint(x: 10, y: 50.5), CGPoint(x: 90, y: 50.5)],
               color: .black, options: options(width: 10, hardness: 100))
         for x in 10...89 {
@@ -303,14 +303,14 @@ struct BrushEngineTests {
         // White dst, black @128 one-pass value: fa=65025, C=(0+255·255·127+32512)/65025=127.
         let onePass = ColorRGBA8(red: 127, green: 127, blue: 127, alpha: 255)
         var surface = TestImages.surface(width: 64, height: 64) { _, _ in .white }
-        paint(surface: &surface,
+        _ = paint(surface: &surface,
               points: [CGPoint(x: 5.5, y: 32.5), CGPoint(x: 58.5, y: 32.5), CGPoint(x: 5.5, y: 32.5)],
               color: ColorRGBA8(red: 0, green: 0, blue: 0, alpha: 128),
               options: options(width: 8, hardness: 100))
         #expect(surface.pixel(at: PixelPoint(x: 32, y: 32)) == onePass, "back-and-forth stroke")
 
         var crossing = TestImages.surface(width: 64, height: 64) { _, _ in .white }
-        paint(surface: &crossing,
+        _ = paint(surface: &crossing,
               points: [CGPoint(x: 8, y: 8), CGPoint(x: 56, y: 56),
                        CGPoint(x: 8, y: 56), CGPoint(x: 56, y: 8)],
               color: ColorRGBA8(red: 0, green: 0, blue: 0, alpha: 128),
@@ -324,11 +324,11 @@ struct BrushEngineTests {
         var surface = TestImages.surface(width: 64, height: 64) { _, _ in .white }
         let points = [CGPoint(x: 5.5, y: 32.5), CGPoint(x: 58.5, y: 32.5)]
         let color = ColorRGBA8(red: 0, green: 0, blue: 0, alpha: 128)
-        paint(surface: &surface, points: points, color: color,
+        _ = paint(surface: &surface, points: points, color: color,
               options: options(width: 8, hardness: 100))
         #expect(surface.pixel(at: PixelPoint(x: 32, y: 32))
                     == ColorRGBA8(red: 127, green: 127, blue: 127, alpha: 255))
-        paint(surface: &surface, points: points, color: color,
+        _ = paint(surface: &surface, points: points, color: color,
               options: options(width: 8, hardness: 100))
         #expect(surface.pixel(at: PixelPoint(x: 32, y: 32))
                     == ColorRGBA8(red: 63, green: 63, blue: 63, alpha: 255))
@@ -345,8 +345,8 @@ struct BrushEngineTests {
             canvasSize: surface.size, options: brushOptions, clipMask: nil,
             compose: PaintbrushTool.paintbrushCompose(color: color, blendMode: .normal)
         )
-        stroke.begin(at: points[0], on: &surface)
-        for point in points.dropFirst() { stroke.extend(to: point, on: &surface) }
+        _ = stroke.begin(at: points[0], on: &surface)
+        for point in points.dropFirst() { _ = stroke.extend(to: point, on: &surface) }
 
         expectAgainstOracle(surface: surface, points: points, color: color,
                             options: brushOptions, background: background,
@@ -404,7 +404,7 @@ struct BrushEngineTests {
             clipMask: OutsideMask(),
             compose: PaintbrushTool.paintbrushCompose(color: .black, blendMode: .normal)
         )
-        stroke.begin(at: CGPoint(x: 2.5, y: 10.5), on: &untouched)
+        _ = stroke.begin(at: CGPoint(x: 2.5, y: 10.5), on: &untouched)
         #expect(stroke.makeTileDiff(from: untouched, layerID: UUID()).isEmpty)
     }
 
@@ -421,7 +421,7 @@ struct BrushEngineTests {
 
         // A stroke that starts off-canvas paints only its in-bounds part.
         let points = [CGPoint(x: -20, y: 25.5), CGPoint(x: 70, y: 25.5)]
-        paint(surface: &surface, points: points, color: .black,
+        _ = paint(surface: &surface, points: points, color: .black,
               options: options(width: 10, hardness: 100))
         expectAgainstOracle(surface: surface, points: points, color: .black,
                             options: options(width: 10, hardness: 100), background: .clear,
@@ -432,10 +432,10 @@ struct BrushEngineTests {
         let pointsWithNaN = [CGPoint(x: 10, y: 25.5),
                              CGPoint(x: Double.nan, y: 25.5),
                              CGPoint(x: 40, y: 25.5)]
-        paint(surface: &withNaN, points: pointsWithNaN, color: .black,
+        _ = paint(surface: &withNaN, points: pointsWithNaN, color: .black,
               options: options(width: 10, hardness: 100))
         var withoutNaN = TestImages.surface(width: 50, height: 50) { _, _ in .clear }
-        paint(surface: &withoutNaN,
+        _ = paint(surface: &withoutNaN,
               points: [CGPoint(x: 10, y: 25.5), CGPoint(x: 40, y: 25.5)],
               color: .black, options: options(width: 10, hardness: 100))
         #expect(withNaN == withoutNaN, "NaN point ignored")
@@ -461,8 +461,8 @@ struct BrushEngineTests {
                                                                          blue: 0, alpha: 0),
                                                       blendMode: .normal)
         )
-        stroke.begin(at: CGPoint(x: 20, y: 20), on: &surface)
-        stroke.extend(to: CGPoint(x: 30, y: 20), on: &surface)
+        _ = stroke.begin(at: CGPoint(x: 20, y: 20), on: &surface)
+        _ = stroke.extend(to: CGPoint(x: 30, y: 20), on: &surface)
         TestImages.expectPixels(surface, match: { _, _ in .white }, "alpha-0 color paints nothing")
         #expect(surface.generation == generation,
                 "a stroke whose compose returns the before value writes nothing at all")
@@ -492,8 +492,8 @@ struct BrushEngineTests {
             recorder.append(.init(before: before, coverage: coverage))
             return ColorRGBA8(red: coverage, green: 0, blue: 0, alpha: 255)
         })
-        stroke.begin(at: point, on: &surface)
-        stroke.extend(to: point, on: &surface)   // sweep back over the same dab
+        _ = stroke.begin(at: point, on: &surface)
+        _ = stroke.extend(to: point, on: &surface)   // sweep back over the same dab
         #expect(!recorder.calls.isEmpty)
         #expect(recorder.calls.allSatisfy { $0.before == pre },
                 "compose always sees the before-stroke pixel")
@@ -520,12 +520,12 @@ struct BrushEngineTests {
                                     color: ColorRGBA8(red: 0, green: 0, blue: 0, alpha: 128),
                                     blendMode: .normal))
         // Dab centred 5 px right of pixel (10,10)'s center → d = 5 → edge 0.5 → cov 128.
-        stroke.begin(at: CGPoint(x: 15.5, y: 10.5), on: &surface)
+        _ = stroke.begin(at: CGPoint(x: 15.5, y: 10.5), on: &surface)
         #expect(surface.pixel(at: PixelPoint(x: 10, y: 10))
                     == ColorRGBA8(red: 191, green: 191, blue: 191, alpha: 255),
                 "partial pass at coverage 128")
         // Sweep to the pixel's center: its coverage raises to 255, forcing a recompose.
-        stroke.extend(to: CGPoint(x: 10.5, y: 10.5), on: &surface)
+        _ = stroke.extend(to: CGPoint(x: 10.5, y: 10.5), on: &surface)
         #expect(surface.pixel(at: PixelPoint(x: 10, y: 10))
                     == ColorRGBA8(red: 127, green: 127, blue: 127, alpha: 255),
                 "recomposed from the before-stroke pixel, not the painted one")
@@ -546,7 +546,7 @@ struct BrushEngineTests {
             counter.bump()
             return PaintbrushTool.paintbrushCompose(color: .black, blendMode: .normal)(before, coverage)
         })
-        stroke.begin(at: CGPoint(x: 100, y: 100), on: &surface)   // off-canvas begin paints nothing
+        _ = stroke.begin(at: CGPoint(x: 100, y: 100), on: &surface)   // off-canvas begin paints nothing
         #expect(stroke.mark(x: 3, y: 4, coverage: 255, on: &surface))
         #expect(surface.pixel(at: PixelPoint(x: 3, y: 4)) == ColorRGBA8.black)
         let marksAfterFirst = counter.count
@@ -578,9 +578,9 @@ struct BrushEngineTests {
                                  options: options(width: 60, hardness: 40), clipMask: nil,
                                  compose: PaintbrushTool.paintbrushCompose(color: .black,
                                                                            blendMode: .normal))
-        stroke.begin(at: CGPoint(x: 30.5, y: 20.5), on: &surface)
-        stroke.extend(to: CGPoint(x: 280.5, y: 290.5), on: &surface)
-        stroke.extend(to: CGPoint(x: 200.5, y: 30.5), on: &surface)
+        _ = stroke.begin(at: CGPoint(x: 30.5, y: 20.5), on: &surface)
+        _ = stroke.extend(to: CGPoint(x: 280.5, y: 290.5), on: &surface)
+        _ = stroke.extend(to: CGPoint(x: 200.5, y: 30.5), on: &surface)
         stroke.cancel(on: &surface)
         #expect(surface == copy, "cancel is pixel-identical, absent tiles absent \(rng.comment)")
     }
@@ -592,7 +592,7 @@ struct BrushEngineTests {
                                  options: options(width: 2000, hardness: 75), clipMask: nil,
                                  compose: PaintbrushTool.paintbrushCompose(color: .black,
                                                                            blendMode: .normal))
-        stroke.begin(at: center, on: &surface)
+        _ = stroke.begin(at: center, on: &surface)
         #expect(surface.pixel(at: PixelPoint(x: 2000, y: 1500)) == ColorRGBA8.black)
         #expect(surface.pixel(at: PixelPoint(x: 3001, y: 1500)) == .white,
                 "pixel at d ≥ R unchanged")

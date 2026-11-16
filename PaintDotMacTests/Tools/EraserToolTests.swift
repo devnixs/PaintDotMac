@@ -77,6 +77,79 @@ struct EraserToolTests {
                 "Control-left (delivered as .secondary) uses the secondary slot")
     }
 
+    /// T-12/D-27: strength is captured at mouse-down — changing the slot mid-stroke does
+    /// not change the live stroke; the next stroke picks the new value up.
+    @Test func strengthFrozenAtMouseDown() {
+        let context = makeContext()
+        context.colors = ColorSelection(primary: ColorRGBA8(red: 9, green: 9, blue: 9, alpha: 60),
+                                        secondary: .white)
+        setOptions(context, width: 1, antialiasing: false)
+        let tool = EraserTool()
+        tool.mouseDown(event(CGPoint(x: 10.5, y: 10.5)), context: context)
+        context.colors = ColorSelection(primary: ColorRGBA8(red: 9, green: 9, blue: 9, alpha: 255),
+                                        secondary: .white)
+        tool.mouseDragged(event(CGPoint(x: 20.5, y: 10.5)), context: context)
+        tool.mouseUp(event(CGPoint(x: 20.5, y: 10.5)), context: context)
+        let partial = ColorRGBA8(red: 200, green: 100, blue: 50, alpha: 195)
+        #expect(pixel(context, 10, 10) == partial, "the click pixel used strength 60")
+        #expect(pixel(context, 20, 10) == partial,
+                "the mid-stroke pixel used the FROZEN strength 60, not the new 255")
+    }
+
+    /// The live stroke keeps the options frozen at mouse-down; an option change mid-stroke
+    /// (spec *Edge cases*: "Eraser width change mid-stroke applies to the next stroke").
+    @Test func widthChangeMidStrokeAppliesToNextStroke() {
+        let context = makeContext()
+        setOptions(context, width: 1, antialiasing: false)
+        let tool = EraserTool()
+        tool.activate(context: context)
+        tool.mouseDown(event(CGPoint(x: 10.5, y: 32.5)), context: context)
+        setOptions(context, width: 41)
+        tool.optionsDidChange(context: context)
+        tool.mouseDragged(event(CGPoint(x: 30.5, y: 32.5)), context: context)
+        tool.mouseUp(event(CGPoint(x: 30.5, y: 32.5)), context: context)
+        #expect(pixel(context, 30, 32) == .init(red: 0, green: 0, blue: 0, alpha: 0),
+                "the frozen width-1 stroke erased along the line")
+        #expect(pixel(context, 30, 25) == Self.base,
+                "the frozen width-1 stroke never grew to the new width 41")
+        let second = EraserTool()
+        second.activate(context: context)
+        second.mouseDown(event(CGPoint(x: 50.5, y: 32.5)), context: context)
+        second.mouseUp(event(CGPoint(x: 50.5, y: 32.5)), context: context)
+        #expect(pixel(context, 50, 25) == .init(red: 0, green: 0, blue: 0, alpha: 0),
+                "the next stroke uses the new width 41 (radius 20.5 covers y = 25)")
+    }
+
+    /// NaN/∞ events are pure no-ops for the Eraser too (engine keeps `lastPoint`).
+    @Test func nonFiniteEventsIgnored() {
+        func run(withNaN: Bool) -> (TiledSurface, [String]) {
+            let context = makeContext()
+            setOptions(context, width: 7, antialiasing: false)
+            let tool = EraserTool()
+            tool.mouseDown(event(CGPoint(x: 10.5, y: 10.5)), context: context)
+            tool.mouseDragged(event(CGPoint(x: 40.5, y: 10.5)), context: context)
+            if withNaN {
+                tool.mouseDragged(event(CGPoint(x: CGFloat.nan, y: 30)), context: context)
+                tool.mouseDragged(event(CGPoint(x: CGFloat.infinity,
+                                                y: CGFloat.infinity)), context: context)
+            }
+            tool.mouseDragged(event(CGPoint(x: 40.5, y: 50.5)), context: context)
+            tool.mouseUp(event(CGPoint(x: 40.5, y: 50.5)), context: context)
+            return (context.image.layers[0].surface, context.history.steps.map(\.name))
+        }
+        let plain = run(withNaN: false)
+        let polluted = run(withNaN: true)
+        var identical = true
+        for y in 0 ..< 64 {
+            for x in 0 ..< 64 where plain.0.pixel(at: PixelPoint(x: x, y: y))
+                != polluted.0.pixel(at: PixelPoint(x: x, y: y)) {
+                identical = false
+            }
+        }
+        #expect(identical, "NaN/∞ events are pure no-ops")
+        #expect(polluted.1 == plain.1, "no extra history step")
+    }
+
     @Test func aliasedIgnoresHardness() {
         func erased(hardness: Int) -> TiledSurface {
             let context = makeContext()

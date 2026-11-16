@@ -57,8 +57,9 @@ struct ImageDecodingIntegrationTests {
             #expect(DocumentOpenIntegrationTests.codecError(in: error) == .corrupt,
                     "expected ImageCodecError.corrupt, got \(error)")
             let inner = (error as NSError).userInfo[NSUnderlyingErrorKey] as? Error
-            #expect((inner?.localizedDescription ?? error.localizedDescription)
-                .contains("damaged or incomplete"), "alert text: \(error.localizedDescription)")
+            let alertText = inner?.localizedDescription ?? error.localizedDescription
+            #expect(alertText.contains("damaged or incomplete"),
+                    "alert text: \(error.localizedDescription)")
             #expect(NSDocumentController.shared.documents.isEmpty)
         }
     }

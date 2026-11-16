@@ -137,8 +137,8 @@ struct BrushEnginePropertyTests {
                                  compose: PaintbrushTool.paintbrushCompose(
                                     color: fixture.color, blendMode: fixture.options.blendMode))
         let points = overridePoints ?? fixture.points
-        stroke.begin(at: points[0], on: &surface)
-        for point in points.dropFirst() { stroke.extend(to: point, on: &surface) }
+        _ = stroke.begin(at: points[0], on: &surface)
+        for point in points.dropFirst() { _ = stroke.extend(to: point, on: &surface) }
         return (surface, stroke)
     }
 
@@ -178,7 +178,7 @@ struct BrushEnginePropertyTests {
         var rng = SeededRandom(seed: 0xE5E07111)
         for iteration in 0 ..< 200 {
             var local = rng
-            var fixture = makeStroke(with: &local)
+            let fixture = makeStroke(with: &local)
             let finite = fixture.points.filter { $0.x.isFinite && $0.y.isFinite }
             guard finite.count >= 2 else { continue }
             // Antialiased: split the exact float polyline — the profile is continuous,
@@ -242,7 +242,7 @@ struct BrushEnginePropertyTests {
         for iteration in 0 ..< 200 {
             var local = rng
             let size = PixelSize(width: local.int(in: 8 ... 300), height: local.int(in: 8 ... 300))
-            var context = FakeToolContextForProperties(size: size, background: local.color())
+            let context = FakeToolContextForProperties(size: size, background: local.color())
             let tool = PaintbrushTool()
             let pointCount = local.int(in: 1 ... 6)
             let points = (0 ..< pointCount).map { _ in
