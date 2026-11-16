@@ -366,6 +366,67 @@ struct SelectionToolsIntegrationTests {
         }
     }
 
+    /// Replace-drag hides the current selection's ants for the preview's duration, and
+    /// Escape restores them without a step (manual check 5; 0013's ants contract). The
+    /// Reduce Motion override pins the marching mode to the deterministic `.static`.
+    @Test func replacePreviewHidesAntsAndEscapeRestores() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openFixture(fixtures, name: "antspreview.png",
+                                                width: 200, height: 150, rgba: (255, 255, 255, 255))
+            defer { finish(harness) }
+            let ants = try #require(harness.windowController.marchingAntsOverlay)
+            ants.reduceMotionOverride = true
+            defer { ants.reduceMotionOverride = false }
+
+            #expect(harness.shortcut("s"))
+            selectDrag(harness,
+                       from: harness.viewPoint(forImagePoint: CGPoint(x: 30.4, y: 30.4)),
+                       to: harness.viewPoint(forImagePoint: CGPoint(x: 90.4, y: 70.4)))
+            pumpMainRunLoop()
+            #expect(ants.mode == .static, "the committed selection shows its ants")
+
+            let start = harness.viewPoint(forImagePoint: CGPoint(x: 120.4, y: 20.4))
+            let end = harness.viewPoint(forImagePoint: CGPoint(x: 160.4, y: 60.4))
+            harness.canvasPress(at: start)
+            harness.canvasDrag(to: end)
+            pumpMainRunLoop()
+            #expect(ants.mode == .hidden, "a Replace preview hides the current ants")
+            #expect(harness.document.undoBridge.state.selection?.bounds
+                        == PixelRect(x: 30, y: 30, width: 61, height: 41),
+                    "the selection itself survives the Replace drag")
+
+            harness.window.makeFirstResponder(harness.canvasView)
+            harness.keyDown("\u{1b}", keyCode: 53)
+            harness.keyUp("\u{1b}", keyCode: 53)
+            pumpMainRunLoop()
+            #expect(ants.mode == .static, "Escape brings the old ants back")
+            #expect(harness.appModel.historyPanel.model.rows.map(\.name)
+                        == ["Open Image", "Rectangle Select"], "Escape records no step")
+
+            // The button is still down: the dispatcher swallows events until the matching
+            // release (0006), which only ends the cancelled gesture.
+            harness.canvasRelease(at: end)
+            pumpMainRunLoop()
+            #expect(harness.appModel.historyPanel.model.rows.map(\.name)
+                        == ["Open Image", "Rectangle Select"],
+                    "the release of a cancelled gesture commits nothing")
+
+            // Releasing a Replace drag commits and the new selection shows its ants.
+            harness.canvasPress(at: start)
+            harness.canvasDrag(to: end)
+            pumpMainRunLoop(for: 0.08)
+            harness.canvasRelease(at: end)
+            pumpMainRunLoop()
+            #expect(ants.mode == .static, "the new selection's ants return on release")
+            #expect(harness.appModel.historyPanel.model.rows.map(\.name)
+                        == ["Open Image", "Rectangle Select", "Rectangle Select"])
+            #expect(harness.document.undoBridge.state.selection?.bounds
+                        == PixelRect(x: 120, y: 20, width: 41, height: 41))
+        }
+    }
+
     @Test func zoomToSelection() async throws {
         try await TestRunGate.withLock {
             let fixtures = try FixtureFiles()

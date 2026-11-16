@@ -136,4 +136,17 @@ struct SelectionToolOptionsTests {
                                                         dpi: 96) == PixelSize(width: 1, height: 1),
                 "non-finite gives 1")
     }
+
+    /// Rounding, not truncation (Paint.NET truncates; we round — spec 0014's documented
+    /// deviation), and half away from zero, not to even. Hand-computed: 1.5 cm at 96 DPI
+    /// = 1.5 / 2.54 × 96 = 56.6929… → 57; 0.75 in at 150 DPI = 112.5 exactly → 113
+    /// (`toNearestOrAwayFromZero`; banker's rounding would give 112).
+    @Test func fixedSizeRoundsHalfAway() {
+        #expect(SelectionToolOptions.fixedSizeInPixels(width: 1.5, height: 1.5,
+                                                        unit: .centimeters, dpi: 96)
+                    == PixelSize(width: 57, height: 57), "56.69 rounds up, not truncates to 56")
+        #expect(SelectionToolOptions.fixedSizeInPixels(width: 0.75, height: 0.75,
+                                                        unit: .inches, dpi: 150)
+                    == PixelSize(width: 113, height: 113), "112.5 rounds away from zero")
+    }
 }

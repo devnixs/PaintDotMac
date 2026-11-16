@@ -101,14 +101,12 @@ struct SelectionToolPropertyTests {
             let recorded = context.history.steps.count > stepsBefore
             let comment: Comment = "seed=\(seed) iteration=\(iteration) mode=\(mode) a=\(a) b=\(b)"
             guard recorded else {
-                // A reset / clear/no-selection case: the state must be untouched or nil.
+                // No step was recorded, so the state must be untouched or cleared (never
+                // silently swapped). In Replace mode that means: a click/off-canvas clear
+                // with nothing selected, or an emit whose result is pixel-identical to the
+                // selection — D-34 records nothing, and the old selection survives.
                 #expect(context.selection?.mask == before || context.selection == nil,
                         "no-step change keeps or clears the mask \(comment)")
-                if mode == .replace {
-                    // Replace either emits, or clears (no step only when nothing was set).
-                    #expect(!(before != nil && context.selection?.mask == before),
-                            "a Replace that changes nothing must have emitted \(comment)")
-                }
                 continue
             }
             let after = context.selection?.mask

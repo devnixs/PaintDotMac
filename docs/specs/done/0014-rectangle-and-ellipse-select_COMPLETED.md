@@ -354,7 +354,47 @@ iterations each; all headless):
   `ToolRegistryColorPickerTests`, `AppModelToolTests`, `MainMenuTests` (Zoom to Selection
   ⇧⌘B row), `ZoomPanStatusBarIntegrationTests` (routed-action count).
 
-Review: pending
+Review: 2026-11-16, independent reviewer — approved. Every acceptance criterion and edge
+case traced to a test with independently hand-computed expectations (Paint.NET's inclusive
+rectangle, Shift square/circle, Fixed Ratio/Size, `SelectionTool.Done` truth table, and the
+⇧⌘B fit math re-derived from the linked docs, not from code output). Crash/rule audit:
+no force unwraps, `try!`, or reachable preconditions in the diff; `SelectionGesture.pixel(for:)`
+bounds every later `Int` computation at 10⁹ (no overflow in 65,535-class math); the new Core
+files import only Foundation/CoreGraphics; all state changes flow through `performHistory`
+(D-34 guarded by mask equality); no parallel selection state (0013's `DocumentState.selection`
+is the single source); status-bar and ants writes stay on the main actor.
+
+Nine mutations tried, nine caught: (1) tooQuick boundary `>` → `>=` → `outcomeTable`;
+(2) Fixed-Size rounding half-away → truncation → SURVIVED the first pass (the spec's
+2.54 cm example is exact in binary floating-point), fixed by the new
+`fixedSizeRoundsHalfAway` (1.5 cm @ 96 DPI → 57, 0.75 in @ 150 DPI → 113 — also pins
+away-from-zero vs banker's rounding), which then caught it; (3) `zoomedToFit`
+`allowsEnlargement: false` → `fitsAndCenters`/`clampsToMaximumAndScrolls`/`backingScaleOne`;
+(4) D-34 mask-equality guard deleted in `SelectionCommit.finish` → `noEffectAddsNoStep`;
+(5) committing the picker's mode at mouse-up instead of the mouse-down latch →
+`modeLatchedAtMouseDown`; (6) dropping the inclusive `+ 1` → `normalForwardAndBackward`
+(+ the mask-level tool tests); (7) non-sticky `hasMoved` → `hasMovedIsSticky`;
+(8) forced ellipse mask build per drag event → `hugeImageSelection`'s new time-box;
+(9) `hidesCurrentSelection` pinned `false` → the new `replacePreviewHidesAntsAndEscapeRestores`
+(+ `dragEmitsRectangleSelect`'s overlay check).
+
+Issues found and fixed by this review: (a) `hugeImageSelection` was not time-boxed despite
+the spec's *Test plan* ("time-boxed"), so a per-drag rasterization survived review — the
+test now bounds mouse-down + drag on the 65,535² canvas (best of 3; a single mask build at
+that size measured 14 ms through the rectangle fast path and 4.5 s through the ellipse
+rasterizer, versus microseconds for the real pure-int events); (b) no test distinguished
+Fixed-Size rounding from truncation; (c) nothing tested at window level that a Replace
+preview hides the current marching ants and Escape restores them without a step — added
+`replacePreviewHidesAntsAndEscapeRestores` (synthesized press/drag/Escape/release through
+the real router, Reduce Motion pinned to the deterministic static mode, including the
+0006 swallow-until-release rule after a cancelled gesture); (d) `SelectionToolPropertyTests.combineUndoRedo`
+asserted a no-step Replace with an unchanged selection is impossible — that contradicts
+D-34 for a pixel-identical Replace emit (correctly recorded as no step) and was a latent
+seed-dependent false failure; replaced with the true invariant (a no-step change never
+swaps the selection's pixels). Tests added: 2 new cases + the time-box + the property-guard
+fix. Gate re-run with these changes: the full `quality-gate.sh` printed **GREEN** — clean
+Debug build with no compiler warnings, `tests: 1180 passed, 0 failed, 0 skipped (of 1180)`
+(the implementer's 1178 plus the two new cases), no crash reports during the run.
 
 Manual verification (against a running app):
 

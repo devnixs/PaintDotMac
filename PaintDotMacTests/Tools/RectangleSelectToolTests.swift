@@ -313,12 +313,27 @@ struct RectangleSelectToolTests {
         // the 0013 rectangle fast path keeps every tile `.full` (no partial bytes).
         let context = FakeToolContext(size: PixelSize(width: 65_535, height: 65_535))
         let tool = RectangleSelectTool()
-        tool.mouseDown(event(0.5, 0.5, 1.0), context: context)
-        tool.mouseDragged(event(32_767.5, 32_767.5, 1.1), context: context)
+        // NF-1 time-box (spec *Test plan*): mouse-down and drag touch no pixels. At this
+        // size one mask build measured 14 ms even through the rectangle fast path (and
+        // seconds through the ellipse rasterizer), while the real pointer events are pure
+        // int math — microseconds. Best of three rounds to stay quiet on a loaded machine.
+        var bestDragPairMs = Double.greatestFiniteMagnitude
+        for _ in 0..<3 {
+            tool.cancel(context: context)
+            let t0 = DispatchTime.now().uptimeNanoseconds
+            tool.mouseDown(event(0.5, 0.5, 1.0), context: context)
+            tool.mouseDragged(event(32_767.5, 32_767.5, 1.1), context: context)
+            bestDragPairMs = min(bestDragPairMs,
+                                 Double(DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000)
+        }
+        #expect(bestDragPairMs < 20,
+                "mouse-down + drag built no mask (best of 3: \(bestDragPairMs) ms)")
         #expect(context.history.steps.count == 1, "no performHistory before mouse-up")
         #expect(context.overlays.allSatisfy { overlay in
-            if case .selectionShape? = overlay { return true }
-            return false
+            switch overlay {
+            case .selectionShape?, nil: return true   // nil: the timing rounds' cancels
+            default: return false
+            }
         }, "only shape previews are recorded")
         tool.mouseUp(event(65_534.5, 65_534.5, 1.2), context: context)
 
