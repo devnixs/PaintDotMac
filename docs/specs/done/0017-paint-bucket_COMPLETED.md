@@ -205,7 +205,31 @@ contiguous AA-on click on a 4000 × 3000 opaque white layer — fill + TileDiff,
 `measure` average **2.877 s** (10 iterations, relative standard deviation
 0.68 %); the spec bar is a gross-regression guard at 5 s — met.
 
-Review: pending
+Review: independent review 2026-11-16. Every acceptance criterion and edge case
+traced to a test; compose/feather oracles re-derived from the spec formulas (not the
+code). Nine mutations attempted, eight caught: feather rounding (`255·k/9` truncating
+— `featherValues`, `antialiasedStraightEdge`, `antialiasedCorner`), dropping the clip
+multiplication in `apply` (four tests), counting off-canvas feather neighbours as
+matched (`featherClippedToCanvas`), renaming the history step (five tests, unit +
+session), dropping the seed-outside-selection mouse-down guard (new test below),
+re-introducing feather-everything for aliased fills (new test + `globalFillsDisconnectedAreas`
++ `shiftClickIsGlobal`), dropping the Shift latch (`shiftClickIsGlobal`), and
+disabling the empty-diff no-op gate (`noOpClicksAddNoStep`). The ninth (dropping the
+redundant `isFinite` guard) survives with no behavior gap: NaN fails the bounds guard
+and ±∞ fails the size bound before any `Int` conversion, pinned by the eight
+off-canvas/non-finite locations of `offCanvasClickIsNoOp`. Review additions:
+`PaintBucketFillTests.aliasedGapInsideBoundsStaysZero` (the aliased global-fill gap
+regression) and `.wholeCanvasRegionHasNoRing`;
+`PaintBucketToolTests.fillSelectionClickOutsideSelectionIsNoOp` (mouse-down guard in
+Fill = Selection mode), `.multiTileFillIsOneStepAndUndoIsExact` (six touched tiles,
+one step, exact undo/redo across the 256 boundary), and the ±∞ seed locations;
+`PaintBucketIntegrationTests.selectionFillDisablesFloodAndAntialiasingOptions` (the
+options bar greys Flood mode, Tolerance, Sampling, and Antialiasing while Fill =
+Selection, via AX enabled state); `AX.enabledState` test support. Fast-path
+(`Sa == 255 && .normal`) verified bit-identical to `BlendOps.normal` by hand;
+Fill = Selection's clip pass-through squares the selection AA edge exactly as the
+spec's step 6 defines. Gate (full, after the review tests): clean build without
+warnings, **GREEN** — 1345 passed, 0 failed, 0 skipped, no crash reports.
 
 Manual verification (not automated):
 

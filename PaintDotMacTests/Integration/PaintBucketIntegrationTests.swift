@@ -149,6 +149,47 @@ struct PaintBucketIntegrationTests {
         }
     }
 
+    @Test func selectionFillDisablesFloodAndAntialiasingOptions() async throws {
+        // APP-4: Fill = Selection greys out Flood mode, Tolerance, Sampling, and
+        // Antialiasing (the selection carries its own AA edge), while the Fill and
+        // Blend Mode popups stay live (spec 0017 scope).
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openFixture(fixtures, name: "bucket-disabled.png",
+                                                width: 200, height: 200) { _, _ in .white }
+            defer { finish(harness) }
+
+            selectBucket(harness)
+            let content = try #require(harness.window.contentView)
+            let disabledWhileSelection = ["toolOptions.floodMode", "toolOptions.tolerance",
+                                          "toolOptions.samplingMode",
+                                          "toolOptions.antialiasing"]
+            let alwaysEnabled = ["toolOptions.fillMode", "toolOptions.blendMode"]
+
+            // Positive control: Similar Color enables every option (this also proves the
+            // elements vend their enabled state at all).
+            for id in disabledWhileSelection + alwaysEnabled {
+                #expect(AX.enabledState(inRoot: content, identifier: id) == true,
+                        "\(id) enabled with Fill = Similar Color")
+            }
+
+            // The same write the Fill popup's binding makes.
+            harness.appModel.toolOptions.setValue(PaintBucketFillMode.selection,
+                                                  for: PaintBucketOptions.fillModeKey)
+            pumpMainRunLoop()
+
+            for id in disabledWhileSelection {
+                #expect(AX.enabledState(inRoot: content, identifier: id) == false,
+                        "\(id) disabled while Fill = Selection")
+            }
+            for id in alwaysEnabled {
+                #expect(AX.enabledState(inRoot: content, identifier: id) == true,
+                        "\(id) stays enabled")
+            }
+        }
+    }
+
     @Test func clickFillsAndUndoes() async throws {
         try await TestRunGate.withLock {
             let fixtures = try FixtureFiles()

@@ -113,6 +113,31 @@ enum AX {
         boolValue(object, "accessibilityPerformDecrement")
     }
 
+    /// Whether the element reports itself enabled. A control under SwiftUI
+    /// `.disabled(true)` answers `false`; `nil` means the element vends no enabled
+    /// attribute at all (the caller must treat that as untestable, never as "enabled").
+    static func enabledState(_ object: NSObject) -> Bool? {
+        for name in ["isAccessibilityEnabled", "accessibilityEnabled"]
+        where object.responds(to: Selector(name)) {
+            return boolValue(object, name)
+        }
+        let attributeSelector = Selector("accessibilityAttributeValue:")
+        guard object.responds(to: attributeSelector),
+              let raw = object.perform(attributeSelector, with: "AXEnabled" as NSString)?
+                  .takeUnretainedValue() as? NSNumber
+        else { return nil }
+        return raw.boolValue
+    }
+
+    /// `enabledState` for the element with `identifier` (element released inside the
+    /// accessibility-client scope, as in `isSelected`).
+    @MainActor
+    static func enabledState(inRoot root: NSObject, identifier target: String) -> Bool? {
+        withAccessibilityClient {
+            first(inRoot: root, identifier: target).flatMap(enabledState)
+        }
+    }
+
     static func identifiers(inRoot root: NSObject) -> Set<String> {
         var found: Set<String> = []
         walk(root) { object in

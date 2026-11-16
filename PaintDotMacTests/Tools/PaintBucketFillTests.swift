@@ -62,6 +62,39 @@ struct PaintBucketFillTests {
         #expect(coverage.bounds == PixelRect(x: 2, y: 2, width: 4, height: 4))
     }
 
+    @Test func aliasedGapInsideBoundsStaysZero() {
+        // The feather-gap regression (spec 0017 / D-34 review): a GLOBAL region has
+        // gap pixels inside its bounds. Aliased, they stay 0 — the aliased fill must
+        // never feather. With Antialiasing on, gap column x = 4 has k = 6 region
+        // neighbours at (4, 4)…(4, 5) → 170 (the ring the AA model pins).
+        let region = stencil(10, 10, rectPoints(2, 2, 3, 7) + rectPoints(5, 2, 6, 7))
+        let size = PixelSize(width: 10, height: 10)
+        let aliased = PaintBucketFill.coverage(region: region, canvasSize: size,
+                                               antialiasing: false)
+        for y in 0..<10 {
+            #expect(aliased.coverage(x: 4, y: y) == 0, "aliased gap (4, \(y))")
+            #expect(aliased.coverage(x: 2, y: y) == ((2...7).contains(y) ? 255 : 0))
+        }
+        let feathered = PaintBucketFill.coverage(region: region, canvasSize: size,
+                                                 antialiasing: true)
+        #expect(feathered.coverage(x: 4, y: 4) == 170, "k = 6 neighbours")
+        #expect(feathered.coverage(x: 4, y: 2) == 113, "k = 4 at the top gap row")
+    }
+
+    @Test func wholeCanvasRegionHasNoRing() {
+        // Edge case "Region = whole canvas": nothing outside the region, so the AA ring
+        // is empty and every in-canvas pixel is 255.
+        let coverage = PaintBucketFill.coverage(
+            region: stencil(6, 5, rectPoints(0, 0, 5, 4)),
+            canvasSize: PixelSize(width: 6, height: 5), antialiasing: true)
+        for y in 0..<5 {
+            for x in 0..<6 {
+                #expect(coverage.coverage(x: x, y: y) == 255, "(\(x), \(y))")
+            }
+        }
+        #expect(coverage.bounds == PixelRect(x: 0, y: 0, width: 6, height: 5))
+    }
+
     // MARK: Antialiased feather
 
     @Test func antialiasedStraightEdge() {

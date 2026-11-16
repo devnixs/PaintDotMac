@@ -275,6 +275,26 @@ struct PaintBucketToolTests {
         #expect(context.imageUpdates == 0)
     }
 
+    @Test func fillSelectionClickOutsideSelectionIsNoOp() {
+        // Fill = Selection: the click itself must still land inside the selection
+        // (spec 0017 step 4 runs before the fillMode branch) — outside it nothing is
+        // filled, no step is added, and no image update happens.
+        let context = FakeToolContext(size: PixelSize(width: 20, height: 20), background: .white)
+        setAliased(context)
+        context.memoryOptions.setValue(PaintBucketFillMode.selection,
+                                       for: PaintBucketOptions.fillModeKey)
+        setSelection(context, pixelatedRect(context, PixelRect(x: 0, y: 0, width: 8, height: 20)))
+        context.colors = ColorSelection(primary: red, secondary: blue)
+        PaintBucketTool().mouseDown(event(15.5, 5.5), context: context)
+        #expect(context.history.steps.map(\.name) == ["New Image", "setup"])
+        #expect(context.imageUpdates == 0)
+        for y in 0..<20 {
+            for x in 0..<20 {
+                #expect(pixel(context, x, y) == ColorRGBA8.white, "(\(x), \(y))")
+            }
+        }
+    }
+
     // MARK: Fill = Selection
 
     @Test func fillSelectionModeIgnoresTolerance() {
@@ -373,6 +393,36 @@ struct PaintBucketToolTests {
         #expect(context.image.layers[0].surface == after, "redo re-applies it")
     }
 
+    @Test func multiTileFillIsOneStepAndUndoIsExact() {
+        // A contiguous fill crossing the 256-tile boundary touches six tiles of the
+        // 600 × 600 layer — still exactly ONE "Paint Bucket" step, and undo/redo
+        // restore and re-apply the exact per-tile storage across the boundary.
+        let context = FakeToolContext(size: PixelSize(width: 600, height: 600),
+                                      background: .white)
+        context.updateImage { image in
+            image.layers[0].surface.fill(.black,
+                                         in: PixelRect(x: 300, y: 0, width: 1, height: 600))
+        }
+        setAliased(context)
+        context.colors = ColorSelection(primary: red, secondary: blue)
+        let before = context.image.layers[0].surface
+        PaintBucketTool().mouseDown(event(5.5, 5.5), context: context)
+        let after = context.image.layers[0].surface
+        #expect(after.pixel(at: PixelPoint(x: 255, y: 300)) == red, "tile column 0")
+        #expect(after.pixel(at: PixelPoint(x: 256, y: 300)) == red, "tile column 1")
+        #expect(after.pixel(at: PixelPoint(x: 299, y: 599)) == red, "tile (1, 2)")
+        #expect(after.pixel(at: PixelPoint(x: 300, y: 300)) == ColorRGBA8.black, "the border")
+        #expect(after.pixel(at: PixelPoint(x: 301, y: 300)) == ColorRGBA8.white)
+        #expect(context.history.steps.map(\.name) == ["New Image", "Paint Bucket"],
+                "six touched tiles, one step")
+        #expect(context.history.steps[1].icon == .paintBucket)
+        context.navigateForTests { history, state in _ = history.undo(&state) }
+        #expect(context.image.layers[0].surface == before,
+                "undo restores every touched tile exactly")
+        context.navigateForTests { history, state in _ = history.redo(&state) }
+        #expect(context.image.layers[0].surface == after, "redo re-applies the exact result")
+    }
+
     @Test func noOpClicksAddNoStep() {
         func check(_ label: String, _ context: FakeToolContext, _ event: ToolEvent,
                    names: [String] = ["New Image"]) {
@@ -401,7 +451,9 @@ struct PaintBucketToolTests {
     }
 
     @Test func offCanvasClickIsNoOp() {
-        let locations: [(Double, Double)] = [(-1, 5), (20, 5), (5, 20), (.nan, 3)]
+        let locations: [(Double, Double)] = [(-1, 5), (20, 5), (5, 20), (.nan, 3),
+                                             (.infinity, 3), (-.infinity, 3), (3, .nan),
+                                             (3, .infinity)]
         for (x, y) in locations {
             let context = lineContext()
             context.colors = ColorSelection(primary: red, secondary: blue)
