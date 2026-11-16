@@ -130,6 +130,28 @@ struct CPUCompositorTests {
                     == [ColorRGBA8(red: 85, green: 0, blue: 170, alpha: 192)])
     }
 
+    /// The transparent-destination fast path must equal `BlendOps.blend` **exactly**,
+    /// including the Paint.NET fixed-point alpha rule at the sub-byte corner (spec 0012
+    /// Verification note 1). Hand calc: `mul255(128, 128) = round(16384/255) = 64`;
+    /// `mul255(11, 14) = round(154/255) = 1` — the continuous `(11/255)·(14/255)` weight
+    /// would truncate to 0 and drop the contribution entirely.
+    @Test func firstContributionScalesAlphaExactly() {
+        let size = PixelSize(width: 4, height: 4)
+        let half = layer(ColorRGBA8(red: 0, green: 0, blue: 255, alpha: 128),
+                         size: size, name: "Half", opacity: 128)
+        let withHiddenBottom = image([layer(.white, size: size, name: "Hidden", visible: false),
+                                      half], size: size)
+        let region = compositor.composite(withHiddenBottom, in: size.bounds)
+        #expect(Set(region.pixels)
+                    == [ColorRGBA8(red: 0, green: 0, blue: 255, alpha: 64)],
+                "first visible contribution lands on transparent dst with scaled alpha")
+        let subByte = image([layer(ColorRGBA8(red: 7, green: 7, blue: 7, alpha: 11),
+                                   size: size, name: "Faint", opacity: 14)], size: size)
+        let faint = compositor.composite(subByte, in: size.bounds)
+        #expect(Set(faint.pixels) == [ColorRGBA8(red: 7, green: 7, blue: 7, alpha: 1)],
+                "the sub-byte corner stays 1, not 0 — the decided fixed-point rule")
+    }
+
     @Test func regionIsClippedToCanvas() {
         let size = PixelSize(width: 10, height: 10)
         let image = image([layer(.black, size: size)], size: size)

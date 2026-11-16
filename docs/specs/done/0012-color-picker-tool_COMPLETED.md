@@ -209,8 +209,9 @@ region — mean **2.024 ms**, p95 **2.125 ms**, max **2.180 ms** per sample (tar
 under 5 ms; gated at 5 ms mean / 50 ms max — proves only the sampled rect is composited).
 
 Test additions (all headless):
-- Unit (Swift Testing): `CPUCompositorTests` (13, hand-computed Paint.NET values, region/
-  tile/flatten agreement, sparse sparsity, no-mutation), `CPUCompositorPropertyTests`
+- Unit (Swift Testing): `CPUCompositorTests` (14, hand-computed Paint.NET values, region/
+  tile/flatten agreement, sparse sparsity, no-mutation, the sub-byte fast-path corner),
+  `CPUCompositorPropertyTests`
   (50 seeded stacks, `Double` oracle within ±1 per channel), `PixelSamplerTests` (16:
   clipping, alpha-weighted averaging incl. the round-half-up hand calcs, modes, defensive
   states), `ColorPickerAfterClickTests` (8: decision table + exact Paint.NET strings),
@@ -241,4 +242,54 @@ Notes:
   - [ ] Zoom to 3200% and click the boundary between two pixels → the pixel under the cursor tip's pixel square is picked.
   - [ ] Check the toolbar controls read correctly with VoiceOver ("Sampling", "Layer", "Image", "After click").
 
-Review: pending
+Review: 2026-11-16, independent review complete. Final gate (full, after review fixes):
+**GREEN** — clean build with no warnings, 1000 tests passed / 0 failed / 0 skipped, no crash
+reports; perf gate measured again at mean 2.036 ms, p95 2.103 ms, max 2.196 ms per 51×51
+Image-mode sample.
+- Every acceptance criterion and edge case traced to a test with independently hand-computed
+  expectations (compositor values derived from Paint.NET's `UserBlendOps` formulas, sampler
+  values from the spec's round-half-up averaging rule, After Click strings against
+  Paint.NET's doc, `mul255` pinned exactly over the full input space by 0009's
+  `BlendOpsTests`).
+- Rounding uncertainty settled: PRD D-17 makes Paint.NET's `UserBlendOps` (integer
+  fixed-point, `mul255`) the normative form, and D-16 makes the CPU compositor itself the
+  contract, so the property oracle applying the two decided rounding rules in `Double` is
+  correct — the continuous `(a/255)·(op/255)` form is not the contract. Exact `.5` ties are
+  mathematically impossible for `mul255` and the alpha byte (255 is odd; documented and
+  exhaustively pinned in 0009), and the sampler's half-up ties (212.5→213, 127.5→128) are
+  pinned by exact hand tests. The ±1 envelope is not too loose for systematic drift: an
+  opacity double-application mutation produced 18 360 oracle violations.
+- Test added: `CPUCompositorTests.firstContributionScalesAlphaExactly` — exact corners of
+  the transparent-destination fast path (`mul255(128,128) = 64`; the sub-byte corner
+  `mul255(11,14) = 1`, where a continuous truncation would drop the contribution). Before
+  this, a fast-path alpha mutation was caught only statistically by the ±1 oracle.
+- Uncertainty 2 resolved by promotion, not duplication: `BridgeToolContext` (the shared
+  0010 double) gained an optional `dispatcher` forwarding in `activateTool` (mirroring
+  `CanvasToolSession`) and records `setColorCalls` (0007 tests unaffected); the session
+  tests' local dispatcher-backed duplicate was deleted. The duplicated double covered no
+  user-visible behavior of its own — the real wiring is covered by
+  `ColorPickerIntegrationTests.switchToPreviousToolReturnsToPaintbrush` on a real
+  `CanvasToolSession`.
+- Mutations tried, all caught, each reverted and verified:
+  1. compositor visible-skip inverted → `hiddenLayerIsIgnored`,
+     `imageModeWithAllLayersHidden`, `layerModeIgnoresVisibilityAndOpacity` (Image side),
+     property oracle (8854 issues);
+  2. opacity applied twice in the blend path → `layerOpacityHalfOverWhite` + oracle;
+  3. transparent-destination fast path ignoring layer opacity → the new
+     `firstContributionScalesAlphaExactly` + oracle;
+  4. `SamplingSize.region11 = 12` off-by-one → `samplingSizeRawValuesAndDisplayNames`,
+     `sampleRectClipping`, `optionsPersistAndDefault`;
+  5. `switchToPencil` activating the wrong tool → `afterClickSwitchToPencil`,
+     `switchToPencilIgnoresPrevious`, `optionsPersistAndDefault`;
+  6. Layer mode respecting the active layer's visibility →
+     `layerModeIgnoresVisibilityAndOpacity`;
+  7. picking recording a History step → `pickingIsNotAHistoryStep`,
+     `pickAfterStrokeReturnsToPaintbrush`, and the window test `pickingAddsNoHistoryRow`.
+  (The `src.alpha == 0` / unallocated-tile skip is an equivalent mutation — `BlendOps`
+  returns `dst` bit-identically for `Sa == 0`, documented and tested in 0009.)
+- Crash/rule audit of the diff: no force unwraps, `try!`, `fatalError`, or new
+  `precondition` on reachable paths; `floor` mapping guards non-finite and out-of-`Int`
+  coordinates; `Int` sums cannot overflow (max ≈ 1.7×10⁸); compositor never mutates inputs
+  (`generation`-checked) and never leaves the tile-grid trap (`outOfGridTileCoordinateIsNil`);
+  Core imports unchanged (Foundation/CoreGraphics only); headless compliance re-checked by
+  the gate.
