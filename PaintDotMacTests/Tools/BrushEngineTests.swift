@@ -455,17 +455,18 @@ struct BrushEngineTests {
     @Test func zeroAlphaColorChangesNothing() {
         var surface = TestImages.surface(width: 40, height: 40) { _, _ in .white }
         let generation = surface.generation
-        paint(surface: &surface, points: [CGPoint(x: 20, y: 20), CGPoint(x: 30, y: 20)],
-              color: ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 0),
-              options: options(width: 10))
+        var stroke = BrushStroke(
+            canvasSize: surface.size, options: options(width: 10), clipMask: nil,
+            compose: PaintbrushTool.paintbrushCompose(color: ColorRGBA8(red: 255, green: 0,
+                                                                         blue: 0, alpha: 0),
+                                                      blendMode: .normal)
+        )
+        stroke.begin(at: CGPoint(x: 20, y: 20), on: &surface)
+        stroke.extend(to: CGPoint(x: 30, y: 20), on: &surface)
         TestImages.expectPixels(surface, match: { _, _ in .white }, "alpha-0 color paints nothing")
-        // (A stroke that writes nothing never stamps a generation — setPixel is a no-op on
-        // identical pixels only after the engine skips coverage-0 pixels.)
-        #expect(surface.generation == generation || surface == {
-            var copy = surface
-            copy.fill(.white)
-            return copy
-        }())
+        #expect(surface.generation == generation,
+                "a stroke whose compose returns the before value writes nothing at all")
+        #expect(stroke.makeTileDiff(from: surface, layerID: UUID()).isEmpty)
     }
 
     // MARK: - Compose contract and mark
@@ -504,6 +505,30 @@ struct BrushEngineTests {
         let coverages = Set(recorder.calls.map(\.coverage))
         #expect(coverages.count >= 2, "the edge ramp composes at partial coverage")
         #expect(coverages.contains(255), "the dab core composes at full coverage")
+    }
+
+    @Test func recomposeUsesBeforePixelWhenCoverageIncreasesMidStroke() {
+        // A pixel first painted at partial coverage and later raised to full (a second
+        // segment passing closer) recomposes from the BEFORE-stroke pixel — never from
+        // the partially painted value. Hand-computed, black @128 over white, w 10 h 100:
+        // coverage 128 → Sa 64 → (191,191,191,255); coverage 255 → Sa 128 → (127,127,127,255)
+        // (the single-pass value). Recomposing from (191,…) would give (95,95,95,255).
+        var surface = TestImages.surface(width: 20, height: 20) { _, _ in .white }
+        var stroke = BrushStroke(canvasSize: surface.size,
+                                 options: options(width: 10, hardness: 100), clipMask: nil,
+                                 compose: PaintbrushTool.paintbrushCompose(
+                                    color: ColorRGBA8(red: 0, green: 0, blue: 0, alpha: 128),
+                                    blendMode: .normal))
+        // Dab centred 5 px right of pixel (10,10)'s center → d = 5 → edge 0.5 → cov 128.
+        stroke.begin(at: CGPoint(x: 15.5, y: 10.5), on: &surface)
+        #expect(surface.pixel(at: PixelPoint(x: 10, y: 10))
+                    == ColorRGBA8(red: 191, green: 191, blue: 191, alpha: 255),
+                "partial pass at coverage 128")
+        // Sweep to the pixel's center: its coverage raises to 255, forcing a recompose.
+        stroke.extend(to: CGPoint(x: 10.5, y: 10.5), on: &surface)
+        #expect(surface.pixel(at: PixelPoint(x: 10, y: 10))
+                    == ColorRGBA8(red: 127, green: 127, blue: 127, alpha: 255),
+                "recomposed from the before-stroke pixel, not the painted one")
     }
 
     @Test func markRaisesSinglePixel() {

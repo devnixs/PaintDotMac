@@ -73,5 +73,10 @@ final class CanvasToolSession: ToolContext {
 
     func updateImage(_ body: (inout LayeredImage) -> Void) {
         undoBridge?.updateLiveState { state in body(&state.image) }
+        // Live tool writes must reach the screen in this frame (spec 0009 *Display*):
+        // `CanvasView` draws on demand (`isPaused`), and the 0003 renderer uploads exactly
+        // the tiles `changedTiles(since:)` reports in that draw. Without the request a
+        // stroke would only appear at commit (mouse-up) or the next transform change.
+        canvasView?.needsDisplay = true
     }
 }

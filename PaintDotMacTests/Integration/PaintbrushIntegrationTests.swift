@@ -328,6 +328,46 @@ struct PaintbrushIntegrationTests {
         }
     }
 
+    @Test func updateImageRequestsCanvasRedraw() {
+        // Spec 0009 *Display*: every `CanvasToolSession.updateImage` requests a canvas
+        // redraw. `CanvasView` draws on demand (`isPaused` + `enableSetNeedsDisplay`);
+        // without the request a live stroke would only appear at commit (mouse-up) or the
+        // next transform change. Windowless view (created, never added to a window);
+        // the count is read through `CanvasView.redrawRequests` because AppKit's
+        // `needsDisplay` getter is not observable for never-displayed views.
+        let canvas = CanvasView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        let navigation = CanvasNavigation(
+            canvasView: canvas,
+            statusBar: StatusBarModel(imageSize: PixelSize(width: 64, height: 64), dpi: 72)
+        )
+        let overlay = ToolOverlayView(frame: NSRect(x: 0, y: 0, width: 200, height: 200))
+        let suiteName = "PaintDotMacTests.redraw.\(UUID().uuidString)"
+        let suite = UserDefaults(suiteName: suiteName)!
+        defer { suite.removePersistentDomain(forName: suiteName) }
+        let session = CanvasToolSession(canvasView: canvas, navigation: navigation,
+                                        overlayView: overlay, model: AppModel(defaults: suite))
+        var surface = TiledSurface(size: PixelSize(width: 64, height: 64))
+        surface.fill(.white)
+        let bridge = UndoBridge(state: DocumentState(image: LayeredImage(surface: surface)),
+                                base: .newImage,
+                                budgetBytes: HistoryStack.defaultBudgetBytes,
+                                undoManager: NavigationUndoManager())
+        session.attachUndoBridge(bridge)
+
+        let tool = PaintbrushTool()
+        let baseline = canvas.redrawRequests
+        tool.mouseDown(event(CGPoint(x: 32, y: 32)), context: session)
+        #expect(canvas.redrawRequests == baseline + 1,
+                "the mouse-down `updateImage` requests exactly one canvas redraw")
+        tool.mouseDragged(event(CGPoint(x: 40, y: 36)), context: session)
+        #expect(canvas.redrawRequests == baseline + 2,
+                "each drag segment requests its redraw — the stroke follows the pointer")
+        tool.mouseUp(event(CGPoint(x: 48, y: 32)), context: session)
+        #expect(canvas.redrawRequests == baseline + 3, "the mouse-up extension requests one")
+        #expect(bridge.history.steps.map(\.name) == ["New Image", "Paintbrush"],
+                "the stroke still commits exactly one step")
+    }
+
     @Test func rightDragPaintsSecondary() async throws {
         try await TestRunGate.withLock {
             let fixtures = try FixtureFiles()

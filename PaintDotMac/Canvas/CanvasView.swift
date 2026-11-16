@@ -44,6 +44,20 @@ final class CanvasView: MTKView {
     /// keeping that order. Nil for bare views — the 0004 path stays.
     weak var inputRouter: CanvasInputRouter?
 
+    /// Counts `setNeedsDisplay(true)` requests. AppKit's `needsDisplay` getter is not an
+    /// observable for never-displayed or windowless views, but the 0009 Display contract
+    /// — every `CanvasToolSession.updateImage` requests a redraw so live strokes follow
+    /// the pointer — is headless-testable through this counter.
+    private(set) var redrawRequests = 0
+
+    override var needsDisplay: Bool {
+        get { super.needsDisplay }
+        set {
+            if newValue { redrawRequests += 1 }
+            super.needsDisplay = newValue
+        }
+    }
+
     /// Non-nil when the Metal device and renderer came up. The window controller shows the
     /// `canvas.unavailable` label instead of this view when false.
     private(set) var isMetalAvailable = false

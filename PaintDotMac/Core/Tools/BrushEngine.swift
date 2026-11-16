@@ -238,12 +238,11 @@ struct BrushStroke {
                          candidates: buffer.touchedTiles)
     }
 
-    /// Snapshots so `before` shares no tile buffer with the live surface. A plain value
-    /// copy shares every tile until a mutation touches it — then 0008's `sharesStorage`
-    /// fast path in `TileDiff.between` would skip the stroke's tiles (undo would lose
-    /// them). `cloneForStroke()` hands the stroke a fresh, uniquely-owned buffer per
-    /// allocated tile (exact pixels, no sharing); absent tiles stay absent, so `cancel`
-    /// restores absent-from-absent cheaply.
+    /// Keeps the stroke's before-snapshot as a plain value copy: every tile buffer stays
+    /// shared until the stroke writes into it, and that write COW-copies it — so when
+    /// `makeTileDiff` runs, `TileDiff.between`'s `sharesStorage` fast path skips exactly
+    /// the tiles the stroke never wrote (which cannot have changed) and records the rest.
+    /// Absent tiles stay absent, so `cancel` restores absent-from-absent cheaply.
     private mutating func beginSnapshot(of surface: TiledSurface) {
         before = surface
     }
@@ -381,7 +380,11 @@ struct BrushStroke {
         }
         guard effective > 0 else { return }
         let point = PixelPoint(x: x, y: y)
-        let result = compose(before.pixel(at: point), effective)
+        let beforePixel = before.pixel(at: point)
+        let result = compose(beforePixel, effective)
+        // A compose that changes nothing writes nothing: no tile COW, no `generation`
+        // bump, no renderer upload (an alpha-0 stroke leaves the surface untouched).
+        guard result != beforePixel else { return }
         surface.setPixel(result, at: point)
     }
 }
