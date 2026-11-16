@@ -4,8 +4,9 @@ import SwiftUI
 /// The selection tools' options (spec 0014, PRD T-1/T-3/TOOL-C), Paint.NET's order left to
 /// right: **Selection mode** (Replace / Add (Union) / Subtract / Intersect / Invert (Xor),
 /// each with its modifier hint), the **Selection clipping** segmented control
-/// (Pixelated / Antialiased), and — Rectangle Select only (`showsDrawMode: false` reuses
-/// this view for Lasso 0015 and Magic Wand 0016) — a divider, **Drawing mode**
+/// (Pixelated / Antialiased — Magic Wand 0016 hides it via `showsQuality: false` because
+/// its outline is pixel-exact), and — Rectangle Select only (`showsDrawMode: false`
+/// reuses this view for Lasso 0015 and Magic Wand 0016) — a divider, **Drawing mode**
 /// (Normal / Fixed Ratio / Fixed Size) and, when it is not Normal, **Width** and **Height**
 /// fields, a **swap** button, and (Fixed Size only) a **Units** popup.
 ///
@@ -17,6 +18,10 @@ struct SelectionToolOptionsView: View {
 
     let model: AppModel
     let showsDrawMode: Bool
+    /// Magic Wand (0016) passes `false`: the wand's outline sits on pixel edges, so
+    /// Pixelated and Antialiased rasterizations are identical and the clipping picker
+    /// would be meaningless. Rectangle / Lasso / Ellipse keep it.
+    var showsQuality: Bool = true
     /// Return/Escape in a numeric field hands focus back to the canvas (0006's contract —
     /// `DocumentWindowController` restores the first responder so tool keys work again).
     var onEndEditing: () -> Void = {}
@@ -75,21 +80,23 @@ struct SelectionToolOptionsView: View {
             .accessibilityLabel("Selection mode")
             .accessibilityValue(mode.displayName)
 
-            Picker("Selection clipping mode", selection: Binding(
-                get: { quality },
-                set: { model.toolOptions.setValue($0, for: SelectionToolOptions.quality) }
-            )) {
-                ForEach(SelectionQuality.allCases, id: \.self) { item in
-                    Text(item.displayName).tag(item)
+            if showsQuality {
+                Picker("Selection clipping mode", selection: Binding(
+                    get: { quality },
+                    set: { model.toolOptions.setValue($0, for: SelectionToolOptions.quality) }
+                )) {
+                    ForEach(SelectionQuality.allCases, id: \.self) { item in
+                        Text(item.displayName).tag(item)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .fixedSize()
+                .labelsHidden()
+                .help("Selection clipping mode")
+                .accessibilityIdentifier("toolOptions.selectionQuality")
+                .accessibilityLabel("Selection clipping mode")
+                .accessibilityValue(quality.displayName)
             }
-            .pickerStyle(.segmented)
-            .fixedSize()
-            .labelsHidden()
-            .help("Selection clipping mode")
-            .accessibilityIdentifier("toolOptions.selectionQuality")
-            .accessibilityLabel("Selection clipping mode")
-            .accessibilityValue(quality.displayName)
 
             if showsDrawMode {
                 Divider()

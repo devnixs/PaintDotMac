@@ -56,13 +56,15 @@ struct AppModelToolTests {
         defer { discard(name) }
         let model = AppModel(defaults: suite)
         // 0011 registered the Eraser and the Pencil after the Paintbrush; 0012 the Color
-        // Picker; 0014 the two selection tools; 0015 the Lasso (ToolID.allCases order
-        // puts them first).
+        // Picker; 0014 the two selection tools; 0015 the Lasso; 0016 the Magic Wand
+        // (ToolID.allCases order puts the selection tools first).
         #expect(model.implementedTools.map(\.id)
-                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .zoom, .pan,
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
+                        .zoom, .pan,
                         .paintbrush, .eraser, .pencil, .colorPicker])
         #expect(model.implementedTools.map(\.displayName)
-                    == ["Rectangle Select", "Lasso Select", "Ellipse Select", "Zoom", "Pan",
+                    == ["Rectangle Select", "Lasso Select", "Ellipse Select", "Magic Wand",
+                        "Zoom", "Pan",
                         "Paintbrush", "Eraser", "Pencil", "Color Picker"])
     }
 

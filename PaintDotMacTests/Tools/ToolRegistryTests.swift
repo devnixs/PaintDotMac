@@ -67,10 +67,12 @@ struct ToolRegistryTests {
     @Test func standardRegistersPaintbrush() {
         // Later tool specs extend this list as they register their tool (0011 added the
         // Eraser and the Pencil; 0012 the Color Picker; 0014 the two selection tools;
-        // 0015 the Lasso).
+        // 0015 the Lasso; 0016 the Magic Wand).
         #expect(ToolRegistry.standard().implementedIDs
-                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .zoom, .pan,
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
+                        .zoom, .pan,
                         .paintbrush, .eraser, .pencil, .colorPicker])
+        #expect(ToolRegistry.standard().makeTool(.magicWand) is MagicWandTool)
         #expect(ToolRegistry.standard().makeTool(.zoom) is ZoomTool)
         #expect(ToolRegistry.standard().makeTool(.pan) is PanTool)
         #expect(ToolRegistry.standard().makeTool(.rectangleSelect) is RectangleSelectTool)
@@ -84,12 +86,12 @@ struct ToolRegistryTests {
         #expect(ToolRegistry.standard().isImplemented(.zoom))
     }
 
-    /// 0014/0015 *Acceptance*: S cycles the three implemented selection tools (D-13 —
-    /// Magic Wand slots in later by `ToolID.allCases` order with no further change).
+    /// 0014/0015/0016 *Acceptance*: S cycles the four implemented selection tools
+    /// (D-13's complete group).
     @Test func selectionGroupHasRectangleLassoEllipse() {
         let registry = ToolRegistry.standard()
         #expect(registry.shortcutGroup(for: "s")
-                    == [.rectangleSelect, .lassoSelect, .ellipseSelect])
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand])
         var resolver = ToolShortcutResolver()
         // 1st S (fresh) → Rectangle; within 1 s again → Lasso, then Ellipse, then back.
         #expect(resolver.resolve(key: "s", shift: false,
@@ -119,7 +121,8 @@ struct ToolRegistryTests {
         #expect(registry.shortcutGroup(for: "p") == [.pencil])
         #expect(registry.shortcutGroup(for: "e") == [.eraser])
         #expect(registry.implementedIDs
-                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .zoom, .pan,
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
+                        .zoom, .pan,
                         .paintbrush, .eraser, .pencil, .colorPicker],
                 "paintbrush, eraser, pencil, color picker consecutively — ToolID.allCases order")
         #expect(registry.defaultToolID == .paintbrush)

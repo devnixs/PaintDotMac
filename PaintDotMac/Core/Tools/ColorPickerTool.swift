@@ -61,8 +61,8 @@ final class ColorPickerTool: Tool {
     let id: ToolID = .colorPicker
 
     /// TOOL-C keys, defaults per PRD T-14 / D-28: Single pixel / Layer / Do not switch
-    /// tool. The mode stores the raw `String` because `SamplingMode` is not a
-    /// `ToolOptionValue` until 0016 (spec 0012).
+    /// tool. The mode keeps storing the raw `String` (0012's on-disk format; 0016 made
+    /// `SamplingMode` a `ToolOptionValue` only for the wand / bucket keys).
     static let samplingSizeKey = ToolOptionKey<SamplingSize>(
         tool: .colorPicker, name: "samplingSize", defaultValue: .singlePixel)
     static let samplingModeKey = ToolOptionKey<String>(

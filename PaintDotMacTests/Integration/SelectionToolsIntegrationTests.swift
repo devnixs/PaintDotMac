@@ -155,13 +155,20 @@ struct SelectionToolsIntegrationTests {
             #expect(harness.appModel.activeToolID == .lassoSelect)
             #expect(harness.shortcut("s"))
             #expect(harness.appModel.activeToolID == .ellipseSelect)
-            #expect(harness.shortcut("s"))
-            #expect(harness.appModel.activeToolID == .rectangleSelect)
+            #expect(harness.shortcut("s"))   // → Magic Wand (0016 completed the group)
+            #expect(harness.appModel.activeToolID == .magicWand)
 
+            let wandIdentifiers = optionIdentifiers(harness)
+            #expect(wandIdentifiers.contains("toolOptions.selectionMode"))
+            #expect(!wandIdentifiers.contains("toolOptions.drawMode"),
+                    "Magic Wand has no draw-mode options")
+            #expect(optionValue(harness, identifier: "toolOptions.selectionMode") == "Replace")
+
+            #expect(harness.shortcut("s"))   // wraps → Rectangle Select
+            #expect(harness.appModel.activeToolID == .rectangleSelect)
             let identifiers = optionIdentifiers(harness)
             #expect(identifiers.contains("toolOptions.selectionMode"))
             #expect(identifiers.contains("toolOptions.drawMode"), "Rectangle shows draw modes")
-            #expect(optionValue(harness, identifier: "toolOptions.selectionMode") == "Replace")
 
             #expect(harness.shortcut("s"))   // → Lasso Select (0015 joined the group)
             #expect(harness.appModel.activeToolID == .lassoSelect)
@@ -360,7 +367,15 @@ struct SelectionToolsIntegrationTests {
             options.setValue(100.0, for: SelectionToolOptions.fixedWidth)
             options.setValue(50.0, for: SelectionToolOptions.fixedHeight)
 
-            #expect(harness.shortcut("s"))   // back to Rectangle Select
+            #expect(harness.shortcut("s"))   // → Magic Wand (0016 completed the group)
+            pumpMainRunLoop()
+            #expect(harness.appModel.activeToolID == .magicWand)
+            let wandIdentifiers = optionIdentifiers(harness)
+            #expect(wandIdentifiers.contains("toolOptions.selectionMode"))
+            #expect(!wandIdentifiers.contains("toolOptions.selectionQuality"),
+                    "Magic Wand has no clipping picker (0016)")
+
+            #expect(harness.shortcut("s"))   // wraps → back to Rectangle Select
             pumpMainRunLoop()
             #expect(harness.appModel.activeToolID == .rectangleSelect)
             #expect(optionValue(harness, identifier: "toolOptions.selectionMode") == "Subtract")

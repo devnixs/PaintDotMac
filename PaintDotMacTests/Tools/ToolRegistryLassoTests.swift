@@ -8,7 +8,7 @@ struct ToolRegistryLassoTests {
     @Test func sGroupOrder() {
         let registry = ToolRegistry.standard()
         #expect(registry.shortcutGroup(for: "s")
-                    == [.rectangleSelect, .lassoSelect, .ellipseSelect])
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand])
         #expect(registry.makeTool(.lassoSelect) is LassoSelectTool)
     }
 }

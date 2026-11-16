@@ -120,6 +120,17 @@ struct ToolOptionsContent: View {
                 .accessibilityLabel("Lasso mode")
                 .accessibilityValue(Self.lassoMode(in: model).displayName)
             }
+        case .magicWand:
+            // T-4 / 0016: the shared selection options with no clipping picker (the
+            // wand's outline is pixel-exact, so Pixelated and Antialiased are
+            // identical), then the flood options.
+            HStack(spacing: 8) {
+                SelectionToolOptionsView(model: model, showsDrawMode: false,
+                                         showsQuality: false,
+                                         onEndEditing: onEndEditing)
+                Divider()
+                FloodToolOptionsView(model: model, tool: .magicWand)
+            }
         case .paintbrush:
             BrushToolOptionsView(model: model, tool: .paintbrush, showsBlendMode: true)
         case .eraser:
@@ -360,9 +371,10 @@ struct PencilToolOptionsView: View {
 /// left to right: **Sampling:** (Single pixel / 3 x 3 … 51 x 51 region), the **Layer /
 /// Image** sampling-mode segmented control (⌘-click still forces Image), and **After
 /// click:** (Do not switch tool / Switch to previous tool / Switch to Pencil tool). Values
-/// persist under `tool.colorPicker.*` (TOOL-C); the mode stores the raw string because
-/// `SamplingMode` is not a `ToolOptionValue` until 0016, and an unknown stored value reads
-/// as the default (spec 0012). The view observes `toolOptions.revision` like the others.
+/// persist under `tool.colorPicker.*` (TOOL-C); the mode keeps storing the raw string
+/// (0012's format — unchanged now that 0016 added `SamplingMode: ToolOptionValue` for the
+/// wand / bucket keys), and an unknown stored value reads as the default (spec 0012). The
+/// view observes `toolOptions.revision` like the others.
 struct ColorPickerToolOptionsView: View {
     let model: AppModel
 

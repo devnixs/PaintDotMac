@@ -104,6 +104,7 @@ struct ToolRegistry {
             .rectangleSelect: { RectangleSelectTool() },
             .lassoSelect: { LassoSelectTool() },
             .ellipseSelect: { EllipseSelectTool() },
+            .magicWand: { MagicWandTool() },
             .zoom: { ZoomTool() },
             .pan: { PanTool() },
             .paintbrush: { PaintbrushTool() },

@@ -19,9 +19,10 @@ enum SamplingSize: Int, CaseIterable, Sendable {
 }
 
 /// Where the sample comes from (spec 0012; Paint.NET's "Sample Single Layer" / "Sample All
-/// Layers"). Reused by 0016's Magic Wand / Paint Bucket "Sampling" option. Deliberately
-/// **not** a `ToolOptionValue` in 0012: `tool.colorPicker.samplingMode` stores the raw
-/// `String`, and 0016 adds `extension SamplingMode: ToolOptionValue {}`.
+/// Layers"). Reused by 0016's Magic Wand / Paint Bucket "Sampling" option. 0012 stored
+/// `tool.colorPicker.samplingMode` as the raw `String`; 0016 added
+/// `extension SamplingMode: ToolOptionValue {}` (in `MagicWandTool.swift`) for the
+/// wand / bucket keys — the Color Picker's stored format is unchanged.
 enum SamplingMode: String, CaseIterable, Sendable {
     case layer
     case image
