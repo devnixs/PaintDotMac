@@ -198,7 +198,77 @@ Tests added: 43 — `LassoPathTests` (5), `LassoSelectToolTests` (30 incl. the 2
 (1), `LassoSelectIntegrationTests` (6). 0014/0006 registry list tests and the S-cycle
 integration tests updated for the third S-group member (Rectangle → Lasso → Ellipse).
 
-Review: pending
+Review: complete (independent reviewer, spec 0015). Traced every acceptance
+criterion and edge case to a behavior-level test (hand mask bytes, set algebra,
+history names). The even-odd question was settled against PRD T-2/D-39 and the
+Paint.NET alternate-fill docs: even-odd is normative; `closedPath()`'s
+`normalized(using: .evenOdd)` plus the tool's `.evenOdd` `Selection` fill rule
+implement it. The implementer's `containmentMask` oracle reuses CG's
+normalization, so it cannot independently prove that law — review added a
+CG-free per-pixel oracle (ray-parity scanline, Sutherland–Atkinson half-open
+edges) plus hand-derived regions.
+Mutations tried (each restored; verified by `git diff`): (1) drop the even-odd
+normalization in `closedPath` → `pentagramCenterIsHoleEvenOdd` fails; (2)
+collinearity tolerance `1e-9 → 1e-30` → new `collinearityToleranceBoundary`
+fails; (3) thinning bound `≥ → >` → `thinningInViewSpace` fails; (4) close-snap
+radius `6 → 3` → `polygonClickOnFirstVertexCloses`,
+`closeSnapUsesCurrentTransform`, new `polygonCloseSnapBoundary` fail; (5) remove
+the D-34 no-op guard in `SelectionCommit.finish` → `noOpUnionAddsNoStep` and 6
+`undoRedoProperty` iterations fail; (6) swap `lassoSelect`/`ellipseSelect` in
+`ToolID` (breaks the PRD D-13 S order) → `sGroupOrder`, `idsMatchAllCases`,
+`rawValuesAreDefaultsIDs`, `standardRegistersPaintbrush`,
+`selectionGroupHasRectangleLassoEllipse` fail; (7) per-event
+thins→normalizes on every `mouseDragged` → `manyPointsCommit` fails at its
+self-limiting bound. 7/7 caught.
+Tests added (8) / extended (2): `LassoPathTests.collinearityToleranceBoundary`,
+`.hourglassNormalizesToEvenOdd`, `.reversedOutlineEnclosesSameRegion`;
+`LassoSelectToolTests.selfCrossingOutlinesMatchParityOraclePixelByPixel`
+(pentagram + hourglass vs the parity oracle — the pentagram winding-2 center is
+where the rules differ; the hourglass pins the four-lobe closed figure),
+`.clockwiseSimpleOutlineSelectsSameRegion` (negative-area simple outline passes
+through normalization unchanged), `.polygonModeFixedAtFirstMouseDown` (the spec
+Test-plan variant the implementation commit lacked: ⌘ latched at click 1,
+released by click 2 → still Union), `.polygonCloseSnapBoundary` (6.0 pt closes,
+6.5 pt adds a vertex), `.polygonDuplicateVertexIsHarmless`; extended
+`.hugeCoordinatesDoNotCrash` to ±1e9 (the gesture's Int-conversion bound,
+4 × 10¹⁸ Double cross products) and `.manyPointsCommit` with mid-drag
+no-selection/no-step assertions and a self-limiting 30 s bound proving
+per-event work is O(1) (the Swift Testing `.timeLimit` trait alone cannot
+interrupt a CPU-bound loop — a per-event rasterization mutation would have hung
+the whole gate).
+Issues fixed: no product bug found — the implementation matches the spec and
+the PRD on every traced rule (crash audit clean: no force unwraps, `try!`, or
+preconditions in the new Core code; no UI imports; all selection changes go
+through `SelectionCommit` → history; `@MainActor` respected; overlay drawing
+keeps the "one point draws nothing" rule). Review fixes were the test gaps and
+bounds above; integration tests verified headless (DocumentHarness, synthesized
+events, `HeadlessAssertions`, no UI hooks). Also fixed a latent test-side time
+bomb unrelated to the Lasso that the review's gate runs hit: a real
+PaintDotMac.app launch (manual verification) legitimately writes
+`NSWindow Frame panel.tools` to the standard domain, which made
+`PanelControllerTests.frameAutosaveWritten` fail deterministically on every
+later run; it now asserts the user's key is UNCHANGED by the test instead of
+absent (the anti-leak guard is preserved — any test-side write under the user's
+autosave name still fails). Two full gate runs failed on window/activation
+tests (`TestHostTests.runningAsTestHost`, then twelve
+`ColorsPanelIntegrationTests` "window became visible" + `frameAutosaveWritten`)
+while the user ran the app concurrently during the runs (the same-bundle-ID
+launch promoted the `.prohibited` test host's activation policy mid-run); with
+no concurrent instance and the delta fix, all those suites passed standalone
+and the final full gate below is green.
+Full quality gate (this review):
+
+```
+==> Debug build (clean build)
+No compiler warnings.
+
+==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)
+tests: 1231 passed, 0 failed, 0 skipped (of 1231)
+
+==> GREEN
+tests: 1231 passed, 0 failed, 0 skipped (of 1231)
+tests: no crash reports during the run
+```
 
 Manual verification (against a running app):
 

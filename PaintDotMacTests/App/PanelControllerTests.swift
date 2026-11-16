@@ -66,6 +66,12 @@ struct PanelControllerTests {
 
     @Test func frameAutosaveWritten() throws {
         let (controller, _, suiteName) = makeController()
+        // The guard below is about TEST code never writing under the user's autosave
+        // name. A real PaintDotMac.app launch (manual verification) legitimately owns
+        // `NSWindow Frame panel.tools` in the standard domain, so compare against the
+        // pre-test value instead of requiring a pristine domain — any test-side leak
+        // still changes it and still fails.
+        let userFrameBefore = UserDefaults.standard.string(forKey: "NSWindow Frame panel.tools")
         defer {
             UserDefaults.standard.removeObject(forKey: "NSWindow Frame test.panel.tools")
             UserDefaults.standard.removePersistentDomain(forName: suiteName)
@@ -75,8 +81,9 @@ struct PanelControllerTests {
         panel.setFrame(CGRect(x: 60, y: 70, width: 80, height: 120), display: false)
         #expect(UserDefaults.standard.string(forKey: "NSWindow Frame test.panel.tools") != nil,
                 "AppKit persists under the test-mapped name")
-        #expect(UserDefaults.standard.string(forKey: "NSWindow Frame panel.tools") == nil,
-                "never under the user's autosave name")
+        #expect(UserDefaults.standard.string(forKey: "NSWindow Frame panel.tools")
+                    == userFrameBefore,
+                "never written under the user's autosave name")
     }
 
     @Test func placeholderContent() throws {
