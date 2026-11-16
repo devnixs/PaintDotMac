@@ -341,5 +341,53 @@ struct FloodFillTests {
                                tolerance: FloodTolerance(percent: 50), mode: .contiguous) == nil)
         #expect(FloodFill.fill(mock, from: PixelPoint(x: 0, y: 0),
                                tolerance: FloodTolerance(percent: 50), mode: .global) == nil)
+        // Beyond `ImageLimits.maximumSide` but without a word-count overflow: still
+        // `nil`, never the `FloodFillStencil.init` precondition (real documents of any
+        // size are gated by APP-10 first; this pins the mocked-source contract).
+        for size in [PixelSize(width: 100_000, height: 1), PixelSize(width: 1, height: 100_000),
+                     PixelSize(width: 70_000, height: 70_000),
+                     PixelSize(width: 65_536, height: 65_536)] {
+            let oversized = FloodFillSource(size: size, tiles: [])
+            #expect(FloodFill.fill(oversized, from: PixelPoint(x: 0, y: 0),
+                                   tolerance: FloodTolerance(percent: 50),
+                                   mode: .contiguous) == nil, "\(size)")
+            #expect(FloodFill.fill(oversized, from: PixelPoint(x: 0, y: 0),
+                                   tolerance: FloodTolerance(percent: 50),
+                                   mode: .global) == nil, "\(size) global")
+        }
+        // The maximum legal size passes the guards (no allocation is attempted by the
+        // guard itself; `storageWordCount` succeeds at 65,535 × 65,535).
+        #expect(FloodFillStencil.storageWordCount(width: 65_535, height: 65_535) != nil)
+    }
+
+    @Test func globalFillSmallAndOversizedBandHeights() throws {
+        // The row-band split (`bandCount = min(height, cores · 4)`,
+        // `bandHeight = ⌈height / bandCount⌉`) makes the LAST bands start past the
+        // image whenever ceil overshoots — 1-px-tall, odd-height, and
+        // `cores · 4 + 1`-tall images are the shapes that hit it. Each fill must equal
+        // the per-pixel oracle, and repeated concurrent runs must be bit-identical.
+        let coreBand = ProcessInfo.processInfo.activeProcessorCount * 4
+        let sizes = [PixelSize(width: 1, height: 1), PixelSize(width: 64, height: 1),
+                     PixelSize(width: 7, height: 1), PixelSize(width: 9, height: 5),
+                     PixelSize(width: 33, height: 3), PixelSize(width: 9, height: coreBand + 1),
+                     PixelSize(width: 9, height: 2 * coreBand + 3)]
+        var rng = SeededRandom(seed: SeededRandom.resolvedSeed(default: 0x0016_B4D0))
+        let comment = rng.comment
+        for (index, size) in sizes.enumerated() {
+            let fixture = randomFixture(size: size, rng: &rng)
+            let seed = PixelPoint(x: rng.int(in: 0...size.width - 1),
+                                  y: rng.int(in: 0...size.height - 1))
+            let tolerance = FloodTolerance(percent: [0, 50, 100][index % 3])
+            let expected = globalOracle(fixture, seed: seed, tolerance: tolerance)
+            let first = try #require(
+                FloodFill.fill(fixture, from: seed, tolerance: tolerance, mode: .global))
+            try expectStencil(first, equals: expected, size: size,
+                              "band case \(index) \(size) \(comment)")
+            for _ in 0..<7 {
+                let again = try #require(
+                    FloodFill.fill(fixture, from: seed, tolerance: tolerance, mode: .global))
+                #expect(again == first, "band case \(index) \(size) determinism — \(comment)")
+            }
+        }
     }
 }

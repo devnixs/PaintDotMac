@@ -328,23 +328,41 @@ struct FloodFillStencil: Sendable, Equatable {
     }
 
     /// Bit set iff coverage > 0 (0017 builds its "limit to selection" stencil this way).
+    /// All three tile states count: a `.full` tile is 255 in-canvas, so its whole
+    /// in-canvas block is set (its bits round-trip `selectionMask()` exactly).
     static func from(_ mask: SelectionMask) -> FloodFillStencil {
         var stencil = Self(size: mask.size)
         let columns = FloodFillSource.gridExtent(mask.size.width)
         let rows = FloodFillSource.gridExtent(mask.size.height)
         for row in 0..<rows {
             for column in 0..<columns {
-                guard case .partial(let storage) = mask.tile(
-                    at: TileCoordinate(column: column, row: row)) else { continue }
                 let x0 = column * Tile.size
                 let y0 = row * Tile.size
                 let width = min(Tile.size, mask.size.width - x0)
                 let height = min(Tile.size, mask.size.height - y0)
-                for y in 0..<height {
-                    let base = (y0 + y) * stencil.wordsPerRow
-                    let rowOffset = y * Tile.size
-                    for x in 0..<width where storage.bytes[rowOffset + x] > 0 {
-                        stencil.words[base + ((x0 + x) >> 6)] |= UInt64(1) << UInt64((x0 + x) & 63)
+                switch mask.tile(at: TileCoordinate(column: column, row: row)) {
+                case .empty:
+                    continue
+                case .full:
+                    for y in y0..<(y0 + height) {
+                        let base = y * stencil.wordsPerRow
+                        var x = x0
+                        while x < x0 + width {
+                            let firstBit = x & 63
+                            let count = min(64 - firstBit, x0 + width - x)
+                            stencil.words[base + (x >> 6)] |=
+                                Self.bitMask(firstBit: firstBit, count: count)
+                            x += count
+                        }
+                    }
+                case .partial(let storage):
+                    for y in 0..<height {
+                        let base = (y0 + y) * stencil.wordsPerRow
+                        let rowOffset = y * Tile.size
+                        for x in 0..<width where storage.bytes[rowOffset + x] > 0 {
+                            stencil.words[base + ((x0 + x) >> 6)]
+                                |= UInt64(1) << UInt64((x0 + x) & 63)
+                        }
                     }
                 }
             }
@@ -633,9 +651,10 @@ enum FloodOutlineDirection: UInt8 {
 
 // MARK: - The fills (spec 0016)
 
-/// Concurrent tasks of the global-mode fill set the same flag from different bands;
-/// the writes are idempotent and `concurrentPerform` establishes the ordering edge
-/// before the flag is read — the same pattern `SelectionMaskTileBox` uses (spec 0013).
+/// The global-mode bands each record cancellation in their **own** box (never a shared
+/// flag), and `concurrentPerform` establishes the ordering edge before the boxes are
+/// read back — the same per-task-box pattern `SelectionMaskTileBox` uses (spec 0013),
+/// so there is no concurrent write to the same memory.
 private final class FloodCancelBox: @unchecked Sendable {
     var flagged = false
 }
@@ -676,10 +695,12 @@ enum FloodFill {
             guard limit.size == source.size, limit.contains(seed) else { return nil }
         }
         guard !isCancelled() else { return nil }
-        // APP-10 overflow rule: decide the allocation (and the tile-grid size) before
-        // touching either; mocked oversized sources return `nil` here without
-        // allocating or trapping.
-        guard source.size.width > 0, source.size.height > 0,
+        // APP-10 overflow rule: sizes outside `ImageLimits` (only reachable through a
+        // mocked source — real documents are validated before they can hold pixels) and
+        // word-count overflows return `nil` here, before any allocation, so the
+        // `FloodFillStencil.init` precondition is unreachable from this function.
+        guard (ImageLimits.minimumSide...ImageLimits.maximumSide).contains(source.size.width),
+              (ImageLimits.minimumSide...ImageLimits.maximumSide).contains(source.size.height),
               FloodFillStencil.storageWordCount(width: source.size.width,
                                                 height: source.size.height) != nil
         else { return nil }
@@ -875,7 +896,7 @@ enum FloodFill {
         let height = size.height
         let bandCount = max(1, min(height, ProcessInfo.processInfo.activeProcessorCount * 4))
         let bandHeight = (height + bandCount - 1) / bandCount
-        let cancelBox = FloodCancelBox()
+        let cancelBoxes = (0..<bandCount).map { _ in FloodCancelBox() }
 
         DispatchQueue.concurrentPerform(iterations: bandCount) { band in
             // Re-read from the Sendable box so the closure captures only that.
@@ -884,7 +905,7 @@ enum FloodFill {
             let gridColumns = storage.gridColumns
             let limitWords = storage.limitWords
             if isCancelled() { // once per row band (spec 0016)
-                cancelBox.flagged = true
+                cancelBoxes[band].flagged = true
                 return
             }
             let lower = band * bandHeight
@@ -937,6 +958,6 @@ enum FloodFill {
                 }
             }
         }
-        return cancelBox.flagged
+        return cancelBoxes.contains { $0.flagged }
     }
 }

@@ -298,10 +298,11 @@ faster and 0048 tightens the measurement):
 - `testCheckerboardGlobalClick` — 1024 × 1024 checkerboard, global 0 % (524 288
   one-pixel loops, full click path): **4.21 s** — gate < 20.0 s.
 
-Tests added: 65 — `FloodToleranceTests` (3), `FloodColorMetricTests` (8 incl. the
-10 000-pair `oracleSweep`), `FloodFillSourceTests` (4), `FloodFillTests` (12 incl. the
-300-case `contiguousMatchesBFSOracle`), `FloodFillStencilTests` (9 incl. the 200-shape
-`outlineRasterizesBackExactly`), `MagicWandToolTests` (18 incl. the 100-run
+Tests added: 67 — `FloodToleranceTests` (3), `FloodColorMetricTests` (8 incl. the
+10 000-pair `oracleSweep`), `FloodFillSourceTests` (4), `FloodFillTests` (13 incl. the
+300-case `contiguousMatchesBFSOracle` and the review's band-height test),
+`FloodFillStencilTests` (10 incl. the 200-shape `outlineRasterizesBackExactly`
+and the review's `fromFullTilesAndRoundTrip`), `MagicWandToolTests` (18 incl. the 100-run
 `undoRedoProperty`), `ToolRegistryMagicWandTests` (1), `MagicWandSessionTests` (1),
 `MagicWandIntegrationTests` (5), `MagicWandPerformanceTests` (4). The 0006/0012/0014/0015
 registry lists and the S-cycle integration tests updated for the fourth S-group member
@@ -312,7 +313,41 @@ Platform deviation (recorded like 0007's slider discovery): a SwiftUI `Slider` v
 string is the trailing monospaced readout next to it (`MagicWandIntegrationTests` reads
 the raw value).
 
-Review: pending
+Review (independent, 2026-11-16): every acceptance criterion and edge case traced to a
+test; the oracles verified independent of the implementation (the BFS oracle is a
+pointwise 4-neighbour walk over `pixel(at:)` vs the pointer/scanline fill; the metric
+oracle is an `Int32` transcription of the cited C# `CheckColor` vs the `Int` port —
+different formulations, not re-expressions). Issues fixed: (1) `FloodFillStencil.from(_:)`
+dropped `.full` mask tiles — the contract is "bit set iff coverage > 0", and 0017's limit
+stencil reads exactly such masks (every large region has `.full` interior tiles); the old
+`fromSelectionMask` test used only `.partial`-tile masks and passed over the bug. (2) The
+Global fill's cancellation flag was one shared `Bool` written by several bands at once —
+now one box per band (the `SelectionMaskTileBox` pattern, 0013), no concurrent write to
+the same memory. (3) `FloodFill.fill` accepted a source wider than `ImageLimits.maximumSide`
+whenever the word-count multiply survived, then hit the `FloodFillStencil.init`
+precondition (a trap for any mocked >65,535 source) — dimensions are validated like
+APP-10 before any allocation, so the precondition is unreachable from `fill`. Tests
+added: `fromFullTilesAndRoundTrip` (full-tile mask + 24 seeded `from(selectionMask()) ==
+self` round-trips over `.full`/`.empty`/`.partial` mixes), the new band-height test
+(1-px-tall, odd, and `cores·4+1`-tall images — the ceil-overshoot band shapes —
+each compared to the per-pixel oracle and re-run ×7 for bit-identical concurrency), and
+`hugeSizeDoesNotAllocate` extended with 100,000 / 70,000 / 65,536 mocked sizes → `nil`.
+Mutations tried, 9: tolerance truncation→rounding (caught — `scaledTable`), metric weight
+seed-alpha→candidate-alpha (caught — `asymmetry`, `transparentSeedIgnoresRGB`,
+`extremesAtHundred`, `oracleSweep`), outline right-turn→left-turn (caught —
+`outlineVertexCounts`' diagonal-touch case; the rasterize-back tests stayed green, as the
+spec predicts — "either choice fills identically"), empty-band guard removed (caught —
+the 300×257 global oracle hits the `Range` trap; the new band test pins it), contiguous
+`isCancelled` check removed (caught — `cancellationReturnsNil`), Shift→Global latch
+removed (caught — `shiftClickIsGlobal`, `effectiveFloodModeTable`), `from()` regressed to
+skipping `.full` (caught — new test only, which is why it was written), contiguous `limit`
+check removed (caught — `limitIsABarrier`), global bands overlapped by one row (survived
+— equivalent mutant: both bands OR the same value into the boundary word, so no value
+oracle can observe it and sanitizers are unavailable on this Mac; the shipped rows stay
+word-disjoint, so no race exists). Final full gate (clean Debug, headless): **GREEN —
+1298 passed, 0 failed, 0 skipped, no warnings, no crash reports**; performance re-measured
+in the review run: contiguous 24 MP 1.18 s, global 0.061 s, whole click 1.54 s, checker-
+board 4.38 s — all gates met.
 
 Manual verification (not automated):
 

@@ -353,6 +353,51 @@ struct FloodFillStencilTests {
         }
         #expect(stencil.count == 2 * (10 + 10 + (300 - 30)))
     }
+
+    @Test func fromFullTilesAndRoundTrip() {
+        // `.full` tiles (coverage 255 in-canvas, none out-of-canvas) must convert to
+        // set bits — 0017's limit stencil reads masks whose interior tiles are `.full`
+        // (e.g. every `selectionMask()` of a large region, or Select All).
+        let full = SelectionMask(size: PixelSize(width: 300, height: 300)) { _, _ in 255 }
+        #expect(full.isFull)
+        let fullStencil = FloodFillStencil.from(full)
+        #expect(fullStencil.count == 300 * 300)
+        #expect(fullStencil.bounds == PixelRect(x: 0, y: 0, width: 300, height: 300))
+
+        // Round trip: `from(stencil.selectionMask()) == stencil` for stencils that mix
+        // `.full`, `.empty`, and `.partial` tiles (blobs over a filled background).
+        var rng = SeededRandom(seed: SeededRandom.resolvedSeed(default: 0x0016_FFFF))
+        let comment = rng.comment
+        let sizes = [PixelSize(width: 600, height: 600), PixelSize(width: 300, height: 257),
+                     PixelSize(width: 256, height: 256), PixelSize(width: 513, height: 511)]
+        for caseNumber in 0...23 {
+            let size = sizes[caseNumber % sizes.count]
+            var s = FloodFillStencil(size: size)
+            if caseNumber % 3 != 1 {
+                // Filled background → interior `.full` tiles.
+                for y in 0...size.height - 1 {
+                    for x in 0...size.width - 1 { s.insert(PixelPoint(x: x, y: y)) }
+                }
+            }
+            // Punch random holes and islands so `.partial` tiles appear too.
+            for _ in 0..<8 {
+                let rect = PixelRect(x: rng.int(in: 0...size.width - 1),
+                                     y: rng.int(in: 0...size.height - 1),
+                                     width: rng.int(in: 1...60), height: rng.int(in: 1...60))
+                let set = rng.next() % 2 == 0
+                for y in rect.minY...min(rect.maxY - 1, size.height - 1) {
+                    for x in rect.minX...min(rect.maxX - 1, size.width - 1) {
+                        let p = PixelPoint(x: x, y: y)
+                        let word = y * s.wordsPerRow + (x >> 6)
+                        let bit = UInt64(1) << UInt64(x & 63)
+                        if set { s.words[word] |= bit } else { s.words[word] &= ~bit }
+                    }
+                }
+            }
+            let mask = s.selectionMask()
+            #expect(FloodFillStencil.from(mask) == s, "round trip case \(caseNumber) — \(comment)")
+        }
+    }
 }
 
 private extension SelectionMask {
