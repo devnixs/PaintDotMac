@@ -157,6 +157,14 @@ struct HistoryPanelIntegrationTests {
         #expect(panel.model.currentIndex == 0)
         #expect(panel.refreshCount - refreshesBeforeJump == 1, "one refresh for a whole jump")
         #expect(context.bridge.historyRevision - revisionBeforeJump == 1)
+
+        // Clicking an undone row redoes forward in one jump — still one refresh (edge case).
+        let refreshesBeforeRedoJump = panel.refreshCount
+        let revisionBeforeRedoJump = context.bridge.historyRevision
+        panel.clickRow(3)   // a 3-step redo jump
+        #expect(panel.model.currentIndex == 3)
+        #expect(panel.refreshCount - refreshesBeforeRedoJump == 1, "one refresh for a redo jump")
+        #expect(context.bridge.historyRevision - revisionBeforeRedoJump == 1)
     }
 
     // MARK: - new action discards the grey rows

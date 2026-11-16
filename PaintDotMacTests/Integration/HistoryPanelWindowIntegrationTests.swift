@@ -371,4 +371,59 @@ struct HistoryPanelWindowIntegrationTests {
             #expect(values(fixture.root).count == 4, "the panel keeps showing A")
         }
     }
+
+    /// NF-7: the panel root is `historyPanel`, the list is `historyList` labeled "History",
+    /// rows and footer buttons carry their identifiers (spec 0010 *Accessibility*).
+    @Test func panelAccessibilityIdentifiers() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let fixture = try await setUp(fixtures)
+            defer { finish(fixture) }
+            stroke(fixture, canvasY: 40)
+            pumpMainRunLoop()   // let the new row render before the AX walk
+
+            let identifiers = AX.withAccessibilityClient {
+                AX.identifiers(inRoot: fixture.root)
+            }
+            #expect(identifiers.contains("historyPanel"), "panel root identifier")
+            #expect(identifiers.contains("historyList"), "list identifier")
+            #expect(identifiers.contains("historyRow.0"))
+            #expect(identifiers.contains("historyRow.1"))
+            #expect(identifiers.isSuperset(of: ["history.undo", "history.redo"]))
+
+            var listLabel: String?
+            AX.withAccessibilityClient {
+                if let element = AX.first(inRoot: fixture.root, identifier: "historyList") {
+                    listLabel = AX.label(of: element)
+                    withExtendedLifetime(element) {}
+                }
+            }
+            #expect(listLabel == "History", "the list is labeled \"History\"")
+        }
+    }
+
+    /// Edge case "document closed while the panel shows it": closing the LAST document
+    /// window clears the active session (0006's `windowWillClose` path), so the panel
+    /// rebinds to nothing — an empty list, disabled buttons, and no reference to the
+    /// closed document's bridge.
+    @Test func closingActiveDocumentEmptiesPanel() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let fixture = try await setUp(fixtures)
+            stroke(fixture, canvasY: 100)
+            #expect(values(fixture.root) == ["done", "current"])
+
+            fixture.harness.close()   // document.close() → windowWillClose → setActiveSession(nil)
+            pumpMainRunLoop()
+            #expect(values(fixture.root).isEmpty, "no document, no rows")
+            #expect(fixture.panel.model == .empty)
+            #expect(fixture.panel.boundBridge == nil, "the closed document's bridge is released")
+            #expect(!fixture.panel.model.canUndo && !fixture.panel.model.canRedo)
+            #expect(!pressExpectingDisabled(fixture.root, "history.undo"), "Undo disabled")
+            #expect(!pressExpectingDisabled(fixture.root, "history.redo"), "Redo disabled")
+            fixture.harness.discardAppModelSuite()
+        }
+    }
 }
