@@ -72,8 +72,18 @@ final class FakeToolContext: ToolContext {
     var colors: ColorSelection = .default
     /// The Color Picker's slot writes, in order (spec 0012).
     private(set) var setColorCalls: [(color: ColorRGBA8, slot: ColorSlot)] = []
-    /// Settable so a test can install a clip (0009; 0013's selection tests).
-    var paintClipMask: (any BrushClipMask)?
+    /// Settable so a test can install a clip directly (0009). Without an override the
+    /// fake reports the document's selection mask as its clip (0013), exactly like
+    /// `CanvasToolSession` — except that the fake also clips a full-canvas mask, so
+    /// clipping behavior is testable independent of the session's `isFull` shortcut.
+    var clipMaskOverride: (any BrushClipMask)?
+    var paintClipMask: (any BrushClipMask)? {
+        get { clipMaskOverride ?? state.selection?.mask }
+        set { clipMaskOverride = newValue }
+    }
+    /// The document's current selection (0013); tools and the 0014+ selection tools read
+    /// it. Mutate it through `performHistory(SelectionHistoryItem…)`.
+    var selection: Selection? { state.selection }
     /// Counts `updateImage` calls (0009).
     private(set) var imageUpdates: Int = 0
     /// The image lives in `state.image` (0009): `updateImage` opens `state` to its

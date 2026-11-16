@@ -37,6 +37,10 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
     /// The window's tool overlay (0006), above the canvas; `nil` without a canvas.
     private(set) weak var overlayView: ToolOverlayView?
 
+    /// The marching-ants selection outline (0013), above the canvas and below the tool
+    /// overlay; `nil` without a canvas.
+    private(set) weak var marchingAntsOverlay: MarchingAntsOverlay?
+
     /// The window's `ToolContext` (0006); `nil` when Metal is unavailable (no canvas).
     private(set) var toolSession: CanvasToolSession?
 
@@ -126,6 +130,13 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
             // The overlay (0006) sits above the canvas with the same frame and tracking;
             // `hitTest` returns nil so it never eats events.
             let overlay = ToolOverlayView(frame: canvasFrame)
+            // The marching ants (0013): same frame as the canvas, above the canvas and
+            // below the tool overlay; `hitTest` returns nil so it never eats events.
+            let ants = MarchingAntsOverlay(frame: canvasFrame)
+            ants.autoresizingMask = [.width, .height]
+            container.addSubview(overlay)
+            container.addSubview(ants, positioned: .below, relativeTo: overlay)
+            marchingAntsOverlay = ants
             overlay.autoresizingMask = [.width, .height]
             overlay.canvasView = canvasView
             container.addSubview(overlay)
@@ -151,10 +162,12 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
 
         if let canvasView {
             // One hook covers every transform change — initial zoom, resize, navigation —
-            // keeping the status-bar zoom in step (APP-5) and redrawing the overlay (0006).
-            canvasView.onTransformChange = { [weak model, weak overlayView] transform in
+            // keeping the status-bar zoom in step (APP-5), redrawing the overlay (0006),
+            // and keeping the ants glued to the outline (0013).
+            canvasView.onTransformChange = { [weak self, weak model, weak overlayView] transform in
                 model?.zoom = transform.zoom
                 overlayView?.needsDisplay = true
+                self?.updateMarchingAnts()
             }
             navigation = CanvasNavigation(canvasView: canvasView, statusBar: model)
             // Assigning the image after the view joined the window lets the initial zoom
@@ -206,16 +219,25 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         bridge?.onStateChange = { [weak self] change in
             MainActor.assumeIsolated { self?.refreshCanvas(for: change) }
         }
+        // A document attached to a fresh (or rewired) window shows its current selection
+        // (0013) — opens and Revert reset it to nil, so this starts the ants hidden.
+        updateMarchingAnts()
     }
 
     /// Pushes the post-undo/redo/jump state to the canvas: `pixels` re-uploads only the
     /// touched tiles (0003 `changedTiles(since:)`), `structure` redraws everything; the
-    /// zoom stays put (H-6), and the status bar's size/DPI fields follow.
+    /// zoom stays put (H-6), and the status bar's size/DPI fields follow. The selection
+    /// cases (0013): `.selection` updates only the ants — no tile upload — and
+    /// `.pixelsAndSelection` does both.
     private func refreshCanvas(for change: HistoryChange) {
         guard let document = document as? PaintDocument else { return }
         if let canvasView {
             switch change {
             case .pixels: canvasView.image = document.image
+            case .selection:
+                break   // ants only; no pixels changed, no tile upload
+            case .pixelsAndSelection:
+                canvasView.image = document.image
             case .structure:
                 // Whole-image replacement (0008 item 12): the renderer must forget every
                 // resident tile texture, not just redraw the cached ones.
@@ -224,6 +246,15 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
             }
         }
         statusBarModel.update(image: document.image)
+        if change.affectsSelection { updateMarchingAnts() }
+    }
+
+    /// Re-reads the marching-ants outline from the document's selection under the current
+    /// transform (0013).
+    private func updateMarchingAnts() {
+        guard let marchingAntsOverlay, let canvasView else { return }
+        let selection = (document as? PaintDocument)?.undoBridge.state.selection
+        marchingAntsOverlay.update(selection: selection, transform: canvasView.transform)
     }
 
     // MARK: - Tool wiring (spec 0006)
@@ -302,6 +333,54 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         fatalError("not used")  // the app loads no nibs; nothing can reach this
     }
 
+    // MARK: - Selection commands (Edit menu, spec 0013)
+
+    /// Responder-chain actions for the Edit menu (target nil; the window controller sits
+    /// in the main window's chain, so they work while a floating panel is key). A focused
+    /// text field keeps handling ⌘A itself — it is first in the key window's chain.
+    /// (`NSResponder` declares `selectAll(_:)` without implementing it — neither
+    /// `NSView` nor `NSResponder` answers the selector at runtime, which is why the item
+    /// is disabled until this class handles it, as spec 0001 observed.)
+    override func selectAll(_ sender: Any?) { runSelectionCommand(.selectAll) }
+
+    @objc func deselect(_ sender: Any?) { runSelectionCommand(.deselect) }
+
+    @objc func invertSelection(_ sender: Any?) { runSelectionCommand(.invertSelection) }
+
+    private func runSelectionCommand(_ command: SelectionCommand) {
+        guard let bridge = (document as? PaintDocument)?.undoBridge,
+              !appModel.dispatcher.isGestureInProgress else { return }
+        // The active tool's pending edit commits first (its own step), then the
+        // selection step — once 0020 lands this call carries the command's reason.
+        bridge.prepareForNavigation?()
+        if let item = command.makeHistoryItem(for: bridge.state) {
+            bridge.perform(item)
+        }
+    }
+
+    private func selectionCommandIsEnabled(_ command: SelectionCommand) -> Bool {
+        guard let bridge = (document as? PaintDocument)?.undoBridge else { return false }
+        return !appModel.dispatcher.isGestureInProgress && command.isEnabled(in: bridge.state)
+    }
+
+    // MARK: - Test seam (spec 0013)
+
+    /// Sets the document's selection without a history step — the document stays clean
+    /// (not reachable from the UI; integration tests use it before 0014 adds selection
+    /// tools). The reset re-runs the open path: canvas refresh, ants, clean state.
+    func setInitialSelection(_ rect: PixelRect) {
+        guard let document = document as? PaintDocument,
+              let selection = Selection(rect: CGRect(x: rect.x, y: rect.y,
+                                                     width: rect.width, height: rect.height),
+                                        canvasSize: document.image.size)
+        else { return }
+        let bridge = document.undoBridge
+        let base: HistoryBaseStep =
+            bridge.history.steps.first?.name == HistoryBaseStep.newImage.name ? .newImage : .openImage
+        bridge.reset(state: DocumentState(image: bridge.state.image, selection: selection),
+                     base: base)
+    }
+
     // MARK: - Zoom commands (View menu, spec 0004)
 
     @objc func zoomIn(_ sender: Any?) { navigation?.zoomIn() }
@@ -316,6 +395,9 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         switch menuItem.action {
         case #selector(zoomIn(_:)): return navigation?.canZoomIn ?? false
         case #selector(zoomOut(_:)): return navigation?.canZoomOut ?? false
+        case #selector(selectAll(_:)): return selectionCommandIsEnabled(.selectAll)
+        case #selector(deselect(_:)): return selectionCommandIsEnabled(.deselect)
+        case #selector(invertSelection(_:)): return selectionCommandIsEnabled(.invertSelection)
         default: return true
         }
     }

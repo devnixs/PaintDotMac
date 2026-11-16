@@ -113,8 +113,57 @@ struct MainMenuTests {
             Row(title: "Copy", key: "c", modifiers: [.command], action: "copy:"),
             Row(title: "Paste", key: "v", modifiers: [.command], action: "paste:"),
             .separator,
+            // 0013: Paint.NET's selection block; 0018 inserts Erase/Fill Selection between
+            // Deselect and Invert Selection.
             Row(title: "Select All", key: "a", modifiers: [.command], action: "selectAll:"),
+            Row(title: "Deselect", key: "d", modifiers: [.command], action: "deselect:"),
+            Row(title: "Invert Selection", key: "i", modifiers: [.command],
+                action: "invertSelection:"),
         ])
+    }
+
+    @Test func editMenuSelectionItems() throws {
+        // Titles, shortcuts, and identifiers exactly as 0013 (Paint.NET E-3 / §5.12).
+        let edit = try submenu(MainMenu.editMenuIdentifier)
+        let byIdentifier: [NSUserInterfaceItemIdentifier] = [
+            MainMenu.editSelectAllItemIdentifier,
+            MainMenu.editDeselectItemIdentifier,
+            MainMenu.editInvertSelectionItemIdentifier,
+        ]
+        var indices: [Int] = []
+        for (offset, identifier) in byIdentifier.enumerated() {
+            let item = try #require(edit.items.first { $0.identifier == identifier },
+                                    "missing \(identifier.rawValue)")
+            indices.append(edit.items.firstIndex(of: item) ?? -1)
+            #expect(item.keyEquivalentModifierMask == [.command], "\(identifier.rawValue)")
+            switch identifier {
+            case MainMenu.editSelectAllItemIdentifier:
+                #expect(item.title == "Select All")
+                #expect(item.keyEquivalent == "a")
+                #expect(item.action == NSSelectorFromString("selectAll:"))
+            case MainMenu.editDeselectItemIdentifier:
+                #expect(item.title == "Deselect", "not \"Deselect All\" (EditMenu.html)")
+                #expect(item.keyEquivalent == "d")
+                #expect(item.action == NSSelectorFromString("deselect:"))
+            default:
+                #expect(item.title == "Invert Selection")
+                #expect(item.keyEquivalent == "i")
+                #expect(item.action == NSSelectorFromString("invertSelection:"))
+            }
+            _ = offset
+        }
+        #expect(indices == indices.sorted(), "Select All, Deselect, Invert Selection in order")
+        #expect(indices.first! > edit.items.firstIndex(where: { $0.title == "Paste" }) ?? -1,
+                "after the clipboard block")
+
+        // No other menu item anywhere uses ⌘D or ⌘I.
+        for menu in [topLevelMenus()] + topLevelMenus().items.compactMap(\.submenu) {
+            for item in menu.items where !byIdentifier.contains(item.identifier ?? .init("")) {
+                guard item.keyEquivalentModifierMask == [.command] else { continue }
+                #expect(item.keyEquivalent != "d", "⌘D belongs to Deselect alone: \(item.title)")
+                #expect(item.keyEquivalent != "i", "⌘I belongs to Invert Selection alone: \(item.title)")
+            }
+        }
     }
 
     @Test func viewMenuItems() throws {

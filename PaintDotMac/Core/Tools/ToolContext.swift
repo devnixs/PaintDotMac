@@ -24,8 +24,14 @@ protocol ToolContext: AnyObject {
     /// Sets one Colors-panel slot (0012, T-14): through `AppModel.setColor(_:for:)`, which
     /// persists the pair (C-1) and updates the Colors panel. Never a history step.
     func setColor(_ color: ColorRGBA8, for slot: ColorSlot)
-    /// The selection clip for painting tools (0009); nil = no selection (everything
-    /// paintable). 0013 fills it with the selection's antialiased mask.
+    /// The document's current selection (0013): `nil` = no selection, the whole image is
+    /// editable. The selection tools (0014–0016) read it; painting consumes it through
+    /// `paintClipMask`.
+    var selection: Selection? { get }
+    /// The selection clip for painting tools (0009; 0013 fills it with the selection's
+    /// antialiased mask). Pixels outside it are never written (TOOL-B); `nil` clips
+    /// nothing — a full-canvas mask may be reported as `nil` because
+    /// `BlendOps.mul255(c, 255) == c` for all `c` (pixel-identical).
     var paintClipMask: (any BrushClipMask)? { get }
     /// The tool that was active before the current one (T-14's "switch to previous tool").
     var previousToolID: ToolID? { get }

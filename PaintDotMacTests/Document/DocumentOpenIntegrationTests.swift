@@ -127,12 +127,15 @@ struct DocumentOpenIntegrationTests {
             // `NSDocument` validation now; no File menu item uses them in M0.
             #expect(harness.isEnabled(NSSelectorFromString("saveDocument:")))
             #expect(harness.isEnabled(NSSelectorFromString("saveDocumentAs:")))
-            // Acceptance: while a document is open, Undo and every Edit action stay disabled
-            // (the placeholder canvas implements no edit actions) and Open… stays enabled.
-            for name in ["undo:", "cut:", "copy:", "paste:", "selectAll:"] {
+            // Acceptance: while a document is open, Undo and the clipboard actions stay
+            // disabled (0021 adds them) and Open… stays enabled. 0013: `selectAll:` is
+            // answered by the window controller and enabled for any open document.
+            for name in ["undo:", "cut:", "copy:", "paste:"] {
                 #expect(harness.isEnabled(NSSelectorFromString(name)) == false,
-                        "\(name) must be disabled in 0001")
+                        "\(name) must stay disabled until its spec")
             }
+            #expect(harness.isEnabled(NSSelectorFromString("selectAll:")),
+                    "0013: Select All is enabled with a document open")
             #expect(harness.isEnabled(#selector(NSDocumentController.openDocument(_:))))
             #expect(harness.isEnabled(#selector(NSWindow.performClose(_:))))
             #expect(harness.target(for: #selector(NSWindow.performClose(_:))) === harness.window)

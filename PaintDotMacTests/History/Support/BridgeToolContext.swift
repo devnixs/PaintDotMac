@@ -22,6 +22,8 @@ final class BridgeToolContext: ToolContext {
     /// The Color Picker's slot writes, in order (0012).
     private(set) var setColorCalls: [(color: ColorRGBA8, slot: ColorSlot)] = []
     var paintClipMask: (any BrushClipMask)?
+    /// 0013: the bridge's current selection.
+    var selection: Selection? { bridge.state.selection }
     var previousToolID: ToolID?
     var image: LayeredImage { bridge.state.image }
     var transform: CanvasTransform { nav.transform }

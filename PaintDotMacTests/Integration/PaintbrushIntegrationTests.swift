@@ -32,6 +32,7 @@ struct PaintbrushIntegrationTests {
         var options: any ToolOptionStore { memoryOptions }
         var colors: ColorSelection = .default
         var paintClipMask: (any BrushClipMask)?
+        var selection: Selection?
         var previousToolID: ToolID?
         var editedChanges: [Bool] = []
         var image: LayeredImage { bridge.state.image }

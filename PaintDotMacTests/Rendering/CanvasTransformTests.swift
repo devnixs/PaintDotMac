@@ -416,4 +416,29 @@ struct CanvasTransformTests {
         // x ∈ [−600, 1400], y ∈ [−500, 1100] (canvas units are image pixels, not points).
         #expect(t.visibleCanvasRect == CGRect(x: -600, y: -500, width: 2000, height: 1600))
     }
+
+    // MARK: - canvasToViewAffine (spec 0013)
+
+    @Test func canvasToViewAffineMatchesFunction() {
+        var rng = SeededRandom(seed: 0x0013_AF11E)
+        for zoom in [0.01, 0.5, 1.0, 3.0, 32.0] {
+            for backing in [1.0, 2.0] {
+                let t = CanvasTransform(
+                    imageSize: PixelSize(width: 4000, height: 3000),
+                    viewSize: CGSize(width: 1000, height: 800),
+                    backingScale: backing, zoom: zoom,
+                    center: CGPoint(x: rng.double(in: 0...4000), y: rng.double(in: 0...3000)))
+                let affine = t.canvasToViewAffine
+                for _ in 0..<100 {
+                    let p = CGPoint(x: rng.double(in: -100...4100),
+                                    y: rng.double(in: -100...3100))
+                    let viaAffine = p.applying(affine)
+                    let viaFunction = t.canvasToView(p)
+                    #expect(abs(viaAffine.x - viaFunction.x) < 1e-9
+                            && abs(viaAffine.y - viaFunction.y) < 1e-9,
+                            "zoom \(zoom) backing \(backing) at \(p): \(viaAffine) vs \(viaFunction)")
+                }
+            }
+        }
+    }
 }

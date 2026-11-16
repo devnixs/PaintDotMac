@@ -321,3 +321,75 @@ None. The four questions an earlier draft raised (empty selection = no selection
 - Transforming or dropping the selection on canvas-size changes → the specs that change the canvas size (0022, 0035–0037).
 - Saving selections in files (Paint.NET doesn't; `.ora` has no selection).
 - Shortcut-table centralization → **0045**; VoiceOver audit → **0049**.
+
+## Verification status
+
+Date: 2026-11-16
+
+Gate (`.agents/skills/spec-implementer/scripts/quality-gate.sh`, full — clean Debug build + every headless test):
+
+```
+==> Debug build (clean build)
+No compiler warnings.
+==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)
+tests: 1110 passed, 0 failed, 0 skipped (of 1110)
+==> GREEN
+tests: no crash reports during the run
+```
+
+Performance (PRD §6 NF-1, `SelectionPerformanceTests`, Debug, 4000×3000):
+Select All **0.015 ms** (gate 15 ms); antialiased ellipse `MaskRasterizer` rasterization
+**13.5 ms** (gate 300 ms); ellipse `invert` **7.7 ms** (gate 150 ms); one Paintbrush
+segment clipped by a 4000×3000 selection mean **1.197 ms**, p95 **1.448 ms** (gate 48 ms,
+identical to the unclipped 0011 numbers — the cached mask read is free per pixel).
+
+Test additions (13 new files, 102 declared cases; parameterized suites expand to ~250
+runtime cases; all headless):
+- Unit (Swift Testing): `SelectionMaskTests` (11: normalization, `isEmpty`/`isFull`,
+  coverage reads vs an independent scanline oracle, invert/combine constant fast paths,
+  bounds), `MaskRasterizerTests` (10: rect/ellipse/line paths vs the same independent
+  coverage oracle, edge coverage values 32/64/128/192/224 hand-derived from Quartz's
+  box-filter weights, aliased pixel-center rule, off-canvas clipping, determinism),
+  `SelectionTests` (15: pixel-center contains, border-in/next-canvas-out, invert algebra,
+  `Combine`, equality, `DocumentState.selection` invariants),
+  `SelectionCombineModeTests` (2 parameterized tables: the per-pixel combine table and
+  the constant fast paths agree with the per-pixel oracle),
+  `SelectionAlgebraPropertyTests` (13 seeded properties incl. a 3-op mask algebra oracle
+  and `Selection == Selection?`), `MarchingAntsTests` (4 + the 4-case `ReduceMotion`
+  policy table: view-space dash geometry, phase walk −3 px/s over phase 8, static when
+  motion is reduced or the canvas is ≤ 1 px), `SelectionHistoryItemTests` (4),
+  `HistoryChangeTests` (2: `.selection` merge/isNoOp), `SelectionCommandTests` (9:
+  Select All / Deselect / Invert no-op rules, step names, Combine modes).
+- Integration (headless real document windows): `SelectionClippingIntegrationTests`
+  (8: brush/pencil clipped to rect/ellipse/inverted selections with hand-computed
+  0009-blend pixels, mask captured at mouse-down, `paintClipMask` contract),
+  `SelectionHistoryIntegrationTests` (7: Select All → Invert → undo/redo session with
+  `["Open Image", "Select All", "Invert Selection"]`, no-op commands add no step (H-6),
+  pixel/selection undo independence, snapshot items restore selections, budget folding,
+  pending stroke commits before a command, 100-session seeded undo/redo identity),
+  `SelectionWindowIntegrationTests` (12: ⌘A/⌘D/⌘I menu actions, marching-ants overlay
+  presence/animation/static-under-Reduce-Motion via the injectable clock, ants follow
+  zoom/pan, overlay never captures clicks).
+- Performance (XCTest): `SelectionPerformanceTests` (4 gated measurements above).
+- Contract updates: `MainMenuTests` Edit menu now asserts the three selection items;
+  `UndoBridgeTests`/`HistoryCostTests`/`CanvasTransformTests` gained the `.selection`
+  change/cost/mapping cases; `DocumentOpenIntegrationTests` (0001) expectation updated —
+  the Edit menu is no longer selection-item-free; test contexts (`FakeToolContext`,
+  `BridgeToolContext`, session fakes) implement `ToolContext.selection` /
+  `paintClipMask` (0009's reserved hook now filled).
+
+Notes:
+- Aliased general-path rasterization fills antialiased and thresholds at ≥ 128 to match
+  Paint.NET's pixel-center rule (Quartz's antialias-off fill includes touched pixels).
+- `SelectionMask.bounds` is memoized lazily (immutable, benign double-compute); the
+  rasterizer, `inverted`, and `combined` normalize once while tiles are hot (NF-1) —
+  `SelectionMask(normalizedTiles:)` trusts them, the public init keeps the defensive pass.
+- Manual verification (not yet run by a person; everything else is covered headlessly):
+  - [ ] Select All → the marching ants run along the canvas border; Deselect → they vanish; Invert → they run around the hole and the border.
+  - [ ] Ants march at a steady ~60 fps at zoom 1 and at 800% (dash phase constant on screen: the dash looks identical at every zoom because the phase walks in device pixels).
+  - [ ] System Settings → Reduce Motion on → ants are static; off → animated (the app polls; no restart needed).
+  - [ ] Zoom/pan/resize the window while a selection is active → the ants follow with no one-frame lag.
+  - [ ] Select All on 4000×3000, then paint → no beachball, Activity Memory (Inspector) shows < 256 MB for the mask.
+  - [ ] ⌘Z / ⇧⌘Z alternate painting and selection steps correctly, and the History panel shows "Select All", "Deselect", "Invert Selection".
+
+Review: pending.

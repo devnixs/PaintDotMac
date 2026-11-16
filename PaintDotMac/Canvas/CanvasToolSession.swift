@@ -50,8 +50,15 @@ final class CanvasToolSession: ToolContext {
         model.setColor(color, for: slot)
     }
 
-    /// 0013 returns the selection mask; until then nothing clips painting (spec 0009).
-    var paintClipMask: (any BrushClipMask)? { nil }
+    /// 0013: the document's selection (TOOL-B). A full-canvas mask is reported as `nil` —
+    /// `BlendOps.mul255(c, 255) == c` for all `c`, so clipping is pixel-identical and the
+    /// stroke skips the mask lookup (NF-1).
+    var selection: Selection? { undoBridge?.state.selection }
+
+    var paintClipMask: (any BrushClipMask)? {
+        guard let selection, !selection.mask.isFull else { return nil }
+        return selection.mask
+    }
 
     var previousToolID: ToolID? { model.previousToolID }
 

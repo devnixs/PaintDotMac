@@ -344,21 +344,44 @@ extension DocumentHarness {
     func dragCanvas(from start: CGPoint, to end: CGPoint, steps: Int = 4,
                     button: CanvasPointerButton = .left,
                     modifiers: NSEvent.ModifierFlags = []) {
-        let canvas = canvasView
-        let downType: NSEvent.EventType = button == .left ? .leftMouseDown : .rightMouseDown
-        let dragType: NSEvent.EventType = button == .left ? .leftMouseDragged : .rightMouseDragged
-        let upType: NSEvent.EventType = button == .left ? .leftMouseUp : .rightMouseUp
-        let down: (NSEvent) -> Void = button == .left ? canvas.mouseDown(with:) : canvas.rightMouseDown(with:)
-        let drag: (NSEvent) -> Void = button == .left ? canvas.mouseDragged(with:) : canvas.rightMouseDragged(with:)
-        let up: (NSEvent) -> Void = button == .left ? canvas.mouseUp(with:) : canvas.rightMouseUp(with:)
-        deliver(downType, atView: start, modifiers: modifiers, to: down)
+        canvasPress(at: start, button: button, modifiers: modifiers)
         for step in 1...max(1, steps) {
             let fraction = CGFloat(step) / CGFloat(max(1, steps))
             let point = CGPoint(x: start.x + (end.x - start.x) * fraction,
                                 y: start.y + (end.y - start.y) * fraction)
-            deliver(dragType, atView: point, modifiers: modifiers, to: drag)
+            canvasDrag(to: point, button: button, modifiers: modifiers)
         }
-        deliver(upType, atView: end, modifiers: modifiers, to: up)
+        canvasRelease(at: end, button: button, modifiers: modifiers)
+    }
+
+    // Individual drag phases (spec 0013): tests that need a *pending* stroke — press,
+    // drag, some other action, release.
+
+    func canvasPress(at point: CGPoint, button: CanvasPointerButton = .left,
+                     modifiers: NSEvent.ModifierFlags = []) {
+        let canvas = canvasView
+        switch button {
+        case .left: deliver(.leftMouseDown, atView: point, modifiers: modifiers) { canvas.mouseDown(with: $0) }
+        case .right: deliver(.rightMouseDown, atView: point, modifiers: modifiers) { canvas.rightMouseDown(with: $0) }
+        }
+    }
+
+    func canvasDrag(to point: CGPoint, button: CanvasPointerButton = .left,
+                    modifiers: NSEvent.ModifierFlags = []) {
+        let canvas = canvasView
+        switch button {
+        case .left: deliver(.leftMouseDragged, atView: point, modifiers: modifiers) { canvas.mouseDragged(with: $0) }
+        case .right: deliver(.rightMouseDragged, atView: point, modifiers: modifiers) { canvas.rightMouseDragged(with: $0) }
+        }
+    }
+
+    func canvasRelease(at point: CGPoint, button: CanvasPointerButton = .left,
+                       modifiers: NSEvent.ModifierFlags = []) {
+        let canvas = canvasView
+        switch button {
+        case .left: deliver(.leftMouseUp, atView: point, modifiers: modifiers) { canvas.mouseUp(with: $0) }
+        case .right: deliver(.rightMouseUp, atView: point, modifiers: modifiers) { canvas.rightMouseUp(with: $0) }
+        }
     }
 }
 

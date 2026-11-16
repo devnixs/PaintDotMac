@@ -21,6 +21,7 @@ struct PencilEraserIntegrationTests {
         var options: any ToolOptionStore { memoryOptions }
         var colors: ColorSelection = .default
         var paintClipMask: (any BrushClipMask)?
+        var selection: Selection?
         var previousToolID: ToolID?
         var image: LayeredImage { bridge.state.image }
         var transform: CanvasTransform { nav.transform }

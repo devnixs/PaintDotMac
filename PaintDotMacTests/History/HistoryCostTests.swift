@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 
@@ -114,5 +115,65 @@ struct HistoryCostTests {
 
     @Test func stepOverheadIs1024() {
         #expect(HistoryCost.stepOverheadBytes == 1_024)
+    }
+
+    // MARK: - Selection steps (spec 0013)
+
+    @Test func selectionBytesSelectAll() throws {
+        let all = Selection.all(canvasSize: PixelSize(width: 300, height: 200))
+        var elements = 0
+        all.path.applyWithBlock { _ in elements += 1 }
+        #expect(all.pathByteEstimate == 64 + 32 * elements)
+        // nil → Select All costs the path estimate only (full tiles have no storage).
+        #expect(HistoryCost.selectionBytes(before: nil, after: all) == all.pathByteEstimate)
+        #expect(HistoryCost.selectionBytes(before: all, after: nil) == all.pathByteEstimate,
+                "undo and redo cost the same")
+    }
+
+    @Test func selectionBytesPartialTiles() throws {
+        let canvas = PixelSize(width: 512, height: 512)
+        let ellipse = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: 512, height: 512),
+                             transform: nil)
+        let selection = try #require(Selection(path: ellipse, canvasSize: canvas))
+        #expect(selection.mask.partialTileCount == 4, "the ellipse crosses all four tiles")
+        #expect(HistoryCost.selectionBytes(before: nil, after: selection)
+                == 4 * 65_536 + selection.pathByteEstimate)
+    }
+
+    @Test func selectionBytesSharedStorage() throws {
+        // Two ellipse selections built from equal paths combine to a selection whose mask
+        // tiles share the original storages: only the path estimates are charged.
+        let canvas = PixelSize(width: 512, height: 512)
+        func ellipseSelection() throws -> Selection {
+            let ellipse = CGPath(ellipseIn: CGRect(x: 0, y: 0, width: 512, height: 512),
+                                 transform: nil)
+            return try #require(Selection(path: ellipse, canvasSize: canvas))
+        }
+        let a = try ellipseSelection()
+        let b = try ellipseSelection()
+        let combined = try #require(Selection.combine(a, b, mode: .union, canvasSize: canvas))
+        for coordinate in [TileCoordinate(column: 0, row: 0), TileCoordinate(column: 1, row: 1)] {
+            if case .partial(let storage) = combined.mask.tile(at: coordinate),
+               case .partial(let original) = a.mask.tile(at: coordinate) {
+                #expect(storage === original, "the equal union reuses the storage")
+            }
+        }
+        #expect(HistoryCost.selectionBytes(before: a, after: combined)
+                == a.pathByteEstimate + combined.pathByteEstimate)
+    }
+
+    @Test func snapshotIncludesSelection() throws {
+        var rng = SeededRandom(seed: 0x0013_C057)
+        let grid = (0..<(300 * 300)).map { _ in rng.byte() }
+        let mask = SelectionMask(size: PixelSize(width: 300, height: 300)) { x, y in
+            grid[y * 300 + x]
+        }
+        let selection = try #require(Selection(mask: mask, outline: CGPath(
+            rect: CGRect(x: 0, y: 0, width: 300, height: 300), transform: nil)))
+        let shared = image([whiteSurface(300, 300)])
+        let before = DocumentState(image: shared, selection: selection)
+        let after = DocumentState(image: shared, selection: nil)
+        #expect(HistoryCost.unsharedTileBytes(before: before, after: after)
+                == HistoryCost.selectionBytes(before: selection, after: nil))
     }
 }

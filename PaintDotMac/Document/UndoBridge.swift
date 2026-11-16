@@ -89,6 +89,7 @@ final class UndoBridge {
     /// a step; committed later via `commit(_:)`.
     func updateLiveState(_ body: (inout DocumentState) -> Void) {
         body(&state)
+        assertSelectionConsistent()
     }
 
     /// Records a step whose changes are already in `state` (live drawing). No-op items are
@@ -100,6 +101,7 @@ final class UndoBridge {
     /// Applies the item to the document, then records it.
     func perform(_ item: any HistoryItem) {
         let result = history.perform(item, on: &state)
+        assertSelectionConsistent()
         record(result, change: result.recordedStepID == nil ? nil : item.change)
     }
 
@@ -154,12 +156,23 @@ final class UndoBridge {
     /// Open / Revert / New: one fresh stack, an emptied undo manager, full canvas refresh.
     func reset(state newState: DocumentState, base: HistoryBaseStep) {
         state = newState
+        assertSelectionConsistent()
         history = HistoryStack(base: base, budgetBytes: history.budgetBytes)
         tokens.removeAll()
         undoManager.removeAllActions()
         historyRevision += 1
         onStateChange?(.structure)
         onEditedChange?(false)
+    }
+
+    // MARK: - Invariants
+
+    /// 0013: a selection is either absent or exactly canvas-sized; size-change specs
+    /// (0022, 0035–0037) must transform or drop it in their snapshot (loud in debug, no
+    /// release trap).
+    private func assertSelectionConsistent() {
+        assert(state.selection == nil || state.selection?.canvasSize == state.image.size,
+               "DocumentState.selection must be nil or canvas-sized")
     }
 
     // MARK: - Registration
@@ -219,6 +232,7 @@ final class UndoBridge {
     private func performUndo(_ token: HistoryStepToken) {
         guard let step = history.undoStep else { return }
         let change = history.undo(&state)
+        assertSelectionConsistent()
         undoManager.registerUndo(withTarget: token) { [weak self] token in
             self?.performRedo(token)
         }
@@ -229,6 +243,7 @@ final class UndoBridge {
     private func performRedo(_ token: HistoryStepToken) {
         guard let step = history.redoStep else { return }
         let change = history.redo(&state)
+        assertSelectionConsistent()
         undoManager.registerUndo(withTarget: token) { [weak self] token in
             self?.performUndo(token)
         }

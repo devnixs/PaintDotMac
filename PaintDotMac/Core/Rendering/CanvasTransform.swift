@@ -176,6 +176,20 @@ struct CanvasTransform: Equatable, Sendable {
         deviceToView(canvasToDevice(p))
     }
 
+    /// The affine map equal to `canvasToView(_:)` (0013): built from `canvasToView` of
+    /// (0,0), (1,0), and (0,1). Overlays (marching ants, handles) transform their
+    /// `CGPath`s with this and never flip Y inline (CAN-6).
+    var canvasToViewAffine: CGAffineTransform {
+        let origin = canvasToView(.zero)
+        let unitX = canvasToView(CGPoint(x: 1, y: 0))
+        let unitY = canvasToView(CGPoint(x: 0, y: 1))
+        // x' = a·x + c·y + tx, y' = b·x + d·y + ty: (a, b) is the image of (1, 0) minus
+        // the origin, (c, d) the image of (0, 1) minus the origin.
+        return CGAffineTransform(a: unitX.x - origin.x, b: unitX.y - origin.y,
+                                 c: unitY.x - origin.x, d: unitY.y - origin.y,
+                                 tx: origin.x, ty: origin.y)
+    }
+
     func viewToPixel(_ p: CGPoint) -> PixelPoint {
         let canvas = viewToCanvas(p)
         return PixelPoint(x: Int(clampedDouble: floor(canvas.x)), y: Int(clampedDouble: floor(canvas.y)))

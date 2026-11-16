@@ -30,6 +30,12 @@ enum MainMenu {
     static let zoomOutItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomOut")
     static let zoomToWindowItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomToWindow")
     static let actualSizeItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.actualSize")
+    // Edit > selection items (0013; 0018 inserts Erase Selection / Fill Selection between
+    // Deselect and Invert Selection, as in Paint.NET's Edit menu).
+    static let editSelectAllItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.selectAll")
+    static let editDeselectItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.deselect")
+    static let editInvertSelectionItemIdentifier =
+        NSUserInterfaceItemIdentifier("menu.edit.invertSelection")
     /// Panel toggle action (0006); each item's `representedObject` carries the `PanelKind`
     /// raw value and its identifier is `menu.window.panel.<kind>`.
     static let togglePanelAction = NSSelectorFromString("togglePanel:")
@@ -41,6 +47,12 @@ enum MainMenu {
     static let zoomToWindowAction = NSSelectorFromString("zoomToWindow:")
     static let actualSizeAction = NSSelectorFromString("actualSize:")
 
+    /// The Edit menu's selection actions (0013), sent first-responder-style to
+    /// `DocumentWindowController` (target nil).
+    static let selectAllAction = NSSelectorFromString("selectAll:")
+    static let deselectAction = NSSelectorFromString("deselect:")
+    static let invertSelectionAction = NSSelectorFromString("invertSelection:")
+
     // Actions AppKit routes through the responder chain that no class exposes to Swift;
     // every action is sent to the first responder (target = nil).
     private static let undoAction = NSSelectorFromString("undo:")
@@ -48,7 +60,6 @@ enum MainMenu {
     private static let cutAction = NSSelectorFromString("cut:")
     private static let copyAction = NSSelectorFromString("copy:")
     private static let pasteAction = NSSelectorFromString("paste:")
-    private static let selectAllAction = NSSelectorFromString("selectAll:")
     // `NSDocument.saveDocument(_:)` is imported as `save(_:)` and `saveDocumentAs(_:)` as
     // `saveAs(_:)`; pin the menu actions to the selector names AppKit dispatches.
     private static let saveDocumentAction = NSSelectorFromString("saveDocument:")
@@ -130,7 +141,20 @@ enum MainMenu {
         menu.addItem(makeItem("Copy", key: "c", modifiers: .command, action: copyAction))
         menu.addItem(makeItem("Paste", key: "v", modifiers: .command, action: pasteAction))
         menu.addItem(.separator())
-        menu.addItem(makeItem("Select All", key: "a", modifiers: .command, action: selectAllAction))
+        // Paint.NET's Edit menu order (E-3): Select All, Deselect, (Erase/Fill Selection →
+        // 0018 inserts here), Invert Selection.
+        let selectAllItem = makeItem("Select All", key: "a", modifiers: .command,
+                                     action: selectAllAction)
+        selectAllItem.identifier = editSelectAllItemIdentifier
+        menu.addItem(selectAllItem)
+        let deselectItem = makeItem("Deselect", key: "d", modifiers: .command,
+                                    action: deselectAction)
+        deselectItem.identifier = editDeselectItemIdentifier
+        menu.addItem(deselectItem)
+        let invertSelectionItem = makeItem("Invert Selection", key: "i", modifiers: .command,
+                                           action: invertSelectionAction)
+        invertSelectionItem.identifier = editInvertSelectionItemIdentifier
+        menu.addItem(invertSelectionItem)
         return menu
     }
 

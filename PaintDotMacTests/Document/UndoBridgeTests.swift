@@ -377,4 +377,26 @@ struct UndoBridgeTests {
         fixture.bridge.setBudget(0)  // current step stays; nothing droppable at index 1
         #expect(fixture.editedFlags.isEmpty)
     }
+
+    // MARK: - Selection steps (spec 0013)
+
+    @Test func selectionStepTogglesEdited() throws {
+        let fixture = BridgeFixture()
+        let item = try #require(SelectionCommand.selectAll.makeHistoryItem(for: fixture.bridge.state))
+        fixture.bridge.perform(item)
+        #expect(fixture.editedFlags.last == true, "a selection step marks the document edited")
+        fixture.undoManager.undo()
+        #expect(fixture.editedFlags.last == false, "undoing back to the saved step makes it clean")
+    }
+
+    @Test func selectionChangeCallback() throws {
+        let fixture = BridgeFixture()
+        let item = try #require(SelectionCommand.selectAll.makeHistoryItem(for: fixture.bridge.state))
+        fixture.bridge.perform(item)
+        #expect(fixture.changes.contains(.selection), "the canvas learns .selection (no tiles)")
+        #expect(fixture.bridge.state.selection
+                == Selection.all(canvasSize: fixture.bridge.state.image.size))
+        fixture.undoManager.undo()
+        #expect(fixture.bridge.state.selection == nil)
+    }
 }
