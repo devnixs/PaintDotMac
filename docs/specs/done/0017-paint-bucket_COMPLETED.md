@@ -182,3 +182,42 @@ All new code is in **`PaintDotMac/Core/Tools/PaintBucketTool.swift`** (Core, hea
 - Paint.NET Fill Styles (patterned fills using both colors) — not in PRD T-9.
 - Live fill editing, seed nub, Finish button (see Decisions), and Paint.NET 5's Tolerance Alpha Mode (follows 0016).
 - The tolerance metric, flood algorithms, and Magic Wand (0016); Edit › Fill Selection / Erase Selection (0018); blend modes other than Normal (0026, 0027, 0059 — they appear in this tool's blend popup automatically); Recolor tolerance (0057).
+
+## Verification status
+
+Implemented 2026-11-16 (spec 0017). Quality gate, full run
+(`.agents/skills/spec-implementer/scripts/quality-gate.sh`):
+
+```
+==> Debug build (clean build)
+No compiler warnings.
+
+==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)
+tests: 1340 passed, 0 failed, 0 skipped (of 1340)
+
+==> GREEN
+tests: 1340 passed, 0 failed, 0 skipped (of 1340)
+tests: no crash reports during the run
+```
+
+Performance (`PaintBucketPerformanceTests.testLargeContiguousFill`, Debug): one
+contiguous AA-on click on a 4000 × 3000 opaque white layer — fill + TileDiff,
+`measure` average **2.877 s** (10 iterations, relative standard deviation
+0.68 %); the spec bar is a gross-regression guard at 5 s — met.
+
+Review: pending
+
+Manual verification (not automated):
+
+- [ ] Draw an antialiased black circle with the Paintbrush on white, F, click
+      inside with red at 800 %: fill meets the circle with a soft one-pixel
+      feather, no white gap ring; with Antialiasing off the edge is hard and a
+      light fringe from the circle's AA pixels may remain (Paint.NET-like).
+- [ ] Raise tolerance to ~60 % and repeat: the fill eats into the AA fringe.
+- [ ] Shift-click on an image with disconnected same-color areas: all are
+      filled.
+- [ ] Ellipse-select (antialiased), Fill = Selection, click inside: the whole
+      ellipse fills with soft edges; clicking outside does nothing.
+- [ ] Two layers, Sampling = Image: fill on an empty top layer follows the
+      shapes on the layer below.
+- [ ] Right-click and Control-click fill with the secondary color.
