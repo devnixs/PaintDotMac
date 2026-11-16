@@ -298,3 +298,71 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
 - Paint.NET's plus/minus selection cursors (we show the crosshair in every mode).
 - Live combined preview of the resulting selection while dragging (we preview the drawn shape only; the combined result appears on release).
 - Erase/Fill Selection → 0018; Crop to Selection → 0022.
+
+## Verification status
+
+Date: 2026-11-16
+
+Gate (`.agents/skills/spec-implementer/scripts/quality-gate.sh`, full — clean Debug build + every headless test):
+
+```
+==> Debug build (clean build)
+No compiler warnings.
+==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)
+tests: 1178 passed, 0 failed, 0 skipped (of 1178)
+==> GREEN
+tests: no crash reports during the run
+```
+
+Performance (PRD §6 NF-1 smoothness, Debug): `SelectionToolPerformanceTests` — one
+`RectangleSelectTool.mouseUp` on a 10,000 × 10,000 image (full-canvas rectangle, 0013's
+fast path): **0.662 ms** median of 3 (reported, no gate — 0013 sets explicit targets only
+for 4000 × 3000). No rasterization per drag event is asserted by
+`RectangleSelectToolTests.hugeImageSelection` (drag overlays only on a 65,535 × 65,535
+image; `partialTileCount == 0` on release).
+
+Test additions (11 new files, 65 declared cases; the property suites run 300 seeded
+iterations each; all headless):
+- Unit (Swift Testing): `SelectionToolOptionsTests` (6: key strings + Paint.NET defaults,
+  the exhaustive mode/quality/clipping display-name tables, shared-keys across tools,
+  sanitization, Fixed Size→px math incl. DPI 0 and clamping),
+  `SelectionGestureTests` (4: pixel-floor rule incl. NaN/∞/10⁹ guards, the exhaustive
+  2×2×2×2 finish-outcome table + the 50 ms boundary, sticky `hasMoved`, non-finite
+  updates dropped), `RectangleSelectGeometryTests` (9) and `EllipseSelectGeometryTests`
+  (4): expected rects/circles hand-computed from the spec formulas — inclusive bounds,
+  Shift-square/circle anchoring in all four directions, Fixed Ratio (incl. thin drags),
+  Fixed Size ±clipping, partial/full-outside clipping, tiny images),
+  `RectangleSelectToolTests` (16: per-pixel combine oracle for all five modes with the
+  picker and the ⌘/⌥/⇧ modifier tables, mode latched at mouse-down, Shift mid-drag
+  re-preview, click/quick-drag deselect, D-34 no-op no-step, exclude-everything → nil +
+  "Deselect", Return/Escape/context-switch, undo/redo, 65,535² overlay-only drag),
+  `EllipseSelectToolTests` (4: AA circle symmetry + coverage within 1 % of πr²,
+  pixelated stair-steps, past-edge ellipse, draw-mode options are Ellipse's no-op),
+  `SelectionSizeDisplayTests` (4), `CanvasTransformZoomToFitTests` (5: fit, 3200 % clamp,
+  centering, `clampedScroll`, degenerate inputs),
+  `SelectionToolPropertyTests` (3 seeded × 300: geometry invariants for random drags,
+  random-mode perform→undo→redo mask equality, A ∪ A then A ∖ A = ∅).
+- Window-level (headless `DocumentHarness`, synthesized canvas events):
+  `SelectionToolsIntegrationTests` (9: scripted Rectangle→⌘Ellipse→⌥Rectangle→click
+  step/mask history with Paintbrush clipping, S-cycling + options-bar identifiers,
+  4000 × 2000 select-then-paint through a saved PNG (exactly 1201 painted pixels),
+  Ellipse step + undo/redo of the status-bar size, ⌘-drag union bounds, click deselect,
+  Fixed Size live status text "100 × 50", TOOL-C persistence across a relaunched
+  `AppModel`, Zoom to Selection enablement + ⇧⌘B → 3200 %).
+- Perf (XCTest): `SelectionToolPerformanceTests` (1, report-only).
+- Updated for the two new registered tools: `ToolRegistryTests` (+`selectionGroupHasRectangleAndEllipse`),
+  `ToolRegistryColorPickerTests`, `AppModelToolTests`, `MainMenuTests` (Zoom to Selection
+  ⇧⌘B row), `ZoomPanStatusBarIntegrationTests` (routed-action count).
+
+Review: pending
+
+Manual verification (against a running app):
+
+- [ ] 1. Draw rectangle selections at 100 %, 800 %, and 3200 %: edges land exactly on pixel boundaries; the dashed preview follows the pointer; marching ants appear on release.
+- [ ] 2. Draw an ellipse with Antialiased, fill it with the Paintbrush: smooth edge; repeat with Pixelated: stair-stepped edge.
+- [ ] 3. Hold and release Shift mid-drag: the preview snaps between free and square/circle immediately.
+- [ ] 4. ⌘-drag, ⌥-drag, ⌘-right-drag, ⌥-right-drag, and ⌘-Control-drag on a trackpad: Add, Subtract, Invert, Intersect, Invert.
+- [ ] 5. With a selection, Replace-drag a new one: the old ants disappear during the drag; press Escape mid-drag: the old ants come back, no history row.
+- [ ] 6. Click outside the image (gray area) with a selection: "Deselect".
+- [ ] 7. Fixed Ratio 16:9: drag in all four directions; the rectangle grows from the start corner.
+- [ ] 8. ⇧⌘B on a small selection at the canvas edge: the selection is as large as possible and as centered as the image edges allow.

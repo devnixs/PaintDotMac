@@ -1,3 +1,5 @@
+import CoreGraphics
+import Foundation
 import Testing
 @testable import PaintDotMac
 
