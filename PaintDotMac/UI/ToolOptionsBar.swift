@@ -131,6 +131,10 @@ struct ToolOptionsContent: View {
                 Divider()
                 FloodToolOptionsView(model: model, tool: .magicWand)
             }
+        case .paintBucket:
+            // T-9 / 0017: Fill, the flood options (disabled while Fill = Selection),
+            // Antialiasing, and the Blend Mode popup — all under `tool.paintBucket.*`.
+            PaintBucketToolOptionsView(model: model)
         case .paintbrush:
             BrushToolOptionsView(model: model, tool: .paintbrush, showsBlendMode: true)
         case .eraser:
@@ -438,6 +442,81 @@ struct ColorPickerToolOptionsView: View {
                 .fixedSize()
                 .accessibilityIdentifier("toolOptions.afterClick")
                 .accessibilityLabel("After click")
+            }
+        }
+    }
+}
+
+/// Paint Bucket options (spec 0017, PRD T-9 / APP-4 / TOOL-C), Paint.NET's controls left
+/// to right: the **Fill** popup (Similar Color / Selection — PRD T-9's "option to fill
+/// the selection"; Selection ignores the flood options and the Antialiasing toggle, so
+/// both are greyed while it is chosen), 0016's `FloodToolOptionsView` for **Flood mode /
+/// Tolerance / Sampling** (Shift-click forces Global), **Antialiasing enabled** (0009's
+/// control), and the **Blend Mode** popup (D-15). Values persist under
+/// `tool.paintBucket.*` (TOOL-C); the view observes `toolOptions.revision` like the
+/// others.
+struct PaintBucketToolOptionsView: View {
+    let model: AppModel
+
+    /// Reading the store here registers the observation (every write bumps `revision`).
+    private var fillMode: PaintBucketFillMode {
+        _ = model.toolOptions.revision
+        return model.toolOptions.value(PaintBucketOptions.fillModeKey)
+    }
+
+    private var antialiasing: Bool {
+        _ = model.toolOptions.revision
+        return model.toolOptions.value(PaintBucketOptions.antialiasingKey)
+    }
+
+    private var blendMode: BlendMode {
+        _ = model.toolOptions.revision
+        return model.toolOptions.value(PaintBucketOptions.blendModeKey)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Picker("Fill", selection: Binding(
+                get: { fillMode },
+                set: { model.toolOptions.setValue($0, for: PaintBucketOptions.fillModeKey) }
+            )) {
+                ForEach(PaintBucketFillMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .help("Fill")
+            .accessibilityIdentifier("toolOptions.fillMode")
+            .accessibilityLabel("Fill")
+            .accessibilityValue(fillMode.displayName)
+
+            FloodToolOptionsView(model: model, tool: .paintBucket)
+                .disabled(fillMode == .selection)
+
+            Toggle("Antialiasing enabled", isOn: Binding(
+                get: { antialiasing },
+                set: { model.toolOptions.setValue($0, for: PaintBucketOptions.antialiasingKey) }
+            ))
+            .toggleStyle(.checkbox)
+            .disabled(fillMode == .selection)
+            .accessibilityIdentifier("toolOptions.antialiasing")
+
+            HStack(spacing: 4) {
+                Text("Blend Mode:")
+                Picker("", selection: Binding(
+                    get: { blendMode },
+                    set: { model.toolOptions.setValue($0, for: PaintBucketOptions.blendModeKey) }
+                )) {
+                    // D-15: the implemented layer modes in L-3 order; 0026/0027/0059
+                    // add theirs as they land.
+                    ForEach(ToolOptionsBar.selectableBlendModes, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("toolOptions.blendMode")
             }
         }
     }

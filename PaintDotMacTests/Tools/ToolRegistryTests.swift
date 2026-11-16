@@ -67,10 +67,10 @@ struct ToolRegistryTests {
     @Test func standardRegistersPaintbrush() {
         // Later tool specs extend this list as they register their tool (0011 added the
         // Eraser and the Pencil; 0012 the Color Picker; 0014 the two selection tools;
-        // 0015 the Lasso; 0016 the Magic Wand).
+        // 0015 the Lasso; 0016 the Magic Wand; 0017 the Paint Bucket).
         #expect(ToolRegistry.standard().implementedIDs
                     == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
-                        .zoom, .pan,
+                        .zoom, .pan, .paintBucket,
                         .paintbrush, .eraser, .pencil, .colorPicker])
         #expect(ToolRegistry.standard().makeTool(.magicWand) is MagicWandTool)
         #expect(ToolRegistry.standard().makeTool(.zoom) is ZoomTool)
@@ -122,7 +122,7 @@ struct ToolRegistryTests {
         #expect(registry.shortcutGroup(for: "e") == [.eraser])
         #expect(registry.implementedIDs
                     == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
-                        .zoom, .pan,
+                        .zoom, .pan, .paintBucket,
                         .paintbrush, .eraser, .pencil, .colorPicker],
                 "paintbrush, eraser, pencil, color picker consecutively — ToolID.allCases order")
         #expect(registry.defaultToolID == .paintbrush)
@@ -171,5 +171,14 @@ struct ToolRegistryTests {
         let dispatcher = ToolDispatcher(registry: registry)
         #expect(dispatcher.activeToolID == .paintbrush)
         #expect(dispatcher.previousToolID == nil)
+    }
+
+    /// 0017 *Acceptance*: F selects the Paint Bucket — the key group is just the
+    /// Paint Bucket (Gradient is not implemented yet), and the tool is registered.
+    @Test func paintBucketKey() {
+        let registry = ToolRegistry.standard()
+        #expect(registry.shortcutGroup(for: "f") == [.paintBucket])
+        #expect(registry.implementedIDs.contains(.paintBucket))
+        #expect(registry.makeTool(.paintBucket) is PaintBucketTool)
     }
 }

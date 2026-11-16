@@ -107,6 +107,7 @@ struct ToolRegistry {
             .magicWand: { MagicWandTool() },
             .zoom: { ZoomTool() },
             .pan: { PanTool() },
+            .paintBucket: { PaintBucketTool() },
             .paintbrush: { PaintbrushTool() },
             .eraser: { EraserTool() },
             .pencil: { PencilTool() },
