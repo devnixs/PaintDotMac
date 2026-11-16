@@ -267,3 +267,64 @@ None. Synchronous execution on click, the defaults (Tolerance 50 %, Sampling Lay
 - `SelectionToolOptions`, the mode mapping, Return-deselects, status-bar selection size, Zoom to Selection → 0014. Selection model, mask, path booleans, marching ants → 0013.
 - Moving the selection afterwards → 0019; moving pixels → 0020.
 - Off-main-actor execution and final performance tuning → 0048 (PRD T-4).
+
+## Verification status
+
+Implemented 2026-11-16 (spec 0016). Quality gate, full run
+(`.agents/skills/spec-implementer/scripts/quality-gate.sh`):
+
+```
+==> Debug build (clean build)
+No compiler warnings.
+
+==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)
+tests: 1296 passed, 0 failed, 0 skipped (of 1296)
+
+==> GREEN
+tests: 1296 passed, 0 failed, 0 skipped (of 1296)
+tests: no crash reports during the run
+```
+
+Performance (Debug test run, `MagicWandPerformanceTests`, 6000 × 4000 gradient fixture
+with 20 seeded black rectangles; the gates are the spec's Debug numbers, Release is far
+faster and 0048 tightens the measurement):
+
+- `testContiguousFill24MP` — contiguous fill at 50 % from (0, 0): **1.12 s**
+  (`measure` mean 1.15 s, ~12 MP region) — gate < 3.0 s.
+- `testGlobalFill24MP` — global fill at 50 %: **0.062 s** (`measure` mean 0.073 s)
+  — gate < 3.0 s.
+- `testWholeClick24MP` — whole `mouseDown` (fill + `outline()` + `selectionMask()` +
+  `Selection.combine` Union + history): **1.49 s** — gate < 10.0 s.
+- `testCheckerboardGlobalClick` — 1024 × 1024 checkerboard, global 0 % (524 288
+  one-pixel loops, full click path): **4.21 s** — gate < 20.0 s.
+
+Tests added: 65 — `FloodToleranceTests` (3), `FloodColorMetricTests` (8 incl. the
+10 000-pair `oracleSweep`), `FloodFillSourceTests` (4), `FloodFillTests` (12 incl. the
+300-case `contiguousMatchesBFSOracle`), `FloodFillStencilTests` (9 incl. the 200-shape
+`outlineRasterizesBackExactly`), `MagicWandToolTests` (18 incl. the 100-run
+`undoRedoProperty`), `ToolRegistryMagicWandTests` (1), `MagicWandSessionTests` (1),
+`MagicWandIntegrationTests` (5), `MagicWandPerformanceTests` (4). The 0006/0012/0014/0015
+registry lists and the S-cycle integration tests updated for the fourth S-group member
+(Rectangle → Lasso → Ellipse → Magic Wand).
+
+Platform deviation (recorded like 0007's slider discovery): a SwiftUI `Slider` vends a
+*numeric* accessibility value, so `toolOptions.tolerance` answers `50` / `0` — the "NN%"
+string is the trailing monospaced readout next to it (`MagicWandIntegrationTests` reads
+the raw value).
+
+Review: pending
+
+Manual verification (not automated):
+
+- [ ] Open a photo, press S ×4, click sky at 50 % → ants trace the sky's pixel edges at
+      800 % (stair-stepped, on pixel boundaries); status bar shows the bounds size.
+- [ ] Lower the tolerance to 10 %, click again → smaller region; raise to 100 % → whole
+      image.
+- [ ] Shift-click a color that appears in separate places → all of them are selected;
+      the Flood mode control is unchanged afterwards.
+- [ ] ⌘-click / ⌥-click / ⌥-right-click / ⌘-right-click → add / subtract / intersect /
+      invert, matching Rectangle Select.
+- [ ] On a 6000 × 4000 photo, a click feels instant (no visible beach ball); repeat with
+      Global and with Image sampling.
+- [ ] Paint with the brush after a wand selection → paint stays inside the region;
+      ⇧⌘B zooms to the selection.
