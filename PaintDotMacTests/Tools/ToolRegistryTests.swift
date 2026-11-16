@@ -66,14 +66,15 @@ struct ToolRegistryTests {
 
     @Test func standardRegistersPaintbrush() {
         // Later tool specs extend this list as they register their tool (0011 added the
-        // Eraser and the Pencil).
+        // Eraser and the Pencil; 0012 the Color Picker).
         #expect(ToolRegistry.standard().implementedIDs
-                    == [.zoom, .pan, .paintbrush, .eraser, .pencil])
+                    == [.zoom, .pan, .paintbrush, .eraser, .pencil, .colorPicker])
         #expect(ToolRegistry.standard().makeTool(.zoom) is ZoomTool)
         #expect(ToolRegistry.standard().makeTool(.pan) is PanTool)
         #expect(ToolRegistry.standard().makeTool(.paintbrush) is PaintbrushTool)
         #expect(ToolRegistry.standard().makeTool(.eraser) is EraserTool)
         #expect(ToolRegistry.standard().makeTool(.pencil) is PencilTool)
+        #expect(ToolRegistry.standard().makeTool(.colorPicker) is ColorPickerTool)
         #expect(ToolRegistry.standard().makeTool(.recolor) == nil)
         #expect(ToolRegistry.standard().isImplemented(.zoom))
     }
@@ -85,8 +86,8 @@ struct ToolRegistryTests {
         let registry = ToolRegistry.standard()
         #expect(registry.shortcutGroup(for: "p") == [.pencil])
         #expect(registry.shortcutGroup(for: "e") == [.eraser])
-        #expect(registry.implementedIDs == [.zoom, .pan, .paintbrush, .eraser, .pencil],
-                "paintbrush, eraser, pencil consecutively — ToolID.allCases order")
+        #expect(registry.implementedIDs == [.zoom, .pan, .paintbrush, .eraser, .pencil, .colorPicker],
+                "paintbrush, eraser, pencil, color picker consecutively — ToolID.allCases order")
         #expect(registry.defaultToolID == .paintbrush)
     }
 

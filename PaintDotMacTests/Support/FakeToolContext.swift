@@ -68,8 +68,10 @@ final class FakeToolContext: ToolContext {
     var image: LayeredImage { state.image }
     var transform: CanvasTransform { nav.transform }
     var previousToolID: ToolID?
-    /// Settable so a tool test can drive one pair of colors (0007).
+    /// Settable so a test can drive one pair of colors (0007).
     var colors: ColorSelection = .default
+    /// The Color Picker's slot writes, in order (spec 0012).
+    private(set) var setColorCalls: [(color: ColorRGBA8, slot: ColorSlot)] = []
     /// Settable so a test can install a clip (0009; 0013's selection tests).
     var paintClipMask: (any BrushClipMask)?
     /// Counts `updateImage` calls (0009).
@@ -87,12 +89,19 @@ final class FakeToolContext: ToolContext {
     private(set) var overlays: [ToolOverlay?] = []
     private(set) var cursorInvalidations = 0
 
-    init(size: PixelSize = PixelSize(width: 64, height: 64), background: ColorRGBA8 = .clear) {
-        state = DocumentState(image: .blank(size: size, fill: background))
+    init(size: PixelSize = PixelSize(width: 64, height: 64), background: ColorRGBA8 = .clear,
+         image: LayeredImage? = nil) {
+        state = DocumentState(image: image ?? .blank(size: size, fill: background))
         history = HistoryStack(base: .newImage)
     }
 
     func activateTool(_ id: ToolID) { activatedTools.append(id) }
+
+    /// Applies to the fake's own `colors` and records the call (spec 0012).
+    func setColor(_ color: ColorRGBA8, for slot: ColorSlot) {
+        colors[slot] = color
+        setColorCalls.append((color, slot))
+    }
 
     func setOverlay(_ overlay: ToolOverlay?) { overlays.append(overlay) }
 

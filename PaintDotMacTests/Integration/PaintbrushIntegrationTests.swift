@@ -52,6 +52,7 @@ struct PaintbrushIntegrationTests {
         }
 
         func activateTool(_ id: ToolID) {}
+        func setColor(_ color: ColorRGBA8, for slot: ColorSlot) { colors[slot] = color }
         func setOverlay(_ overlay: ToolOverlay?) {}
         func invalidateCursor() {}
         func commitHistory(_ item: any HistoryItem) { bridge.commit(item) }

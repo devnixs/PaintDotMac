@@ -44,6 +44,12 @@ final class CanvasToolSession: ToolContext {
 
     var colors: ColorSelection { model.colors }
 
+    /// 0012 (T-14): the Color Picker's slot write — persists and updates the Colors panel
+    /// through the app model (C-1).
+    func setColor(_ color: ColorRGBA8, for slot: ColorSlot) {
+        model.setColor(color, for: slot)
+    }
+
     /// 0013 returns the selection mask; until then nothing clips painting (spec 0009).
     var paintClipMask: (any BrushClipMask)? { nil }
 

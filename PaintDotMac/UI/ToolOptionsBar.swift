@@ -83,6 +83,9 @@ struct ToolOptionsContent: View {
         case .pencil:
             // T-13: the always-aliased one-pixel Pencil has only the blend mode (D-15).
             PencilToolOptionsView(model: model)
+        case .colorPicker:
+            // T-14 / D-28: sampling size, Layer/Image mode, and the After Click choice.
+            ColorPickerToolOptionsView(model: model)
         case .zoom, .pan:
             // Paint.NET shows no Zoom/Pan options.
             EmptyView()
@@ -304,6 +307,81 @@ struct PencilToolOptionsView: View {
             .labelsHidden()
             .fixedSize()
             .accessibilityIdentifier("toolOptions.blendMode")
+        }
+    }
+}
+
+/// Color Picker options (spec 0012, PRD T-14, D-28), Paint.NET's ColorPicker.html controls
+/// left to right: **Sampling:** (Single pixel / 3 x 3 … 51 x 51 region), the **Layer /
+/// Image** sampling-mode segmented control (⌘-click still forces Image), and **After
+/// click:** (Do not switch tool / Switch to previous tool / Switch to Pencil tool). Values
+/// persist under `tool.colorPicker.*` (TOOL-C); the mode stores the raw string because
+/// `SamplingMode` is not a `ToolOptionValue` until 0016, and an unknown stored value reads
+/// as the default (spec 0012). The view observes `toolOptions.revision` like the others.
+struct ColorPickerToolOptionsView: View {
+    let model: AppModel
+
+    private var samplingSize: SamplingSize {
+        _ = model.toolOptions.revision
+        return model.toolOptions.value(ColorPickerTool.samplingSizeKey)
+    }
+
+    private var samplingMode: SamplingMode {
+        _ = model.toolOptions.revision
+        return SamplingMode(rawValue: model.toolOptions.value(ColorPickerTool.samplingModeKey))
+            ?? .layer
+    }
+
+    private var afterClick: ColorPickerAfterClick {
+        _ = model.toolOptions.revision
+        return model.toolOptions.value(ColorPickerTool.afterClickKey)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                Text("Sampling:")
+                Picker("Sampling", selection: Binding(
+                    get: { samplingSize },
+                    set: { model.toolOptions.setValue($0, for: ColorPickerTool.samplingSizeKey) }
+                )) {
+                    ForEach(SamplingSize.allCases, id: \.self) { size in
+                        Text(size.displayName).tag(size)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("toolOptions.samplingSize")
+                .accessibilityLabel("Sampling")
+            }
+            Picker("Sampling Mode", selection: Binding(
+                get: { samplingMode },
+                set: { model.toolOptions.setValue($0.rawValue, for: ColorPickerTool.samplingModeKey) }
+            )) {
+                ForEach(SamplingMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .fixedSize()
+            .labelsHidden()
+            .accessibilityIdentifier("toolOptions.samplingMode")
+            .accessibilityLabel("Sampling mode")
+            HStack(spacing: 4) {
+                Text("After click:")
+                Picker("After click", selection: Binding(
+                    get: { afterClick },
+                    set: { model.toolOptions.setValue($0, for: ColorPickerTool.afterClickKey) }
+                )) {
+                    ForEach(ColorPickerAfterClick.allCases, id: \.self) { choice in
+                        Text(choice.displayName).tag(choice)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("toolOptions.afterClick")
+                .accessibilityLabel("After click")
+            }
         }
     }
 }

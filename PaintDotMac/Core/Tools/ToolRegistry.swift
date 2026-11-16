@@ -106,6 +106,7 @@ struct ToolRegistry {
             .paintbrush: { PaintbrushTool() },
             .eraser: { EraserTool() },
             .pencil: { PencilTool() },
+            .colorPicker: { ColorPickerTool() },
         ])
     }
 

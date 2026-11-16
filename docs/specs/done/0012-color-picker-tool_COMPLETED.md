@@ -187,3 +187,58 @@ The CPU compositor is not on the display path (Metal is, from 0003/0024), so NF-
 - Copy Merged → 0030; ORA `mergedimage.png` → 0028; flatten on export → 0029.
 - Pixel grid for precise picking (Paint.NET's tip) → 0053.
 - A color-picker loupe/preview overlay (not in Paint.NET's doc).
+
+## Verification status
+
+Date: 2026-11-16
+
+Gate (`.agents/skills/spec-implementer/scripts/quality-gate.sh`, full — clean Debug build + every headless test):
+
+```
+==> Debug build (clean build)
+No compiler warnings.
+==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)
+tests: 999 passed, 0 failed, 0 skipped (of 999)
+==> GREEN
+tests: no crash reports during the run
+```
+
+Performance (PRD §6; CPU compositor is not on the display path — NF-1/NF-2 unaffected):
+`ColorPickerPerformanceTests` on 4000×3000, 3 fully allocated layers, Image mode, 51 x 51
+region — mean **2.024 ms**, p95 **2.125 ms**, max **2.180 ms** per sample (target: well
+under 5 ms; gated at 5 ms mean / 50 ms max — proves only the sampled rect is composited).
+
+Test additions (all headless):
+- Unit (Swift Testing): `CPUCompositorTests` (13, hand-computed Paint.NET values, region/
+  tile/flatten agreement, sparse sparsity, no-mutation), `CPUCompositorPropertyTests`
+  (50 seeded stacks, `Double` oracle within ±1 per channel), `PixelSamplerTests` (16:
+  clipping, alpha-weighted averaging incl. the round-half-up hand calcs, modes, defensive
+  states), `ColorPickerAfterClickTests` (8: decision table + exact Paint.NET strings),
+  `ColorPickerToolTests` (19: slots, floor, live drag, ⌘-Image, sizes, no-history-step,
+  cursor, After Click, TOOL-C persistence + fallback), `ToolRegistryColorPickerTests` (2).
+- Integration: `ColorPickerSessionTests` (2, dispatcher + real `UndoBridge`: stroke → pick
+  → switch-to-previous → undo), `ColorPickerIntegrationTests` (4, real document windows
+  headless: K + selected trait, primary/secondary picks, no History row + not edited,
+  Switch-to-previous + TOOL-C relaunch).
+- Performance (XCTest): `ColorPickerPerformanceTests` (2).
+- Contract tests updated for the registration (spec-driven): `ToolRegistryTests` and
+  `AppModelToolTests` implemented-tool lists now include `colorPicker` after `pencil`;
+  the options bar gained the Color Picker controls (`toolOptions.samplingSize`,
+  `toolOptions.samplingMode`, `toolOptions.afterClick`).
+
+Notes:
+- The property oracle deliberately applies the two *decided* rounding rules (source alpha
+  `round(a·opacity/255)`, alpha byte `round(fa/255)`) in `Double`; the continuous
+  `(a/255)·(op/255)` form diverges from the decided fixed-point rule by tens of percent in
+  the sub-byte alpha corner (`mul255(11,14)=1` vs `0.604`), which would shift every blend
+  weight. The ±1 claim was verified against 10⁶ random uniform 1–4-layer stacks.
+- Manual verification (not yet run by a person; everything else is covered headlessly):
+  - [ ] Open a photo, press K, set "Sampling:" to "11 x 11 region", click a textured area → the primary swatch shows a plausible averaged color, not the exact center pixel.
+  - [ ] Drag across the image with the left button held → the primary swatch updates continuously and smoothly.
+  - [ ] Control-click → secondary swatch changes (Mac secondary-click mapping).
+  - [ ] With one layer only, "Layer" and "Image" give the same result; re-check ⌘-click Image sampling once layers exist (0024).
+  - [ ] Choose "Switch to Pencil tool", click → Pencil is active and draws.
+  - [ ] Zoom to 3200% and click the boundary between two pixels → the pixel under the cursor tip's pixel square is picked.
+  - [ ] Check the toolbar controls read correctly with VoiceOver ("Sampling", "Layer", "Image", "After click").
+
+Review: pending

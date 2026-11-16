@@ -4,9 +4,9 @@ import Foundation
 /// What a tool may touch (spec 0006). The main document window's canvas session
 /// (`Canvas/CanvasToolSession.swift`) implements it; tests use `FakeToolContext`.
 ///
-/// Reserved extensions owned by later specs: 0012 adds `setColor(_:for:)`; 0013 replaces
-/// the `paintClipMask` stub with the selection mask. Each spec that grows this protocol
-/// implements the new members in `CanvasToolSession` and `FakeToolContext`.
+/// Reserved extensions owned by later specs: 0013 replaces the `paintClipMask` stub with
+/// the selection mask. Each spec that grows this protocol implements the new members in
+/// `CanvasToolSession` and `FakeToolContext`.
 /// `activateTool(_:)` and `previousToolID` live here so 0012 does not re-declare them.
 @MainActor
 protocol ToolContext: AnyObject {
@@ -21,6 +21,9 @@ protocol ToolContext: AnyObject {
     /// The app-wide primary/secondary pair (C-1); 0009 reads it at stroke start (TOOL-A) and
     /// 0012 adds the setter path through `AppModel.setColor(_:for:)`.
     var colors: ColorSelection { get }
+    /// Sets one Colors-panel slot (0012, T-14): through `AppModel.setColor(_:for:)`, which
+    /// persists the pair (C-1) and updates the Colors panel. Never a history step.
+    func setColor(_ color: ColorRGBA8, for slot: ColorSlot)
     /// The selection clip for painting tools (0009); nil = no selection (everything
     /// paintable). 0013 fills it with the selection's antialiased mask.
     var paintClipMask: (any BrushClipMask)? { get }

@@ -40,6 +40,7 @@ final class BridgeToolContext: ToolContext {
     }
 
     func activateTool(_ id: ToolID) { activatedTools.append(id) }
+    func setColor(_ color: ColorRGBA8, for slot: ColorSlot) { colors[slot] = color }
     func setOverlay(_ overlay: ToolOverlay?) { overlayChanges.append(overlay) }
     func invalidateCursor() { cursorInvalidations += 1 }
 
