@@ -84,6 +84,9 @@ struct PaintDocumentHistoryTests {
                 "the token's step (the base) is marked saved, not the new current")
         document.undoBridge.undo()
         #expect(document.isDocumentEdited == false, "undo back to the saved base")
+        document.undoBridge.redo()
+        #expect(document.isDocumentEdited,
+                "the marker stays on the token's step across navigation, not on the edit")
     }
 
     @Test func autosaveAndSaveToDoNotClear() throws {

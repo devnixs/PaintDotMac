@@ -233,12 +233,35 @@ struct HistoryIntegrationTests {
 
             // The window's canvas follows the history: ⌘Z through the manager redraws the
             // restored tiles (the bridge's onStateChange assigns `canvasView.image`).
-            harness.perform(undoAction)
+            @MainActor func pixel(_ x: Int, _ y: Int) -> [UInt8] {
+                var bytes = [UInt8](repeating: 0, count: 4)
+                bytes.withUnsafeMutableBytes { buffer in
+                    bridge.state.image.layers[0].surface.readPixels(
+                        in: PixelRect(x: x, y: y, width: 1, height: 1), into: buffer,
+                        bytesPerRow: 4)
+                }
+                return bytes
+            }
+
+            harness.perform(undoAction)  // menu ⌘Z on the responder chain
             #expect(bridge.history.currentIndex == 0)
             #expect(harness.canvasView.image != nil)
+            #expect(pixel(300, 300) == [200, 10, 10, 255],
+                    "the undone tile content is the opened image again")
             #expect(harness.document.isDocumentEdited == false)
-            harness.perform(redoAction)
+            let managerAfterUndo = try #require(harness.window.undoManager)
+            #expect(managerAfterUndo.undoMenuItemTitle == "Undo",
+                    "nothing left to undo — plain title")
+            #expect(managerAfterUndo.redoMenuItemTitle == "Redo Paintbrush")
+
+            harness.perform(redoAction)  // menu ⇧⌘Z
             #expect(bridge.history.currentIndex == 1)
+            #expect(pixel(300, 300) == [255, 255, 255, 255],
+                    "the redone tile content is the painted pixels")
+            #expect(harness.document.isDocumentEdited == true)
+            let managerAfterRedo = try #require(harness.window.undoManager)
+            #expect(managerAfterRedo.undoMenuItemTitle == "Undo Paintbrush")
+            #expect(managerAfterRedo.redoMenuItemTitle == "Redo")
             harness.discardAppModelSuite()
         }
     }
@@ -288,6 +311,44 @@ struct HistoryIntegrationTests {
             // With no document the panel returns nil — Undo stays disabled (edge case).
             harness.document.close()
             #expect(controller.windowWillReturnUndoManager(panel) == nil)
+            harness.discardAppModelSuite()
+        }
+    }
+
+    @Test func panelNeverGuessesBetweenTwoDocuments() async throws {
+        // Review fix (uncertainty 1): with no key/main window the panel must vend a
+        // manager only for the single open document — never `documents.last` while two
+        // are open, which could silently undo the wrong document.
+        try await TestRunGate.withLock {
+            defer { cleanup() }
+            let fixtures = try FixtureFiles()
+            defer { fixtures.removeAll() }
+            let url = try fixtures.makePNG(named: "two.png", width: 8, height: 8,
+                                           rgba: (1, 2, 3, 255))
+            let harness = try await DocumentHarness.open(url)
+            let controller = PanelController(model: harness.appModel)
+            defer {
+                for panel in controller.panels.values { panel.orderOut(nil) }
+                PanelController.current = nil
+            }
+            let panel = try #require(controller.panels[.history])
+
+            // One document: the panel resolves it even headless (no key/main window).
+            #expect(controller.windowWillReturnUndoManager(panel)
+                    === harness.document.undoBridge.undoManager)
+
+            // A second document joins: with no key/main window nothing is unambiguous,
+            // so the panel returns nil rather than one of the two managers.
+            let second = PaintDocument()
+            try second.read(from: Data(contentsOf: url), ofType: "public.png")
+            NSDocumentController.shared.addDocument(second)
+            second.makeWindowControllers()
+            #expect(controller.windowWillReturnUndoManager(panel) == nil)
+
+            // Closing it makes the first document unambiguous again.
+            second.close()
+            #expect(controller.windowWillReturnUndoManager(panel)
+                    === harness.document.undoBridge.undoManager)
             harness.discardAppModelSuite()
         }
     }

@@ -436,6 +436,88 @@ Implemented 2026-11-16 on `main`, verified headlessly.
   - [ ] 1. Open a PNG: Edit > Undo/Redo greyed; ⌘W closes without a prompt.
   - [ ] 2. File > New (⌘N), OK: same.
 
-Review: `HistoryStack` is value-typed and the only pixel path (AGENTS rule 2); `UndoBridge`
-is the sole `NSUndoManager` writer; `TileDiff.mutate` keeps the layer-ID invariant as an
-`assertionFailure` (unreachable through the stack, loud in debug, never a release trap).
+- **Review:** 2026-11-16 (independent reviewer; Xcode 27.2 / macOS 27.2). Every acceptance
+  criterion and edge case traced to a discriminating test with hand-derived expectations, and
+  the accounting re-derived by hand: a 1-tile stroke is `2 × 262,144 + 1,024 = 525,312` bytes;
+  the 4-tile cross-tile diff `2,097,152`; the full 4000×3000 layer `2 × 192 × 262,144 =
+  100,663,296` (16 × 12 tiles, edge tiles full size); the budget fold arithmetic of
+  `fakeCostSequence` (4,024 / 8,048 / 12,072 → fold → 8,048) and the `1,048,576` two-step case
+  (1,050,624 > budget → fold → 525,312) all check out; `byteCostWithOverhead` never touches
+  the base step (init 0, discard/fold only reach non-base indices). The oracle suites
+  (`randomSessionsMatchOracle` 200×40, `applyRevertIdentity` 100 seeds, `budgetInvariants`
+  300×60, `managerMirrorsStack` 100×50) are genuinely independent (`ReferenceCanvas` byte
+  planes; `touchedTiles` recomputed as `⌊min/256⌋…⌊(max−1)/256⌋`). Edge tiles, sparse
+  before-tiles (undo frees the tile), transparent RGB-under-alpha-0 round trips, row-then-
+  column entry order, per-layer candidate dictionaries, and mismatch throws are all pinned.
+  - **Fixed (crash/corruption hunt):** `prepareForNavigation` ran *inside* the
+    `NSUndoManager` undo/redo run, so the edge case "⌘Z while a tool has an uncommitted edit"
+    (0008 edge cases; 0009's whole flow) corrupted the mirror — verified empirically with a
+    standalone Foundation repro: a `registerUndo` made while `isUndoing` joins the run's redo
+    group and is never re-pushed on the undo side, so after such an undo the manager reports
+    `canUndo == false` forever while the stack still has steps, and the next redo replays the
+    wrong step. `NavigationUndoManager` (new `UndoManager` subclass, the bridge's default)
+    now fires the hook **before** `undo()`/`redo()` — every menu path included — and
+    `UndoBridge.record` asserts no commit runs during an undo/redo run (debug-only, like the
+    existing `assertionFailure`s). Regression test
+    `UndoBridgeTests.pendingEditCommittedByUndoKeepsMirrorIntact` (⌘Z commits the pending
+    step then undoes exactly it; mirror names/titles/`groupingLevel == 0` stay exact; redo →
+    undo → undo exits at the base — the flow that previously dead-ended); it fails on the
+    pre-fix code. The hook still runs "before undo/redo/jump/save" per Scope §10; jump keeps
+    its once-per-jump call.
+  - **Fixed (uncertainty 1, panel fallback):** `documents.last` could vend the wrong
+    document's manager when no window is key/main with two documents open. The fallback now
+    vends a manager only when exactly one document is open (`currentDocument` covers the
+    real-app panel-focus cases; ambiguity disables Undo instead of guessing). Tests:
+    `panelNeverGuessesBetweenTwoDocuments` (new — one doc resolves, two → nil, closing one
+    resolves again) and the existing single-doc/no-doc panel tests.
+  - **Verdict (uncertainty 2, save tokens):** sound. `changeCountToken(for:)` captures the
+    current step ID on the main thread before the async write; `updateChangeCount(withToken:)`
+    completes on main; `markSaved(stepID:)` pins the *token's* step, so any edit (or undo)
+    during the save keeps the document dirty, and a save raced by `reset` degrades to "dirty
+    until saved again" — never wrongly clean. The only skew (a step committed after the
+    background snapshot reads the image is saved into the file but marked unsaved) errs toward
+    *dirty*, matching NSDocument's own token semantics. Pinned by `editDuringSaveStaysDirty`
+    (+ new redo leg: the marker stays on the token's step, not the edit),
+    `saveCommitsPendingEdit` (token taken after `prepareForNavigation`), and
+    `autosaveAndSaveToDoNotClear`.
+  - **Verdict (uncertainty 3, budget wording):** spec-consistent. Enforcement runs after
+    `commit`/`setBudget` only; undo/redo never change `totalBytes`, so "redo can exceed" is
+    exactly the spec's "the budget stays exceeded until a later commit or budget change", and
+    `budgetInvariants` pins `totalBytes ≤ budget || currentIndex < 2` after every enforcement
+    point plus exact byte sums everywhere.
+  - **Mutation spot-checks (all restored, `git diff` verified clean; every mutation killed at
+    least one test):** (1) `apply` using `before` → 103 issues in `TileDiffTests` +
+    `syntheticSessionUndoRedo` + `toolContextCommitHook` + `editedDocumentEnablesUndoThrough-
+    TheWindow` + `randomSessionsMatchOracle`; (2) cost dedupe disabled (no storage-key set,
+    no symmetric difference) → `addEmptyLayerCostsZero`, `duplicateLayerCostsZero`,
+    `sharedStorageCountedOnce`, `snapshotItemRoundTrip`; (3) fold dropping `steps[0]` (the
+    base) instead of `steps[1]` → `dropsOldestTileStep`, `fakeCostSequence`,
+    `savedMarkerFollowsFold`, `savedAtBaseThenFoldClearsMarker`, `budgetDropRemovesOldest-
+    Actions`; (4) redo-branch truncation removed → `commitDiscardsRedo`, `savedMarker`,
+    `managerMirrorsStack` (273 issues); (5) generation stamp copied forward instead of bumped
+    → `TiledSurfaceTests`, `TiledSurfacePropertyTests`, `MetalCanvasRendererTests`
+    (530 issues, incl. `changedTileIsReuploadedAlone` / `olderSurfaceForcesFullReupload` —
+    the 0003 upload path). Plus the fix-regression above.
+  - **Fixed (spec item 12 conformance):** `.structure` refresh used `needsDisplay = true`;
+    now calls `canvasView.invalidateAll()` (revert/new-image replace the whole image — the
+    renderer must forget every resident texture). Strengthened
+    `editedDocumentEnablesUndoThroughTheWindow` to assert TILE CONTENTS via `readPixels`
+    after menu-routed ⌘Z/⇧⌘Z plus the exact `undoMenuItemTitle`/`redoMenuItemTitle` and
+    edited flags; re-hardened the 0007 colors assertion onto
+    `undoBridge.history.canUndo == false` (the implementer's `!= true` form passed vacuously
+    now that `hasUndoManager == false`).
+  - Crash/rule hunt: no force-unwraps, `try!`, or preconditions in the new Core/glue files
+    (only the documented `assertionFailure` for the unreachable missing-layer ID); no
+    `multipliedReportingOverflow` was needed or claimed in history math — every product is
+    bounded by in-memory tile counts (a full 4000×3000 diff is 384 × 262,144 ≈ 10⁸ bytes,
+    ≪ Int64 max; the overflow-guarded spot is 0002's `ImageLimits`, verified); every history entry point is
+    `@MainActor`, and the background save path hops to main for the image snapshot; no
+    retain cycle (manager blocks capture `[weak self]`, manager → bridge is `weak`); no
+    direct `TiledSurface`/`Layer` pixel mutation outside `Core/History` (grep verified:
+    only 0002's own `blank` and SwiftUI `.fill` views); group balance asserted
+    (`groupingLevel == 0` after hook-driven commits).
+  - **Final gate: GREEN** — clean build, no compiler warnings,
+    `tests: 754 passed, 0 failed, 0 skipped (of 754)`, `tests: no crash reports during the
+    run`; the seven History/UndoBridge/PaintDocument suites additionally pass under
+    **AddressSanitizer** (66 tests, 0 ASan reports). `HistoryStack` remains value-typed and
+    the only pixel path (AGENTS rule 2); `UndoBridge` the sole `NSUndoManager` writer.

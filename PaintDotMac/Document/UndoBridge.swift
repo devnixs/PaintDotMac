@@ -2,6 +2,31 @@ import AppKit
 import Foundation
 import Observation
 
+/// The bridge's `UndoManager`. Menu ⌘Z / ⇧⌘Z reach the manager as `undo()` / `redo()`
+/// directly (AppKit dispatches them on the window's `windowWillReturnUndoManager` object),
+/// so this is the one place where every navigation path can run the bridge's
+/// `prepareForNavigation` hook *before* the undo/redo run begins. The hook must run
+/// before the run: a `registerUndo` made while the manager is undoing lands in the run's
+/// REDO group (verified empirically), so a tool's pending-edit commit issued from inside
+/// `performUndo` would silently corrupt the manager/stack mirror (the new step's undo
+/// action joins the redo stack, and the consumed step's undo action is never re-pushed —
+/// ⌘Z then dead-ends while the stack still has undoable steps).
+final class NavigationUndoManager: UndoManager {
+    /// Set by `UndoBridge.init` when the bridge creates or adopts one of these. Weak: the
+    /// bridge owns the manager, never the other way around.
+    weak var bridge: UndoBridge?
+
+    override func undo() {
+        bridge?.prepareForManagerNavigation()
+        super.undo()
+    }
+
+    override func redo() {
+        bridge?.prepareForManagerNavigation()
+        super.redo()
+    }
+}
+
 /// Mirrors a document's `HistoryStack` one-to-one onto an `NSUndoManager`, so Edit >
 /// Undo/Redo titles ("Undo Paintbrush"), the document's edited state, and the History
 /// panel stay in sync (spec 0008 Scope §10; PRD E-1, H-3). Undo-stack groups ↔ steps
@@ -45,10 +70,19 @@ final class UndoBridge {
     private var replayedChanges: [HistoryChange] = []
 
     init(state: DocumentState, base: HistoryBaseStep, budgetBytes: Int,
-         undoManager: UndoManager = UndoManager()) {
+         undoManager: UndoManager = NavigationUndoManager()) {
         self.state = state
         self.history = HistoryStack(base: base, budgetBytes: budgetBytes)
         self.undoManager = undoManager
+        (undoManager as? NavigationUndoManager)?.bridge = self
+    }
+
+    /// Called by `NavigationUndoManager` before every `undo()` / `redo()` — the hook that
+    /// commits the active tool's pending edit. Skipped while `jump(to:)` replays (the
+    /// jump calls the hook itself once, before its loop).
+    func prepareForManagerNavigation() {
+        guard !isReplayingJump else { return }
+        prepareForNavigation?()
     }
 
     /// In-progress tool drawing (0006 live strokes): mutates the state without recording
@@ -132,6 +166,12 @@ final class UndoBridge {
 
     private func record(_ result: HistoryCommitResult, change: HistoryChange?) {
         guard let stepID = result.recordedStepID else { return }
+        // A registration made while the manager is undoing/redoing lands in the run's
+        // redo group and desynchronizes the mirror (verified empirically). Tool commits
+        // from `prepareForNavigation` run before the manager's run, never here; this
+        // asserts that invariant for future callers (loud in debug, no release trap).
+        assert(!undoManager.isUndoing && !undoManager.isRedoing,
+               "history must not record a step while the undo manager is undoing/redoing")
         // Discarded redo steps: `NSUndoManager` clears its redo stack itself when a new
         // undo is registered; the bridge only forgets their tokens.
         for discardedID in result.discardedRedoStepIDs { tokens.removeValue(forKey: discardedID) }
@@ -173,8 +213,10 @@ final class UndoBridge {
 
     // MARK: - Navigation (always driven by `undoManager`: menu, ⌘Z, jumps)
 
+    /// Runs inside the manager's undo/redo run — `prepareForNavigation` already fired
+    /// *before* the run in `NavigationUndoManager.undo()`/`redo()` (see the note there:
+    /// committing from inside the run corrupts the mirror), so nothing here calls it.
     private func performUndo(_ token: HistoryStepToken) {
-        if !isReplayingJump { prepareForNavigation?() }
         guard let step = history.undoStep else { return }
         let change = history.undo(&state)
         undoManager.registerUndo(withTarget: token) { [weak self] token in
@@ -185,7 +227,6 @@ final class UndoBridge {
     }
 
     private func performRedo(_ token: HistoryStepToken) {
-        if !isReplayingJump { prepareForNavigation?() }
         guard let step = history.redoStep else { return }
         let change = history.redo(&state)
         undoManager.registerUndo(withTarget: token) { [weak self] token in

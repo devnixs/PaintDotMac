@@ -141,14 +141,19 @@ final class PanelController: NSObject, NSWindowDelegate {
 
     /// ⌘Z typed while a panel is key must undo on the current document (0008); without
     /// this the responder chain dead-ends at the panel's own (empty) undo manager.
-    /// The `documents.last` fallback only matters when no document window is main or key
-    /// — impossible while panels are on screen in the app, and the normal state of an
-    /// off-screen window in the headless tests.
+    /// `currentDocument` follows the key/main-window chain, which resolves every real-app
+    /// panel focus (a document window stays main while a panel is key). If nothing is
+    /// key or main, a manager is vended only when exactly one document is open — never a
+    /// guess among several: with two open documents and no key/main window, Undo is
+    /// disabled rather than silently undoing the wrong document. The single-document
+    /// fallback is also what the headless tests (off-screen windows, no key/main) use.
     func windowWillReturnUndoManager(_ window: NSWindow) -> UndoManager? {
         let controller = NSDocumentController.shared
-        let document = (controller.currentDocument as? PaintDocument)
-            ?? controller.documents.last as? PaintDocument
-        return document?.undoBridge.undoManager
+        if let document = controller.currentDocument as? PaintDocument {
+            return document.undoBridge.undoManager
+        }
+        let documents = controller.documents.compactMap { $0 as? PaintDocument }
+        return documents.count == 1 ? documents[0].undoBridge.undoManager : nil
     }
 
     // MARK: - Panel construction

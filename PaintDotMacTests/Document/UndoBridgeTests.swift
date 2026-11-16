@@ -19,7 +19,9 @@ final class BridgeFixture {
         var surface = TiledSurface(size: PixelSize(width: 512, height: 512))
         surface.fill(.white)
         before = LayeredImage(surface: surface)
-        let manager = UndoManager()
+        // The production manager class: `undo()`/`redo()` fire `prepareForNavigation`
+        // before the run, exactly like the app's menu ⌘Z / ⇧⌘Z path.
+        let manager = NavigationUndoManager()
         manager.groupsByEvent = groupsByEvent
         bridge = UndoBridge(state: DocumentState(image: before), base: .openImage,
                             budgetBytes: budget, undoManager: manager)
@@ -218,6 +220,52 @@ struct UndoBridgeTests {
         let prepares = fixture.events.filter { $0 == "prepare" }
         #expect(prepares.count == 1, "jump calls the hook once: \(fixture.events)")
         #expect(fixture.events.first == "prepare")
+    }
+
+    @Test func pendingEditCommittedByUndoKeepsMirrorIntact() throws {
+        // Edge case "Undo while a tool has an uncommitted edit": `prepareForNavigation`
+        // commits the pending stroke BEFORE the manager's run, and the run then undoes
+        // exactly that step. Regression guard: a registration made DURING the run joins
+        // the run's redo group and is never re-pushed on the undo side, so the manager
+        // would report `canUndo == false` forever while the stack still holds steps.
+        let fixture = BridgeFixture()
+        try fixture.commitPaint("Step A")
+        let afterA = fixture.bridge.state.image
+        let (itemB, _) = try fixture.preparePaint("Step B")  // live-drawn, uncommitted
+        let afterB = fixture.bridge.state.image
+        var pending = true
+        fixture.setPrepare {
+            guard pending else { return }
+            pending = false
+            fixture.bridge.commit(itemB)  // what 0009's `Tool.commit` will do
+        }
+
+        fixture.undoManager.undo()  // menu ⌘Z path: manager.undo() directly
+        #expect(fixture.bridge.history.currentIndex == 1,
+                "the undone step is the one just committed")
+        assertMatches(fixture.bridge.state.image, ReferenceCanvas(image: afterA),
+                      "B is undone; back to the after-A state")
+        #expect(fixture.undoManager.canUndo == fixture.bridge.history.canUndo,
+                "mirror canUndo survives the hook commit")
+        #expect(fixture.undoManager.canRedo == fixture.bridge.history.canRedo)
+        #expect(fixture.undoManager.undoActionName == "Step A")
+        #expect(fixture.undoManager.redoActionName == "Step B")
+        #expect(fixture.undoManager.groupingLevel == 0, "no unbalanced undo group")
+
+        // ⇧⌘Z re-applies B; a second ⌘Z undoes it; a third undoes A — the flow that
+        // dead-ended permanently when commits landed inside the run.
+        fixture.undoManager.redo()
+        #expect(fixture.bridge.history.currentIndex == 2)
+        assertMatches(fixture.bridge.state.image, ReferenceCanvas(image: afterB),
+                      "redo restores B")
+        fixture.undoManager.undo()
+        #expect(fixture.bridge.history.currentIndex == 1)
+        fixture.undoManager.undo()
+        #expect(fixture.bridge.history.currentIndex == 0)
+        #expect(fixture.undoManager.canUndo == false)
+        #expect(fixture.undoManager.canUndo == fixture.bridge.history.canUndo)
+        fixture.undoManager.undo()  // harmless at the base
+        #expect(fixture.bridge.history.currentIndex == 0)
     }
 
     @Test func revisionBumpsOncePerOperation() throws {

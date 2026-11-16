@@ -217,8 +217,10 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
             switch change {
             case .pixels: canvasView.image = document.image
             case .structure:
+                // Whole-image replacement (0008 item 12): the renderer must forget every
+                // resident tile texture, not just redraw the cached ones.
                 canvasView.image = document.image
-                canvasView.needsDisplay = true
+                canvasView.invalidateAll()
             }
         }
         statusBarModel.update(image: document.image)
