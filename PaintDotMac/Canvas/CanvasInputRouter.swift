@@ -35,8 +35,48 @@ final class CanvasInputRouter {
         ) {
             return true
         }
+        if handleBrushWidthKey(event, model: model, modifiers: modifiers,
+                               keyWindow: windowKind, textInputHasFocus: textInputHasFocus) {
+            return true
+        }
         return handleColorKey(event, model: model, modifiers: modifiers,
                               keyWindow: windowKind, textInputHasFocus: textInputHasFocus)
+    }
+
+    /// `[` / `]` (PRD §5.12, D-12; spec 0009): step the active brush tool's width by ∓1/±1
+    /// when it is `BrushWidthAdjustable`, behind the same gate as every single-key shortcut
+    /// (no ⌘/⌥/⌃, no text field focused, no gesture in flight — a gesture would race the
+    /// stroke; the stroke keeps its frozen options anyway). Auto-repeat repeats the step.
+    /// ⌘[ / ⌘] stay Rotate, so Paint.NET's Ctrl+`[`/`]` ×5 step is not mapped.
+    private static func handleBrushWidthKey(_ event: NSEvent, model: AppModel,
+                                            modifiers: ToolModifiers, keyWindow: ToolKeyWindowKind,
+                                            textInputHasFocus: Bool) -> Bool {
+        guard ToolShortcutGate.allows(
+            modifiers: modifiers, keyWindow: keyWindow,
+            textInputHasFocus: textInputHasFocus,
+            toolCapturesKeyboard: model.dispatcher.activeTool.capturesKeyboard,
+            gestureInProgress: model.dispatcher.isGestureInProgress
+        ), let delta = brushWidthDelta(forCharactersIgnoringModifiers:
+                                        event.charactersIgnoringModifiers ?? "") else {
+            // ⌘[ / ⌘] stay Rotate (D-12): a modified bracket is not ours.
+            return false
+        }
+        // A brush tool owns the unmodified bracket even with no context yet (the gate
+        // passed, so this is a real bare `[`/`]` in a document window).
+        guard let tool = model.dispatcher.activeTool as? any BrushWidthAdjustable else { return false }
+        if let context = model.dispatcher.context {
+            tool.adjustBrushWidth(by: delta, context: context)
+        }
+        return true
+    }
+
+    /// −1 for `[`, +1 for `]`, nil for anything else.
+    static func brushWidthDelta(forCharactersIgnoringModifiers characters: String) -> Double? {
+        switch characters {
+        case "[": return -1
+        case "]": return 1
+        default: return nil
+        }
     }
 
     /// X / D / C (C-1, D-31), behind the same gate as the tool letters: the Colors or Tools

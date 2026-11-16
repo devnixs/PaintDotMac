@@ -273,3 +273,28 @@ All expected values below were computed by hand / with the formulas above (indep
 - Paint.NET 5 Spacing, Smoothing, and Fill Style patterns (not in v1.0, PRD D-38); Ctrl+`[`/`]` ×5 stepping (⌘[ / ⌘] are Rotate, D-12).
 - Tablet pressure (TOOL-D, 0055; `ToolEvent.pressure` stays unused).
 - Final NF-1 tuning and on-device frame-time measurement (0048).
+
+## Verification status
+
+- Date: 2026-11-16. Quality gate (`.agents/skills/spec-implementer/scripts/quality-gate.sh`, full, no `--incremental`): **GREEN** — clean Debug build with zero warnings; `tests: 828 passed, 0 failed, 0 skipped (of 828)`; `tests: no crash reports during the run`.
+- NF-1 performance (from the gated run, `PaintbrushPerformanceTests`, Debug test host, 4000×3000 seeded-noise layer):
+  - width 50, hardness 75, AA — mean **1.134 ms**, p95 1.364 ms, max 1.427 ms per `extend` (gate ≤ 48 ms).
+  - width 300, hardness 0, AA — mean **34.547 ms**, p95 36.526 ms, max 37.505 ms per `extend` (gate ≤ 48 ms).
+  - `testCommitDiffCost` (report only): `makeTileDiff` + history commit after the width-300 stroke — **7.2 ms**, byteCost 16,252,928.
+  - `measure` block (23-event width-50 stroke on 1024×1024): 0.029 s average per block.
+- Implementation notes (deviations the gate/review surfaced):
+  - `StrokeCoverageBuffer.raise` was O(row width) per pixel (dictionary copy per write) and put the width-300 segment at ~88 ms mean; it now mutates the row dictionary in place (one measured fix took the gated test from 88 ms to ~35 ms, passing the 48 ms gate with margin).
+  - Window tool sessions now re-attach the document's `UndoBridge` inside `installToolWiring` (`DocumentWindowController`): the `document` setter can fire before the lazy window (and session) exists, and the session silently no-oped every pixel write. Regression-covered by `PaintbrushIntegrationTests` (real-window drags painting, undo step, edited state).
+  - Contract tests pinned to the pre-0009 start tool (`AppModelToolTests.mirrorsDispatcherState/implementedToolsOrder/activeToolNotPersisted`, `ToolsPanelIntegrationTests.shortcutsIgnoredInDocumentWindowTextField`) updated for D-35 (start tool Paintbrush) and the new registry entry.
+  - `rightDragPaintsSecondary`/`controlDragPaintsSecondary` assert the spec's pixel `(255,255,255,255)` (default secondary white), per *Test plan*.
+- Review: pending.
+- Manual verification (not yet run by a person):
+  - [ ] 1. 4000×3000 photo, width 50, quick 10 s scribble at Actual Size and Zoom to Window (ProMotion if available): stroke follows without visible lag. Record impressions.
+  - [ ] 2. Hardness 0/50/100 at width 100 on white: soft→crisp edges, no banding rings, no scalloping on fast diagonals; sharp at 100% on Retina.
+  - [ ] 3. Antialiasing off at width 1 and 5: hard edges, no grey fringe; hardness greyed out.
+  - [ ] 4. Color alpha 50%: one stroke uniform over itself; a second stroke darkens.
+  - [ ] 5. Right-drag (mouse) and Control-drag (trackpad): secondary color, no context menu.
+  - [ ] 6. `[`/`]` with key repeat: options bar tracks; `]` typed in the width field types, not steps.
+  - [ ] 7. Brush outline at 100/400/25% on 1× and 2× displays: follows pointer, matches dab size, visible on white/black/photos, resizes on `[`/`]`, hides leaving canvas and on switching to Pan; aliased width 1–4 snaps to painted pixels.
+  - [ ] 8. ⌘S mid-drag: save includes the stroke; exactly one "Undo Paintbrush" step.
+  - [ ] 9. Close/quit prompts after a real edit (⌘N, Return, paint, ⌘W sheet; Cancel/Don't Save; ⌘Q variant; undo-to-clean closes silently); relaunch starts on Paintbrush with the last width.

@@ -87,6 +87,14 @@ struct Tile: Equatable, Sendable {
         bytes.withUnsafeBufferPointer { $0.baseAddress }
             == other.bytes.withUnsafeBufferPointer { $0.baseAddress }
     }
+
+    /// A copy that no longer shares its buffer (the buffer is copied even when this
+    /// instance is already uniquely referenced). A painting stroke's before-snapshot
+    /// uses it so `TileDiff.between`'s `sharesStorage` fast path sees genuinely shared
+    /// storage only for tiles the stroke never wrote.
+    func cloneForStroke() -> Tile {
+        Tile(bytes: Array(bytes))
+    }
 }
 
 /// Sparse, copy-on-write 256×256-tiled RGBA8 pixel store (NF-4, APP-10, AGENTS rule 3).

@@ -44,6 +44,9 @@ final class CanvasToolSession: ToolContext {
 
     var colors: ColorSelection { model.colors }
 
+    /// 0013 returns the selection mask; until then nothing clips painting (spec 0009).
+    var paintClipMask: (any BrushClipMask)? { nil }
+
     var previousToolID: ToolID? { model.previousToolID }
 
     func activateTool(_ id: ToolID) {

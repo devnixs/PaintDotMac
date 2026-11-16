@@ -4,11 +4,10 @@ import Foundation
 /// What a tool may touch (spec 0006). The main document window's canvas session
 /// (`Canvas/CanvasToolSession.swift`) implements it; tests use `FakeToolContext`.
 ///
-/// Reserved extensions owned by later specs: 0009 adds `var paintClipMask` and the
-/// `.brushOutline` overlay case; 0012 adds `setColor(_:for:)`; 0013 adds the selection.
-/// Each spec that grows this protocol implements the new members in `CanvasToolSession`
-/// and `FakeToolContext`. `activateTool(_:)` and `previousToolID` live here so 0012 does
-/// not re-declare them.
+/// Reserved extensions owned by later specs: 0012 adds `setColor(_:for:)`; 0013 replaces
+/// the `paintClipMask` stub with the selection mask. Each spec that grows this protocol
+/// implements the new members in `CanvasToolSession` and `FakeToolContext`.
+/// `activateTool(_:)` and `previousToolID` live here so 0012 does not re-declare them.
 @MainActor
 protocol ToolContext: AnyObject {
     /// The document's image. Pixel writes go through `updateImage(_:)` +
@@ -22,6 +21,9 @@ protocol ToolContext: AnyObject {
     /// The app-wide primary/secondary pair (C-1); 0009 reads it at stroke start (TOOL-A) and
     /// 0012 adds the setter path through `AppModel.setColor(_:for:)`.
     var colors: ColorSelection { get }
+    /// The selection clip for painting tools (0009); nil = no selection (everything
+    /// paintable). 0013 fills it with the selection's antialiased mask.
+    var paintClipMask: (any BrushClipMask)? { get }
     /// The tool that was active before the current one (T-14's "switch to previous tool").
     var previousToolID: ToolID? { get }
     /// Requests a tool switch, deferred until the current event handler returns
@@ -62,6 +64,9 @@ protocol CanvasNavigating: AnyObject {
 enum ToolOverlay: Sendable, Equatable {
     /// Canvas space, standardized.
     case zoomRectangle(CGRect)
+    /// Canvas space, the brush circle's bounding square (spec 0009, D-38); drawn as the
+    /// ellipse inscribed in the view-mapped rect, hidden below `BrushOutline.minimumViewDiameter`.
+    case brushOutline(CGRect)
 }
 
 /// The cursor a tool requests. `location nil` in `Tool.cursor(at:modifiers:)` means the

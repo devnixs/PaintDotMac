@@ -103,6 +103,7 @@ struct ToolRegistry {
         ToolRegistry(factories: [
             .zoom: { ZoomTool() },
             .pan: { PanTool() },
+            .paintbrush: { PaintbrushTool() },
         ])
     }
 

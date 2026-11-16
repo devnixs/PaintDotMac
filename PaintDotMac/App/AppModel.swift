@@ -13,6 +13,9 @@ final class AppModel {
     @ObservationIgnored let dispatcher: ToolDispatcher
     @ObservationIgnored private let registry: ToolRegistry
     @ObservationIgnored private let defaults: UserDefaults
+    /// The suite this model persists to — tests re-read it as a relaunch (0006/0007/0009
+    /// persistence tests); nothing in the app reads it.
+    var defaultsForTests: UserDefaults { defaults }
 
     /// Mirrors of the dispatcher's state, updated from `dispatcher.onStateChange`.
     private(set) var activeToolID: ToolID

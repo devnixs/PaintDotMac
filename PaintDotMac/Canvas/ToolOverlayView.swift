@@ -19,10 +19,21 @@ final class ToolOverlayView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard case .zoomRectangle(let rect)? = overlay, let canvasView else { return }
+        guard let canvasView else { return }
+        switch overlay {
+        case .zoomRectangle(let rect)?:
+            drawZoomRectangle(rect, transform: canvasView.transform)
+        case .brushOutline(let rect)?:
+            drawBrushOutline(rect, transform: canvasView.transform)
+        case nil:
+            break
+        }
+    }
+
+    private func drawZoomRectangle(_ rect: CGRect, transform: CanvasTransform) {
         // 1 pt white under a 1 pt black dashed line, inset half a point so the stroke lands
         // on the rect's edge (static, not animated — Paint.NET's marquee minus the ants).
-        let viewRect = canvasView.transform.canvasRectToView(rect).insetBy(dx: 0.5, dy: 0.5)
+        let viewRect = transform.canvasRectToView(rect).insetBy(dx: 0.5, dy: 0.5)
         guard viewRect.width > 0, viewRect.height > 0 else { return }
         NSGraphicsContext.current?.imageInterpolation = .none
 
@@ -36,5 +47,27 @@ final class ToolOverlayView: NSView {
         dashes.setLineDash([4, 4], count: 2, phase: 0)
         NSColor.black.setStroke()
         dashes.stroke()
+    }
+
+    /// The brush circle (spec 0009, D-38): the ellipse inscribed in the view-mapped square
+    /// — identical to `BrushOutline.viewRect` — as a 1 pt white circle under a 1 pt black
+    /// circle, inset 0.5 pt, so it stays visible on any background. Below
+    /// `BrushOutline.minimumViewDiameter` points nothing is drawn (the crosshair cursor
+    /// alone marks the spot). Nothing allocates with the outline's size — a width-2000
+    /// circle at 3200 % is just one clipped ellipse path.
+    private func drawBrushOutline(_ rect: CGRect, transform: CanvasTransform) {
+        let viewRect = transform.canvasRectToView(rect)
+        guard viewRect.width >= BrushOutline.minimumViewDiameter,
+              viewRect.height >= BrushOutline.minimumViewDiameter else { return }
+        let circle = viewRect.insetBy(dx: 0.5, dy: 0.5)
+        let underline = NSBezierPath(ovalIn: circle)
+        underline.lineWidth = 1
+        NSColor.white.setStroke()
+        underline.stroke()
+
+        let overline = NSBezierPath(ovalIn: circle)
+        overline.lineWidth = 1
+        NSColor.black.setStroke()
+        overline.stroke()
     }
 }

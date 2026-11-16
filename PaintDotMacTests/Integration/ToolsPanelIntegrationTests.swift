@@ -141,9 +141,10 @@ struct ToolsPanelIntegrationTests {
             let harness = try await openFixture(fixtures, named: "tools-panel.png")
             defer { finish(harness) }
 
-            let openedWithPan = harness.appModel.activeToolID
+            let openedWith = harness.appModel.activeToolID
             #expect(harness.shortcut("h"))
-            #expect(openedWithPan == .pan)
+            #expect(openedWith == .paintbrush, "D-35 / spec 0009: opens on the Paintbrush")
+            #expect(harness.appModel.activeToolID == .pan, "h selects Pan")
 
             let window = harness.window
             let identifier = window.identifier?.rawValue

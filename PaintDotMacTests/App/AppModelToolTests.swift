@@ -34,11 +34,12 @@ struct AppModelToolTests {
         let (suite, name) = makeSuite()
         defer { discard(name) }
         let model = AppModel(defaults: suite)   // standard registry
-        #expect(model.activeToolID == .pan)
+        // D-35 / spec 0009: the Paintbrush is the start tool.
+        #expect(model.activeToolID == .paintbrush)
         #expect(model.previousToolID == nil)
         model.selectTool(.zoom)
         #expect(model.activeToolID == .zoom)
-        #expect(model.previousToolID == .pan)
+        #expect(model.previousToolID == .paintbrush)
         #expect(model.dispatcher.hasPendingEdit == model.hasPendingToolEdit)
     }
 
@@ -54,8 +55,8 @@ struct AppModelToolTests {
         let (suite, name) = makeSuite()
         defer { discard(name) }
         let model = AppModel(defaults: suite)
-        #expect(model.implementedTools.map(\.id) == [.zoom, .pan])
-        #expect(model.implementedTools.map(\.displayName) == ["Zoom", "Pan"])
+        #expect(model.implementedTools.map(\.id) == [.zoom, .pan, .paintbrush])
+        #expect(model.implementedTools.map(\.displayName) == ["Zoom", "Pan", "Paintbrush"])
     }
 
     /// D-35: selecting a tool writes nothing; a relaunch starts on the default tool.
@@ -65,7 +66,7 @@ struct AppModelToolTests {
         let suite = UserDefaults(suiteName: suiteName)!
         let model = AppModel(defaults: suite)
         model.selectTool(.zoom)
-        #expect(AppModel(defaults: suite).activeToolID == .pan)
+        #expect(AppModel(defaults: suite).activeToolID == .paintbrush)
         suite.synchronize()
         #expect(suite.persistentDomain(forName: suiteName)?.isEmpty ?? true,
                 "selecting a tool must not write to the suite (D-35)")

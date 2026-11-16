@@ -15,7 +15,7 @@ struct ToolSessionIntegrationTests {
         let model = AppModel(defaults: UserDefaults(suiteName: suiteName)!)
         let context = FakeToolContext()
         model.dispatcher.setContext(context)
-        #expect(model.activeToolID == .pan)
+        #expect(model.activeToolID == .paintbrush, "D-35 start tool")
 
         // "z" selects the Zoom tool.
         #expect(model.dispatcher.handleShortcut(

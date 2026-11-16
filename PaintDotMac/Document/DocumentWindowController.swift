@@ -242,6 +242,11 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
             canvasView.inputRouter = router
             toolSession = session
             inputRouter = router
+            // The `document` setter may have fired before this window existed (the window
+            // is lazy-loaded), in which case its attach found no session. Re-attach here so
+            // both orders land the bridge and the document on the new session.
+            session.document = self.document as? PaintDocument
+            attachBridge()
         } else {
             toolSession = nil
             inputRouter = nil

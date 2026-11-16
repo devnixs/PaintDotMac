@@ -70,13 +70,25 @@ final class FakeToolContext: ToolContext {
     var previousToolID: ToolID?
     /// Settable so a tool test can drive one pair of colors (0007).
     var colors: ColorSelection = .default
+    /// Settable so a test can install a clip (0009; 0013's selection tests).
+    var paintClipMask: (any BrushClipMask)?
+    /// Counts `updateImage` calls (0009).
+    private(set) var imageUpdates: Int = 0
+    /// The image lives in `state.image` (0009): `updateImage` opens `state` to its
+    /// closure, so `PaintbrushTool`'s per-event writes land in the one storage and
+    /// survive across events — the stroke's `begin` snapshot, its live writes and the
+    /// commit's diff all read the same image.
+    private var imageStorage: LayeredImage {
+        get { state.image }
+        set { state.image = newValue }
+    }
 
     private(set) var activatedTools: [ToolID] = []
     private(set) var overlays: [ToolOverlay?] = []
     private(set) var cursorInvalidations = 0
 
-    init(size: PixelSize = PixelSize(width: 64, height: 64)) {
-        state = DocumentState(image: .blank(size: size, fill: .clear))
+    init(size: PixelSize = PixelSize(width: 64, height: 64), background: ColorRGBA8 = .clear) {
+        state = DocumentState(image: .blank(size: size, fill: background))
         history = HistoryStack(base: .newImage)
     }
 
@@ -95,6 +107,13 @@ final class FakeToolContext: ToolContext {
     }
 
     func updateImage(_ body: (inout LayeredImage) -> Void) {
+        imageUpdates += 1
         body(&state.image)
+    }
+
+    /// Runs a navigation step on the fake's `HistoryStack` (tools test undo/redo
+    /// without an `UndoBridge`; 0009's property tests).
+    func navigateForTests(_ step: (inout HistoryStack, inout DocumentState) -> Void) {
+        step(&history, &state)
     }
 }

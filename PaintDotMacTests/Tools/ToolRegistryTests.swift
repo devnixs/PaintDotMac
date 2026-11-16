@@ -64,14 +64,14 @@ struct ToolRegistryTests {
         #expect(!ToolRegistry.allShortcutKeys.contains("d"))
     }
 
-    @Test func standardRegistersZoomAndPan() {
+    @Test func standardRegistersPaintbrush() {
         // Later tool specs extend this list as they register their tool.
-        #expect(ToolRegistry.standard().implementedIDs == [.zoom, .pan])
+        #expect(ToolRegistry.standard().implementedIDs == [.zoom, .pan, .paintbrush])
         #expect(ToolRegistry.standard().makeTool(.zoom) is ZoomTool)
         #expect(ToolRegistry.standard().makeTool(.pan) is PanTool)
+        #expect(ToolRegistry.standard().makeTool(.paintbrush) is PaintbrushTool)
         #expect(ToolRegistry.standard().makeTool(.recolor) == nil)
         #expect(ToolRegistry.standard().isImplemented(.zoom))
-        #expect(!ToolRegistry.standard().isImplemented(.paintbrush))
     }
 
     private func stubRegistry(_ ids: [ToolID]) -> ToolRegistry {
@@ -97,11 +97,25 @@ struct ToolRegistryTests {
         #expect(registry.shortcutGroup(for: "s") == [.rectangleSelect, .magicWand])
     }
 
-    /// D-35: the Paintbrush once 0009 registers it; the Pan tool until then; otherwise the
-    /// first implemented tool.
+    /// D-35 (0009 landed): the app starts with the Paintbrush; the Pan tool is the fallback
+    /// for registries without it; otherwise the first implemented tool.
     @Test func defaultTool() {
-        #expect(ToolRegistry.standard().defaultToolID == .pan)
+        #expect(ToolRegistry.standard().defaultToolID == .paintbrush)
         #expect(stubRegistry([.pan, .paintbrush]).defaultToolID == .paintbrush)
+        #expect(stubRegistry([.zoom, .pan]).defaultToolID == .pan)
         #expect(stubRegistry([.zoom]).defaultToolID == .zoom)
+    }
+
+    /// 0009 *Acceptance*: the standard registry starts on the Paintbrush (D-35), B's group
+    /// is just the Paintbrush today, and a fresh dispatcher starts there with no previous
+    /// tool.
+    @Test func defaultToolIsPaintbrush() {
+        let registry = ToolRegistry.standard()
+        #expect(registry.defaultToolID == .paintbrush)
+        #expect(registry.implementedIDs.contains(.paintbrush))
+        #expect(registry.shortcutGroup(for: "b") == [.paintbrush])
+        let dispatcher = ToolDispatcher(registry: registry)
+        #expect(dispatcher.activeToolID == .paintbrush)
+        #expect(dispatcher.previousToolID == nil)
     }
 }
