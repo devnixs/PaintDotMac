@@ -90,10 +90,9 @@ struct Selection: Sendable, Equatable {
     func inverted() -> Selection? {
         let invertedMask = mask.inverted()
         guard !invertedMask.isEmpty else { return nil }
-        // Canvas minus the outline as a nonzero-winding compound: the canvas rect plus
-        // the reversed selection path — pixels inside the hole wind to zero. Equivalent
-        // to `canvasPath.subtracting(path)` without the polygon-clip cost (NF-1), and
-        // the ants run along both the canvas border and the hole, as in Paint.NET.
+        // Canvas minus the outline as a nonzero-winding compound produced by the
+        // CoreGraphics boolean: the ants run along both the canvas border and the hole,
+        // as in Paint.NET (EditMenu.html).
         let outline = Self.canvasPath(canvasSize).subtracting(path)
         return Selection(canvasSize: canvasSize, path: outline, mask: invertedMask)
     }

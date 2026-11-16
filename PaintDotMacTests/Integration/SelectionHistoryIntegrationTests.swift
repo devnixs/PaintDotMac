@@ -18,7 +18,13 @@ struct SelectionHistoryIntegrationTests {
         let memoryOptions = InMemoryToolOptionStore()
         var options: any ToolOptionStore { memoryOptions }
         var colors: ColorSelection = .default
-        var paintClipMask: (any BrushClipMask)?
+        /// Like `CanvasToolSession` (0013): the document's selection mask clips painting,
+        /// with the pixel-identical `isFull` shortcut, so the random sessions below
+        /// interleave *clipped* strokes with selection steps (TOOL-B under undo/redo).
+        var paintClipMask: (any BrushClipMask)? {
+            guard let selection = bridge.state.selection, !selection.mask.isFull else { return nil }
+            return selection.mask
+        }
         var selection: Selection? { bridge.state.selection }
         var previousToolID: ToolID?
         var image: LayeredImage { bridge.state.image }

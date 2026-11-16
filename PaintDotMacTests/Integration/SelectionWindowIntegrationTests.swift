@@ -315,6 +315,38 @@ struct SelectionWindowIntegrationTests {
         }
     }
 
+    @Test func antsFollowZoom() async throws {
+        // The `onTransformChange` hook re-renders the outline under the new transform
+        // (0013 item 14c) — the path stays glued to the image border.
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openWhiteFixture(fixtures)
+            defer { finish(harness) }
+            harness.perform(NSSelectorFromString("selectAll:"))
+            pumpMainRunLoop()
+            let dash = try #require(overlay(harness).dashLayer)
+            let canvasRect = CGRect(x: 0, y: 0, width: 200, height: 200)
+
+            let assertPathMatchesCanvasRect = { (label: String) throws in
+                let transform = harness.canvasView.transform
+                let box = try #require(dash.path, "ants path missing (\(label))")
+                    .boundingBoxOfPath
+                let expected = transform.canvasRectToView(canvasRect)
+                #expect(abs(box.minX - expected.minX) < 1e-6 && abs(box.minY - expected.minY) < 1e-6
+                        && abs(box.maxX - expected.maxX) < 1e-6 && abs(box.maxY - expected.maxY) < 1e-6,
+                        "\(label): ants path \(box) vs image rect \(expected)")
+            }
+            try assertPathMatchesCanvasRect("initial zoom")
+
+            let zoomBefore = harness.canvasView.transform.zoom
+            harness.perform(NSSelectorFromString("zoomIn:"))
+            pumpMainRunLoop()
+            #expect(harness.canvasView.transform.zoom > zoomBefore, "zoomIn changed the zoom")
+            try assertPathMatchesCanvasRect("after zoomIn")
+        }
+    }
+
     @Test func initialSelectionIsNotAStep() async throws {
         try await TestRunGate.withLock {
             let fixtures = try FixtureFiles()

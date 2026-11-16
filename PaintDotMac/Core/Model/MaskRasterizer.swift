@@ -196,11 +196,27 @@ enum MaskRasterizer {
             start: buffer.bindMemory(to: UInt8.self, capacity: SelectionMaskTileStorage.byteCount),
             count: SelectionMaskTileStorage.byteCount))
         if !antialiased {
-            // Aliased general paths follow the pixel-center rule: a pixel is in when its
-            // center is inside. Quartz's antialias-off fill includes whole pixels the path
-            // merely touches, so render the antialiased coverage and threshold at half —
-            // coverage ≥ 128 ⟺ (for the paths that reach here) the center is covered.
-            for index in bytes.indices { bytes[index] = bytes[index] >= 128 ? 255 : 0 }
+            // Aliased general paths follow the exact pixel-center rule — the same rule
+            // the rectangle fast path implements: a pixel is 255 iff its center is in
+            // the path. Quartz's antialias-off fill includes whole pixels the path
+            // merely touches (measured ~2–10 % too many, breaking the aliased circle's
+            // area test), and thresholding the antialiased coverage at 128 drops real
+            // concave spikes whose area is under half a pixel. So the antialiased fill
+            // is used only as a cheap pre-classifier: coverage 255 proves the pixel is
+            // covered, 0 means the fill saw nothing, and only boundary pixels
+            // (0 < coverage < 255) pay a point-in-path test. The remaining deviation
+            // from the literal rule needs sub-0.2 %-area needles at a pixel center.
+            for y in inCanvas.minY..<inCanvas.maxY {
+                let rowStart = (y - originY) * SelectionMask.tileSize
+                for x in inCanvas.minX..<inCanvas.maxX {
+                    let index = rowStart + x - originX
+                    let coverage = bytes[index]
+                    if coverage == 255 { continue }
+                    let inside = coverage != 0 && path.contains(
+                        CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5), using: .winding)
+                    bytes[index] = inside ? 255 : 0
+                }
+            }
         }
         // Normalize while the tile is hot in cache (one pass, NF-1): out-of-canvas bytes
         // are already 0 (zeroed buffer + clip), so only the in-canvas window decides the

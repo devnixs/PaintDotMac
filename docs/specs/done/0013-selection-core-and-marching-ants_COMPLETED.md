@@ -346,18 +346,20 @@ identical to the unclipped 0011 numbers — the cached mask read is free per pix
 Test additions (13 new files, 102 declared cases; parameterized suites expand to ~250
 runtime cases; all headless):
 - Unit (Swift Testing): `SelectionMaskTests` (11: normalization, `isEmpty`/`isFull`,
-  coverage reads vs an independent scanline oracle, invert/combine constant fast paths,
-  bounds), `MaskRasterizerTests` (10: rect/ellipse/line paths vs the same independent
-  coverage oracle, edge coverage values 32/64/128/192/224 hand-derived from Quartz's
-  box-filter weights, aliased pixel-center rule, off-canvas clipping, determinism),
+  coverage reads vs an independent per-pixel `ReferenceMask` oracle, invert/combine
+  constant fast paths, storage sharing, bounds), `MaskRasterizerTests` (11: rect/ellipse/
+  line paths vs expectations hand-derived from the spec formulas — edge coverage
+  `round(255·ox·oy)` (128/143), the aliased pixel-center rule for fast path *and* general
+  paths, off-canvas clipping, determinism),
   `SelectionTests` (15: pixel-center contains, border-in/next-canvas-out, invert algebra,
   `Combine`, equality, `DocumentState.selection` invariants),
   `SelectionCombineModeTests` (2 parameterized tables: the per-pixel combine table and
   the constant fast paths agree with the per-pixel oracle),
   `SelectionAlgebraPropertyTests` (13 seeded properties incl. a 3-op mask algebra oracle
-  and `Selection == Selection?`), `MarchingAntsTests` (4 + the 4-case `ReduceMotion`
-  policy table: view-space dash geometry, phase walk −3 px/s over phase 8, static when
-  motion is reduced or the canvas is ≤ 1 px), `SelectionHistoryItemTests` (4),
+  and `Selection == Selection?`), `MarchingAntsTests` (4: the mode table — hidden for no
+  selection, animated/static by Reduce Motion — the dash/phase/duration constants, and
+  the view-path bounding box matching `canvasToView` at zoom 2 and at the 1 %/3200 %
+  extremes), `SelectionHistoryItemTests` (4),
   `HistoryChangeTests` (2: `.selection` merge/isNoOp), `SelectionCommandTests` (9:
   Select All / Deselect / Invert no-op rules, step names, Combine modes).
 - Integration (headless real document windows): `SelectionClippingIntegrationTests`
@@ -367,9 +369,11 @@ runtime cases; all headless):
   `["Open Image", "Select All", "Invert Selection"]`, no-op commands add no step (H-6),
   pixel/selection undo independence, snapshot items restore selections, budget folding,
   pending stroke commits before a command, 100-session seeded undo/redo identity),
-  `SelectionWindowIntegrationTests` (12: ⌘A/⌘D/⌘I menu actions, marching-ants overlay
-  presence/animation/static-under-Reduce-Motion via the injectable clock, ants follow
-  zoom/pan, overlay never captures clicks).
+  `SelectionWindowIntegrationTests` (13: ⌘A/⌘D/⌘I menu actions, enablement, undo titles,
+  History panel rows, marching-ants presence/animation/static via the
+  `reduceMotionOverride` seam (the animation itself is render-server driven, no clock is
+  injected), ants following zoom, the initial-selection seam, overlay never captures
+  clicks, and real saved pixels clipped by the selection and its inverse).
 - Performance (XCTest): `SelectionPerformanceTests` (4 gated measurements above).
 - Contract updates: `MainMenuTests` Edit menu now asserts the three selection items;
   `UndoBridgeTests`/`HistoryCostTests`/`CanvasTransformTests` gained the `.selection`
@@ -379,8 +383,16 @@ runtime cases; all headless):
   `paintClipMask` (0009's reserved hook now filled).
 
 Notes:
-- Aliased general-path rasterization fills antialiased and thresholds at ≥ 128 to match
-  Paint.NET's pixel-center rule (Quartz's antialias-off fill includes touched pixels).
+- Aliased general-path rasterization implements the exact pixel-center rule (the same
+  rule the rectangle fast path pins): the antialiased fill pre-classifies each pixel and
+  every pixel with partial coverage is decided by `path.contains(center, .winding)`.
+  Measured evidence: Quartz's antialias-off fill counts whole pixels the path merely
+  touches (+10 % on a triangle, +2.7 % on the r-40 circle — outside the acceptance
+  test's 1 %), and a coverage threshold at 128 drops thin concave spikes whose centers
+  are inside (a 10-point star loses 8 pixels). The spec's literal
+  `setShouldAntialias(false)` wording and its own ≤ 1 %-area aliased-circle criterion
+  are contradictory; the pixel-center rule — stated normatively for rectangles — is the
+  one implemented everywhere and tested (`aliasedGeneralPathUsesPixelCenters`).
 - `SelectionMask.bounds` is memoized lazily (immutable, benign double-compute); the
   rasterizer, `inverted`, and `combined` normalize once while tiles are hot (NF-1) —
   `SelectionMask(normalizedTiles:)` trusts them, the public init keeps the defensive pass.
@@ -392,4 +404,63 @@ Notes:
   - [ ] Select All on 4000×3000, then paint → no beachball, Activity Memory (Inspector) shows < 256 MB for the mask.
   - [ ] ⌘Z / ⇧⌘Z alternate painting and selection steps correctly, and the History panel shows "Select All", "Deselect", "Invert Selection".
 
-Review: pending.
+Review: complete (independent reviewer, 2026-11-16). Every acceptance criterion traced to
+a failing-if-broken test; oracle expectations are hand-derived from the spec formulas or
+the independent per-pixel `ReferenceMask`, never copied from code output. Criteria traced:
+combine table (`exhaustiveTable`, all 65,536 pairs), algebra laws (13 seeded properties vs
+`ReferenceMask`), tile fast paths (`fastPathsMatchPerPixelOracle`, 4×4 tile-kind pairs ×
+5 modes), normalization/bounds/out-of-canvas zeros (`normalization`, `boundsAreTight`,
+`edgeTileOutOfCanvasStaysZero`), rasterizer placement (`integerRectIsExact`,
+`triangleOrientation`, `circleAntialiased`, `rectAcrossTileSeams`, tile shortcut on
+65,535²),
+path booleans + border (`combinePaths`, `invertedIncludesCanvasBorder`), nil-when-empty
+(`emptyResultsAreNil`, command no-op tests), TOOL-B clipping with hand-computed 0009 blend
+pixels (`SelectionClippingIntegrationTests`, incl. the (127,127,127,255) half-coverage
+pixel and `clipCapturedAtMouseDown`), menu titles/shortcuts/exclusivity
+(`editMenuSelectionItems`), enablement (`enablement`, `menuEnablement`), step names/icons/
+undo/redo (`selectAllDeselectInvertSession`, window undo titles, History panel rows),
+`.selection` change + merge table (`selectionChangeCallback`, `mergeTable`), history cost
+(`selectionBytes*` incl. partial×partial storage reuse identity), ants mode/constants/
+transform (`MarchingAntsTests`, `antsModeFollowsSelection`,
+`reduceMotionMakesAntsStatic`, new `antsFollowZoom`), the two test seams
+(`initialSelectionIsNotAStep`, `setInitialSelection` through `paintingIsClippedToSelection`
+saved-pixel checks), H-5 folding and H-6 no-ops (`budgetFoldingKeepsSelectionState`,
+`noOpAddsNoStepThroughMenu`), D-13 riding history (100-session seeded undo/redo identity,
+now with genuinely clipped strokes — see fixes). Uncertainties settled: (1) the aliased
+rule is the pixel-center rule everywhere (evidence in the Notes above; the ≥128 threshold
+was replaced — `aliasedGeneralPathUsesPixelCenters` pins it, sensitivity guard included);
+(2) inverted selections compare correctly because undo replays the stored value and the
+mask round-trips byte-exactly (`invertTwiceIsIdentity`, `selectionInvertTwiceRestoresMask`
+— path CFEqual differences across equivalent forms never affect a no-op rule or history
+outcome); (3) selection steps ride the 0008 budget/fold machinery unchanged — folding only
+drops the *oldest* steps and the base then carries their state
+(`budgetFoldingKeepsSelectionState`); (4) the clip is frozen at mouse-down (window-level
+`commandDisabledDuringGestureAndStrokeCommitsOnRelease` + `clipCapturedAtMouseDown`);
+(5) ants animate via a render-server `CABasicAnimation` (no clock seam exists or is
+needed; the old note claiming one was corrected), Reduce Motion is the
+`reduceMotionOverride` seam, `hitTest` returns nil, and the overlay holds no document
+reference (weak from the controller, value-type selection inside).
+Mutation checks — all six caught: `exclude` algebra → `exhaustiveTable` (65,283 issues);
+rect coverage rounding `toNearestOrAway`→`towardZero` → `halfPixelRectCoverage`;
+`FakeToolContext.paintClipMask` ignoring the selection → 5 clipping tests; removing the
+H-6 no-op guard → `selectAllWhenAllSelectedIsNoOp`; dropping all-255→`.full`
+normalization → `normalization`; threshold-128 aliased rule →
+`aliasedGeneralPathUsesPixelCenters` (8 pixels). Fixed: aliased general-path rasterization
+now implements the exact pixel-center rule (was AA-fill ≥128 threshold, wrong on concave
+spikes; Quartz AA-off was also measured non-conforming); stale comment in
+`Selection.inverted()` describing a path-boolean implementation the code does not use;
+duplicated `container.addSubview(overlay)` during window assembly; the random-session
+fixture's `paintClipMask` was a stored `nil` so its "clipped stroke" branch never clipped
+— it now mirrors `CanvasToolSession` (selection mask + `isFull` shortcut), making
+`randomSessionUndoRedoIdentity` exercise TOOL-B under undo/redo. Tests added:
+`aliasedGeneralPathUsesPixelCenters` (star, contains-rule oracle) and window-level
+`antsFollowZoom`. Crash/rule audit clean: no force unwraps outside tests (test fixtures
+use `#require`/`!` per policy), the two `precondition`s are programmer-error guards on
+unreachable empty sizes (APP-10), tile indexing has no overflow at 65,535-class sizes
+(`wideStripGrid`, `hugeSelectAllHasNoStorage` — no 12 MB allocations), `Core` imports only
+Foundation/CoreGraphics/Dispatch, `MainActor.assumeIsolated` uses match the existing
+codebase pattern, no pixels bypass history, headless compliance verified
+(`noVisibleWindows`, no UI-test hooks). Gate: full `quality-gate.sh` GREEN — clean Debug
+build with no compiler warnings, 1112 tests passed, 0 failed, 0 skipped, no crash reports
+during the run; the four `SelectionPerformanceTests` latency assertions (the numbers
+above, re-gated at 3× targets) passed in the same run.

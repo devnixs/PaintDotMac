@@ -134,12 +134,11 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
             // below the tool overlay; `hitTest` returns nil so it never eats events.
             let ants = MarchingAntsOverlay(frame: canvasFrame)
             ants.autoresizingMask = [.width, .height]
-            container.addSubview(overlay)
-            container.addSubview(ants, positioned: .below, relativeTo: overlay)
-            marchingAntsOverlay = ants
             overlay.autoresizingMask = [.width, .height]
             overlay.canvasView = canvasView
             container.addSubview(overlay)
+            container.addSubview(ants, positioned: .below, relativeTo: overlay)
+            marchingAntsOverlay = ants
             overlayView = overlay
         }
         container.addSubview(statusBar)

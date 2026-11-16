@@ -151,6 +151,41 @@ struct MaskRasterizerTests {
                 "255-pixel count ≈ πr² (\(count) vs \(expected))")
     }
 
+    @Test(.timeLimit(.minutes(1))) func aliasedGeneralPathUsesPixelCenters() {
+        // The aliased rule for general paths is the same pixel-center rule the rectangle
+        // fast path implements — the oracle is `path.contains(center, .winding)` per
+        // pixel. A concave star makes it sharp: its thin spikes antialiase to below-half
+        // coverage while their centers are inside (a coverage threshold at 128 would
+        // drop them), and one pixel is above-half covered while its center is outside.
+        let star = CGMutablePath()
+        for index in 0..<10 {
+            let radius = index.isMultiple(of: 2) ? 60.0 : 8.0
+            let angle = Double(index) * .pi / 5
+            let point = CGPoint(x: 64 + radius * cos(angle), y: 64 + radius * sin(angle))
+            if index == 0 { star.move(to: point) } else { star.addLine(to: point) }
+        }
+        star.closeSubpath()
+        let mask = MaskRasterizer.rasterize(star, size: PixelSize(width: 128, height: 128),
+                                            antialiased: false)
+        let antialiased = MaskRasterizer.rasterize(star, size: PixelSize(width: 128, height: 128),
+                                                   antialiased: true)
+        var centerInsideLowCoverage = 0
+        for y in 0..<128 {
+            for x in 0..<128 {
+                let centerInside = star.contains(CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5),
+                                                 using: .winding)
+                let value = mask.coverage(x: x, y: y)
+                #expect(value == (centerInside ? 255 : 0),
+                        "(\(x), \(y)): center inside=\(centerInside)")
+                if centerInside, antialiased.coverage(x: x, y: y) < 128 {
+                    centerInsideLowCoverage += 1
+                }
+            }
+        }
+        // Sensitivity guard: the case the rule must handle really occurs in this path.
+        #expect(centerInsideLowCoverage > 0, "center-in pixels with coverage < 128 exist")
+    }
+
     @Test(.timeLimit(.minutes(1))) func largeCircleSpanningManyTiles() {
         let circle = CGPath(ellipseIn: CGRect(x: 1000, y: 500, width: 2000, height: 2000),
                             transform: nil)
