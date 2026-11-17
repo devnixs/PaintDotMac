@@ -130,6 +130,21 @@ struct Selection: Sendable, Equatable {
         return Selection(canvasSize: canvasSize, path: combinedPath, mask: combinedMask)
     }
 
+    /// The selection after a canvas crop to `rect` (spec 0022): `canvasSize = rect.size`,
+    /// the mask cropped and moved to the origin (`SelectionMask.cropped(to:)`), and the
+    /// outline translated by `(−rect.x, −rect.y)` — clipped to the new canvas by
+    /// `init(mask:outline:)`. `nil` when the cropped mask is empty.
+    func translatedAndCropped(to rect: PixelRect) -> Selection? {
+        let croppedMask = mask.cropped(to: rect)
+        let outline = path.copying(using: CGAffineTransform(translationX: -CGFloat(rect.x),
+                                                            y: -CGFloat(rect.y)))
+            ?? CGPath(rect: CGRect(origin: .zero,
+                                   size: CGSize(width: rect.size.width,
+                                                height: rect.size.height)),
+                       transform: nil)
+        return Selection(mask: croppedMask, outline: outline)
+    }
+
     static func == (lhs: Selection, rhs: Selection) -> Bool {
         lhs.canvasSize == rhs.canvasSize && lhs.mask == rhs.mask
             && CFEqual(lhs.path, rhs.path)

@@ -497,4 +497,111 @@ struct SelectionMask: Sendable, Equatable {
     }
 }
 
+// Spec 0022: the selection crop (extends 0013's type — no parallel type).
+extension SelectionMask {
+    /// The coverage inside `rect` (in this mask's coordinates), moved to the origin;
+    /// `size = rect.size` (spec 0022, `CropToSelection`). Precondition: `rect` is
+    /// non-empty and inside `0..<size`. Tile-aware (NF-4): when `rect.x` and `rect.y`
+    /// are multiples of 256, a destination tile whose source tile lies fully inside
+    /// `rect` reuses the source tile — same storage, `.full`/`.empty` included.
+    /// Otherwise each destination tile inspects the source tiles it overlaps: all
+    /// `.full` → `.full`, all `.empty` → `.empty`, anything else copies the coverage
+    /// rows (`memcpy` for `.partial`, `memset` for `.full`) — no per-pixel `coverage`
+    /// lookups. The result goes through `init(size:tiles:)`, so it is normalized like
+    /// every other mask.
+    func cropped(to rect: PixelRect) -> SelectionMask {
+        precondition(!rect.isEmpty && rect.x >= 0 && rect.y >= 0
+                     && rect.maxX <= size.width && rect.maxY <= size.height,
+                     "crop rect \(rect) outside \(size.bounds)")
+        let newSize = rect.size
+        let columns = max(1, Self.gridColumns(size: newSize))
+        let rows = Self.gridRows(size: newSize)
+        let aligned = rect.x % Self.tileSize == 0 && rect.y % Self.tileSize == 0
+        let baseColumn = rect.x / Self.tileSize
+        let baseRow = rect.y / Self.tileSize
+        var tiles: [SelectionMaskTile] = []
+        tiles.reserveCapacity(rows * columns)
+        for row in 0..<rows {
+            for column in 0..<columns {
+                let tileRect = PixelRect(x: column * Self.tileSize, y: row * Self.tileSize,
+                                         width: Self.tileSize, height: Self.tileSize)
+                if aligned, tileRect.maxX <= newSize.width, tileRect.maxY <= newSize.height {
+                    // The destination tile maps 1:1 onto a fully-in-`rect` source tile.
+                    tiles.append(tile(at: TileCoordinate(column: baseColumn + column,
+                                                         row: baseRow + row)))
+                    continue
+                }
+                let area = tileRect.intersection(newSize.bounds)
+                guard !area.isEmpty else {
+                    tiles.append(.empty)
+                    continue
+                }
+                // The source-side rect whose mask tiles feed this destination tile.
+                let source = PixelRect(x: rect.x + area.minX, y: rect.y + area.minY,
+                                       width: area.width, height: area.height)
+                let firstColumn = source.minX >> 8, lastColumn = (source.maxX - 1) >> 8
+                let firstRow = source.minY >> 8, lastRow = (source.maxY - 1) >> 8
+                var allFull = true
+                var anyCoverage = false
+                for sourceRow in firstRow...lastRow {
+                    for sourceColumn in firstColumn...lastColumn {
+                        switch tile(at: TileCoordinate(column: sourceColumn, row: sourceRow)) {
+                        case .empty: allFull = false
+                        case .full: anyCoverage = true
+                        case .partial: allFull = false; anyCoverage = true
+                        }
+                    }
+                }
+                if allFull {
+                    tiles.append(.full)   // `.full` means every IN-CANVAS pixel is 255
+                    continue
+                }
+                guard anyCoverage else {
+                    tiles.append(.empty)
+                    continue
+                }
+                var bytes = [UInt8](repeating: 0, count: SelectionMaskTileStorage.byteCount)
+                bytes.withUnsafeMutableBytes { destination in
+                    for sourceRow in firstRow...lastRow {
+                        for sourceColumn in firstColumn...lastColumn {
+                            let overlap = source.intersection(PixelRect(
+                                x: sourceColumn << 8, y: sourceRow << 8,
+                                width: Self.tileSize, height: Self.tileSize))
+                            guard !overlap.isEmpty else { continue }
+                            switch tile(at: TileCoordinate(column: sourceColumn,
+                                                           row: sourceRow)) {
+                            case .empty:
+                                break   // the zero-initialized padding stays zero
+                            // `overlap` is in SOURCE coordinates; the destination row
+                            // is (y − rect.y) in the crop's grid, the source row is y.
+                            case .full:
+                                for y in overlap.minY..<overlap.maxY {
+                                    let start = ((y - rect.y - area.minY) << 8)
+                                        + (overlap.minX - source.minX)
+                                    memset(destination.baseAddress!
+                                               .advanced(by: start), 255, overlap.width)
+                                }
+                            case .partial(let storage):
+                                storage.bytes.withUnsafeBytes { coverage in
+                                    for y in overlap.minY..<overlap.maxY {
+                                        let start = ((y - rect.y - area.minY) << 8)
+                                            + (overlap.minX - source.minX)
+                                        let from = ((y & 255) << 8) | (overlap.minX & 255)
+                                        UnsafeMutableRawBufferPointer(rebasing:
+                                            destination[start..<start + overlap.width])
+                                            .copyMemory(from: UnsafeRawBufferPointer(
+                                                rebasing: coverage[from..<from + overlap.width]))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                tiles.append(.partial(SelectionMaskTileStorage(bytes: bytes)))
+            }
+        }
+        return SelectionMask(size: newSize, tiles: tiles)
+    }
+}
+
 extension SelectionMask: BrushClipMask {}

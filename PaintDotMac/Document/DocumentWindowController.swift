@@ -599,6 +599,40 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
 
     private enum ClipboardCommand { case copy, cut, paste }
 
+    // MARK: - Crop to Selection (Image menu, spec 0022)
+
+    /// The responder-chain action for Image > Crop to Selection (target nil). Ignores a
+    /// gesture in progress; the active tool's pending edit commits first
+    /// (`prepareForNavigation`, reason `.command` — 0020: floating pixels record
+    /// "Finish Pixels" before the crop's own step).
+    @objc func cropToSelection(_ sender: Any?) {
+        guard let bridge = (document as? PaintDocument)?.undoBridge else { return }
+        Self.runCropToSelection(bridge: bridge,
+                                gestureInProgress: appModel.dispatcher.isGestureInProgress)
+    }
+
+    /// The shared command path (the window controller and the hosted tests both run
+    /// this): gesture guard, pending-edit commit, then exactly one "Crop to Selection"
+    /// snapshot step — `nil` from `makeHistoryItem` (no selection, or a full-canvas full
+    /// selection, E-3/D-40 + H-6/D-34) adds nothing and leaves the document clean. The
+    /// canvas follows through `onStateChange`'s `.structure` branch: 0021's
+    /// `withImageSize` keeps the zoom and re-centers the cropped image.
+    static func runCropToSelection(bridge: UndoBridge, gestureInProgress: Bool) {
+        guard !gestureInProgress else { return }
+        bridge.prepareForNavigation?()
+        if let item = CropToSelection.makeHistoryItem(for: bridge.state) {
+            bridge.perform(item)
+        }
+    }
+
+    /// Paint.NET: Crop to Selection is "only available if a selection is active";
+    /// a mouse gesture in flight disables it (as every other pixel command).
+    private func cropToSelectionIsEnabled() -> Bool {
+        guard let bridge = (document as? PaintDocument)?.undoBridge else { return false }
+        return !appModel.dispatcher.isGestureInProgress
+            && CropToSelection.isEnabled(in: bridge.state)
+    }
+
     // MARK: - Test seam (spec 0013)
 
     /// Sets the document's selection without a history step — the document stays clean
@@ -648,6 +682,7 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         case #selector(cut(_:)): return clipboardCommandIsEnabled(.cut)
         case #selector(copy(_:)): return clipboardCommandIsEnabled(.copy)
         case #selector(paste(_:)): return clipboardCommandIsEnabled(.paste)
+        case #selector(cropToSelection(_:)): return cropToSelectionIsEnabled()
         default: return true
         }
     }

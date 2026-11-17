@@ -65,10 +65,26 @@ struct MainMenuTests {
 
     @Test func topLevelMenusInOrder() {
         let menu = topLevelMenus()
+        // 0022 creates the Image menu between View and Window (Paint.NET's order); 0024's
+        // Layers and 0031's Adjustments/Effects follow it there.
         #expect(menu.items.map(\.submenu?.title)
-            == ["PaintDotMac", "File", "Edit", "View", "Window", "Help"])
+            == ["PaintDotMac", "File", "Edit", "View", "Image", "Window", "Help"])
         #expect(menu.items.map(\.identifier?.rawValue)
-            == ["menu.app", "menu.file", "menu.edit", "menu.view", "menu.window", "menu.help"])
+            == ["menu.app", "menu.file", "menu.edit", "menu.view", "menu.image",
+                "menu.window", "menu.help"])
+    }
+
+    /// 0022: the Image menu starts with Crop to Selection ⇧⌘X (Paint.NET's Ctrl+Shift+X);
+    /// 0024/0035–0037 append the rest in Paint.NET order.
+    @Test func imageMenuItems() throws {
+        try expectRows(MainMenu.imageMenuIdentifier, [
+            Row(title: "Crop to Selection", key: "x", modifiers: [.command, .shift],
+                action: "cropToSelection:"),
+        ])
+        let cropItem = try #require(submenu(MainMenu.imageMenuIdentifier).items.first {
+            $0.identifier?.rawValue == "menu.image.cropToSelection"
+        })
+        #expect(cropItem.title == "Crop to Selection")
     }
 
     @Test func appMenuItems() throws {

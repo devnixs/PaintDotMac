@@ -17,6 +17,7 @@ enum MainMenu {
     static let fileMenuIdentifier = NSUserInterfaceItemIdentifier("menu.file")
     static let editMenuIdentifier = NSUserInterfaceItemIdentifier("menu.edit")
     static let viewMenuIdentifier = NSUserInterfaceItemIdentifier("menu.view")
+    static let imageMenuIdentifier = NSUserInterfaceItemIdentifier("menu.image")
     static let windowMenuIdentifier = NSUserInterfaceItemIdentifier("menu.window")
     static let helpMenuIdentifier = NSUserInterfaceItemIdentifier("menu.help")
     static let servicesItemIdentifier = NSUserInterfaceItemIdentifier("menu.app.services")
@@ -42,6 +43,9 @@ enum MainMenu {
         NSUserInterfaceItemIdentifier("menu.edit.fillSelection")
     static let editInvertSelectionItemIdentifier =
         NSUserInterfaceItemIdentifier("menu.edit.invertSelection")
+    // Image > Crop to Selection (0022, ⇧⌘X — Paint.NET's Ctrl+Shift+X, PRD §5.12).
+    static let cropToSelectionItemIdentifier =
+        NSUserInterfaceItemIdentifier("menu.image.cropToSelection")
     // Edit > clipboard items (0021; the block 0001 placed, 0021 implements).
     static let editCutItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.cut")
     static let editCopyItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.copy")
@@ -71,6 +75,10 @@ enum MainMenu {
     /// one key equivalent, so the key monitor handles the ⌦ alias (and the ⌫ repeat).
     static let eraseSelectionAction = NSSelectorFromString("eraseSelection:")
     static let fillSelectionAction = NSSelectorFromString("fillSelection:")
+
+    /// The Image menu's actions (0022), sent first-responder-style to
+    /// `DocumentWindowController` (target nil).
+    static let cropToSelectionAction = NSSelectorFromString("cropToSelection:")
 
     // Actions AppKit routes through the responder chain that no class exposes to Swift;
     // every action is sent to the first responder (target = nil).
@@ -106,6 +114,7 @@ enum MainMenu {
         menu.addItem(topLevelItem(title: "File", identifier: fileMenuIdentifier, submenu: fileMenu()))
         menu.addItem(topLevelItem(title: "Edit", identifier: editMenuIdentifier, submenu: editMenu()))
         menu.addItem(topLevelItem(title: "View", identifier: viewMenuIdentifier, submenu: viewMenu()))
+        menu.addItem(topLevelItem(title: "Image", identifier: imageMenuIdentifier, submenu: imageMenu()))
         menu.addItem(topLevelItem(title: "Window", identifier: windowMenuIdentifier, submenu: windowMenu()))
         menu.addItem(topLevelItem(title: "Help", identifier: helpMenuIdentifier, submenu: helpMenu()))
         return menu
@@ -237,6 +246,24 @@ enum MainMenu {
         menu.addItem(.separator())
         menu.addItem(makeItem("Enter Full Screen", key: "f", modifiers: [.command, .control],
                               action: #selector(NSWindow.toggleFullScreen(_:))))
+        return menu
+    }
+
+    /// Paint.NET's Image menu (ImageMenu.html): commands that affect all layers. Crop to
+    /// Selection is the only item so far. 0024 (Flatten), 0035 (Resize Image), 0036
+    /// (Canvas Size / Resize Canvas), and 0037 (Flip/Rotate) append their items after this
+    /// one, in Paint.NET's order (Crop to Selection, Resize, Canvas Size, Flip/Rotate,
+    /// Flatten); 0024's Layers menu and 0031's Adjustments and Effects menus go between
+    /// the Image and Window menus.
+    private static func imageMenu() -> NSMenu {
+        let menu = NSMenu(title: "Image")
+        // Crop to Selection ⇧⌘X (Paint.NET's Ctrl+Shift+X → ⇧⌘X, PRD §5.12). Disabled
+        // without a selection (`validateMenuItem`), as Paint.NET's "only available if a
+        // selection is active" states.
+        let cropItem = makeItem(CropToSelection.name, key: "x", modifiers: [.command, .shift],
+                                action: cropToSelectionAction)
+        cropItem.identifier = cropToSelectionItemIdentifier
+        menu.addItem(cropItem)
         return menu
     }
 
