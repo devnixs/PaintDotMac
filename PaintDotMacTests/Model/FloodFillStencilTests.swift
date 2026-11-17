@@ -387,7 +387,6 @@ struct FloodFillStencilTests {
                 let set = rng.next() % 2 == 0
                 for y in rect.minY...min(rect.maxY - 1, size.height - 1) {
                     for x in rect.minX...min(rect.maxX - 1, size.width - 1) {
-                        let p = PixelPoint(x: x, y: y)
                         let word = y * s.wordsPerRow + (x >> 6)
                         let bit = UInt64(1) << UInt64(x & 63)
                         if set { s.words[word] |= bit } else { s.words[word] &= ~bit }
