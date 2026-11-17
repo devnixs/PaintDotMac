@@ -140,6 +140,77 @@ struct TransformHandlesTests {
         #expect(hit(point(120, 110), zoom: 0.5) == .scale(.top))
     }
 
+    /// Review verdict (spec 0019, reported while reviewing 0022): the suspected
+    /// device-space/point-space mismatch on Retina does **not** exist — proven here.
+    /// The hit test and the drawn nubs use `CanvasTransform.canvasToViewAffine`, which
+    /// is `deviceToView ∘ canvasToDevice`: the ÷`backingScale` cancels the device scale,
+    /// so its output is AppKit POINTS (scale `zoom ÷ backingScale` per axis) — the same
+    /// space `ToolEvent.viewLocation` (from `convert(_:from:)`) arrives in and the space
+    /// the overlay draws in. This test recomputes that map from the closed-form
+    /// definitions documented on `CanvasTransform` (0003) — never from
+    /// `canvasToViewAffine` itself — at backing 1 × 2 and zoom 0.25 × 1 × 8, and pins
+    /// nub precedence, the center-vs-nub tie, and the rotate corridor in point space.
+    /// A future change that feeds device-space projections (or device-space presses)
+    /// into `hitTest` goes red at backing 2.
+    @Test func hitTestIsViewPointSpaceAtEveryZoomAndBacking() throws {
+        // Frame (360, 270, 80, 60) in an 800 × 600 image, image centered in a 640 × 480 pt
+        // view; center is 30 canvas px from the top/bottom nubs, 40 from the sides.
+        let session = try #require(TransformSession(
+            sourceBounds: CGRect(x: 360, y: 270, width: 80, height: 60)))
+        for backing in [1.0, 2.0] {
+            for zoom in [0.25, 1.0, 8.0] {
+                let transform = CanvasTransform(imageSize: PixelSize(width: 800, height: 600),
+                                                viewSize: CGSize(width: 640, height: 480),
+                                                backingScale: backing, zoom: zoom,
+                                                center: CGPoint(x: 400, y: 300))
+                // The documented closed form: drawable = round(view · s);
+                // o = round(drawable/2 − center · zoom);
+                // view point = ((o.x + p.x·zoom)/s, viewHeight − (o.y + p.y·zoom)/s).
+                let ox = ((640 * backing).rounded() / 2 - 400 * zoom).rounded()
+                let oy = ((480 * backing).rounded() / 2 - 300 * zoom).rounded()
+                func view(_ p: CGPoint) -> CGPoint {
+                    CGPoint(x: (ox + p.x * zoom) / backing,
+                            y: 480 - (oy + p.y * zoom) / backing)
+                }
+                let affine = transform.canvasToViewAffine
+                let space = "backing \(backing) zoom \(zoom)"
+                // 1. The affine IS that point-space map (the ÷backing cancellation).
+                for p in [point(0, 0), point(360, 270), point(400, 300), point(799.5, 599.5)] {
+                    let want = view(p)
+                    let got = p.applying(affine)
+                    #expect(abs(want.x - got.x) <= 1e-9 && abs(want.y - got.y) <= 1e-9,
+                            "canvasToViewAffine off point \(p): \(got) ≠ \(want) (\(space))")
+                }
+                func hit(_ canvasPoint: CGPoint) -> TransformGesture {
+                    TransformHandles.hitTest(viewPoint: view(canvasPoint), session: session,
+                                             canvasToView: affine, button: .primary)
+                }
+                // 2. A press exactly on a drawn nub hits that nub at every zoom/backing.
+                for handle in TransformHandle.allCases {
+                    #expect(hit(session.canvasPosition(of: handle)) == .scale(handle),
+                            "nub \(handle) (\(space))")
+                }
+                // 3. Center vs nub: the nubs are 30·zoom/s view points away — inside the
+                // 6 pt grab only at backing 2 × zoom 0.25, where the nub must beat the
+                // interior (Paint.NET's order) and the exact top/bottom tie resolves to
+                // `.top`. Everywhere else the press is interior → translate.
+                if 30 * zoom / backing <= 6 {
+                    #expect(hit(point(400, 300)) == .scale(.top),
+                            "nub beats the interior (\(space))")
+                } else {
+                    #expect(hit(point(400, 300)) == .translate,
+                            "interior beats the nubs (\(space))")
+                }
+                // 4. The rotate corridor is 20 VIEW points at every zoom/backing: 19 pt
+                // above the top edge (canvas offset 19·s/zoom) rotates, 21 pt translates.
+                #expect(hit(point(400, 270 - 19 * backing / zoom)) == .rotate,
+                        "19 view pt outside the edge (\(space))")
+                #expect(hit(point(400, 270 - 21 * backing / zoom)) == .translate,
+                        "21 view pt outside the edge (\(space))")
+            }
+        }
+    }
+
     @Test func hitTestTinyFrame() throws {
         // 1 × 1 selection: all hit circles overlap; nearest wins, ties in allCases order.
         let session = try #require(TransformSession(sourceBounds: CGRect(x: 0, y: 0,
