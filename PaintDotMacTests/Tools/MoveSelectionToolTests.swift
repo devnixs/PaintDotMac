@@ -259,6 +259,46 @@ struct MoveSelectionToolTests {
                      "BR moved along the 30° direction")
     }
 
+    @Test func nudgeAfterRotateMovesAlongDocumentAxes() throws {
+        // Paint.NET nudges in document coordinates: with the frame at 30°, ⌘→ still
+        // moves the selection exactly 10 canvas px right.
+        let (tool, context) = try activated(rect: CGRect(x: 50, y: 50, width: 100, height: 100))
+        let target30 = point(100 + 50 * cos(30 * Double.pi / 180),
+                             100 + 50 * sin(30 * Double.pi / 180))
+        drag(tool, context, from: point(150, 100), to: target30, button: .secondary)
+        #expect(names(context).last == "Rotate Selection")
+        let rotatedFrame = [point(50, 50), point(150, 50), point(150, 150), point(50, 150)]
+            .map { rotate([$0], 30, about: point(100, 100))[0] }
+        #expect(tool.keyDown(key(.rightArrow, .command), context: context))
+        #expect(names(context).last == "Move Selection")
+        let expected = rotatedFrame.map { point($0.x + 10, $0.y) }
+        cornersClose(try handlesOverlay(context).corners, expected,
+                     "the nudged 30° frame moved by exactly (+10, 0) on the canvas")
+    }
+
+    @Test func flagsChangedSnapsRotateLive() throws {
+        // Pressed without Shift at a raw 50°, Shift mid-drag re-applies the gesture:
+        // the preview snaps to the 45° total; releasing keeps 45° (one Rotate step).
+        let (tool, context) = try activated(rect: CGRect(x: 50, y: 50, width: 100, height: 100))
+        let target = point(100 + 50 * cos(50 * Double.pi / 180),
+                           100 + 50 * sin(50 * Double.pi / 180))
+        tool.mouseDown(event(context, 150, 100, button: .secondary), context: context)
+        tool.mouseDragged(event(context, target.x, target.y, button: .secondary),
+                          context: context)
+        let frame = [point(50, 50), point(150, 50), point(150, 150), point(50, 150)]
+        cornersClose(try handlesOverlay(context).corners,
+                     rotate(frame, 50, about: point(100, 100)), "raw 50° before Shift")
+        tool.flagsChanged([.shift], context: context)
+        cornersClose(try handlesOverlay(context).corners,
+                     rotate(frame, 45, about: point(100, 100)),
+                     "Shift acts live mid-drag (total snaps to 45°)")
+        tool.mouseUp(event(context, target.x, target.y, button: .secondary,
+                           modifiers: [.shift]), context: context)
+        #expect(names(context).last == "Rotate Selection")
+        cornersClose(try handlesOverlay(context).corners,
+                     rotate(frame, 45, about: point(100, 100)), "committed at 45°")
+    }
+
     // MARK: - Context validity
 
     @Test func contextResetsAfterExternalChange() throws {
@@ -338,6 +378,14 @@ struct MoveSelectionToolTests {
         tool.mouseUp(event(context, 130, 130), context: context)
         // A mouse-up without a matching down does nothing.
         tool.mouseUp(event(context, 90, 90), context: context)
+        // Non-finite hover and drag points are ignored too (no context churn, no step).
+        let badMove = ToolEvent(location: point(.nan, .nan), viewLocation: point(.nan, .nan),
+                                button: .primary, modifiers: [], clickCount: 1,
+                                pressure: 1, timestamp: 1)
+        tool.mouseMoved(badMove, context: context)
+        tool.mouseDown(event(context, 100, 100), context: context)
+        tool.mouseDragged(badMove, context: context)
+        tool.mouseUp(event(context, 100, 100), context: context)
         #expect(context.history.steps.count == stepsBefore)
         #expect(context.selection == (try rectSelection(50, 50, 100, 100)))
     }
@@ -419,6 +467,30 @@ struct MoveSelectionToolTests {
                 "the full shape returns within the session")
         #expect(Array(context.history.steps.suffix(2)).map(\.name)
                     == ["Move Selection", "Move Selection"])
+    }
+
+    @Test func noStepWhileFullyOffCanvas() throws {
+        // D-34 at the off-canvas boundary (D-40): once the outline is fully off-canvas
+        // the document selection is nil; further nudges keep moving the frame but each
+        // produces `after == before == nil` — no step — and the shape still returns
+        // when dragged back.
+        let (tool, context) = try activated(rect: CGRect(x: 50, y: 50, width: 100, height: 100))
+        drag(tool, context, from: point(100, 100), to: point(400, 100))
+        let stepsAfterOffCanvas = context.history.steps.count
+        #expect(stepsAfterOffCanvas > 1 && names(context).last == "Move Selection")
+        #expect(context.selection == nil)
+        #expect(tool.keyDown(key(.rightArrow, .command), context: context))
+        #expect(tool.keyDown(key(.rightArrow, .command), context: context))
+        #expect(tool.keyDown(key(.downArrow), context: context))
+        #expect(context.history.steps.count == stepsAfterOffCanvas,
+                "nil → nil nudges change nothing (H-6/D-34)")
+        #expect(context.selection == nil)
+        // The session kept moving the frame (now x 370…470, y 51…151); drag it back
+        // from inside that off-canvas frame — no "Select All" step.
+        drag(tool, context, from: point(420, 101), to: point(110, 101))
+        #expect(context.selection == (try rectSelection(60, 51, 100, 100)),
+                "the shape returns after the no-step nudges")
+        #expect(names(context).last == "Move Selection")
     }
 
     // MARK: - Quality

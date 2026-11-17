@@ -117,4 +117,43 @@ struct MoveSelectionIntegrationTests {
         }
         #expect(context.selection == result, "redo ×3 → the chain's result")
     }
+
+    @Test func rotateScaleNudgeAreSelectionOnly() throws {
+        // NF/History contract: every Move Selection gesture step is a
+        // `SelectionHistoryItem` with a `.selection` change — no pixel diff, and no
+        // tile's storage is ever rewritten.
+        let context = FakeToolContext(size: size, background: .white)
+        let original = try #require(Selection(rect: CGRect(x: 50, y: 80, width: 100,
+                                                           height: 40), canvasSize: size))
+        context.performHistory(SelectionHistoryItem(name: "setup", icon: .generic,
+                                                    before: nil, after: original))
+        let tool = MoveSelectionTool()
+        tool.activate(context: context)
+        let coordinate = TileCoordinate(column: 0, row: 0)
+        let tileBefore = try #require(context.image.layers[0].surface.tile(at: coordinate))
+
+        func gesturePoint(_ x: Double, _ y: Double, _ t: TimeInterval,
+                          button: ToolMouseButton = .primary) -> ToolEvent {
+            event(context, x, y, button: button, t: t)
+        }
+        tool.mouseDown(gesturePoint(150, 100, 1.0, button: .secondary), context: context)
+        tool.mouseDragged(gesturePoint(100, 150, 1.2, button: .secondary), context: context)
+        tool.mouseUp(gesturePoint(100, 150, 1.4, button: .secondary), context: context)
+        tool.mouseDown(gesturePoint(80, 150, 2.0), context: context)
+        tool.mouseDragged(gesturePoint(100, 170, 2.2), context: context)
+        tool.mouseUp(gesturePoint(100, 170, 2.4), context: context)
+        #expect(tool.keyDown(ToolKeyEvent(key: .rightArrow, characters: "",
+                                          modifiers: [.command], isRepeat: false),
+                             context: context))
+
+        let steps = context.history.steps
+        #expect(steps.suffix(3).map(\.name)
+                    == ["Rotate Selection", "Scale Selection", "Move Selection"])
+        for step in steps.suffix(3) {
+            #expect(step.item is SelectionHistoryItem, "\(step.name) is a selection step")
+            #expect(step.item?.change == .selection, "\(step.name) changes no pixels")
+        }
+        let tileAfter = try #require(context.image.layers[0].surface.tile(at: coordinate))
+        #expect(tileBefore.sharesStorage(with: tileAfter), "the layer tile was never rewritten")
+    }
 }

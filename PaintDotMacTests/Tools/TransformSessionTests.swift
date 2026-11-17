@@ -196,6 +196,72 @@ struct TransformSessionTests {
         #expect(abs((scaled.box.maxY - scaled.box.minY) - 50) <= 1e-9, "height 50")
     }
 
+    // MARK: - Composition order (translate/rotate in canvas space)
+
+    /// The rigid rotation by `degrees` about `center` computed from the rotation
+    /// definition (raw trigonometry) — deliberately not a `CGAffineTransform` chain, so
+    /// an expectation can never inherit a composition-order bug from the code under test.
+    private func manualRotate(_ point: CGPoint, about center: CGPoint, _ degrees: Double)
+        -> CGPoint
+    {
+        let radians = degrees * Double.pi / 180
+        let dx = point.x - center.x, dy = point.y - center.y
+        return CGPoint(x: center.x + dx * cos(radians) - dy * sin(radians),
+                       y: center.y + dx * sin(radians) + dy * cos(radians))
+    }
+
+    @Test func translateAfterRotateMovesAlongCanvasAxes() throws {
+        // Rotate +90° about (50, 25), then translate by (10, 0). Paint.NET translates in
+        // document coordinates, so every corner moves by exactly (+10, 0) on the canvas
+        // — not along the rotated frame's local axes.
+        let session = try session(0, 0, 100, 50)
+        let center = point(50, 25)
+        let rotated = session.applying(.rotate, from: point(100, 25), to: point(50, 75),
+                                       modifiers: [])
+        let moved = rotated.translatedBy(dx: 10, dy: 0)
+        let base = [point(0, 0), point(100, 0), point(100, 50), point(0, 50)]
+        let expected = base
+            .map { manualRotate($0, about: center, 90) }
+            .map { CGPoint(x: $0.x + 10, y: $0.y) }
+        let got = moved.canvasCorners
+        for (corner, want) in zip(got, expected) {
+            #expect(abs(corner.x - want.x) <= 1e-9 && abs(corner.y - want.y) <= 1e-9,
+                    "corner \(corner) ≠ \(want)")
+        }
+        #expect(moved.integerTranslation == nil, "rotation + translation is no translation")
+    }
+
+    @Test func rotateAfterTranslateRotatesAboutMovedCenter() throws {
+        // Translate (40, 0) first: the frame's center moves to (90, 25), and the
+        // rotation must be about that moved center.
+        let session = try session(0, 0, 100, 50)
+        let moved = session.translatedBy(dx: 40, dy: 0)
+        let center = point(90, 25)
+        let rotated = moved.applying(.rotate, from: point(140, 25), to: point(90, 65),
+                                     modifiers: [])
+        #expect(abs(rotated.angle - 90) <= 1e-9)
+        let base = [point(0, 0), point(100, 0), point(100, 50), point(0, 50)]
+        let expected = base
+            .map { CGPoint(x: $0.x + 40, y: $0.y) }
+            .map { manualRotate($0, about: center, 90) }
+        let got = rotated.canvasCorners
+        for (corner, want) in zip(got, expected) {
+            #expect(abs(corner.x - want.x) <= 1e-9 && abs(corner.y - want.y) <= 1e-9,
+                    "corner \(corner) ≠ \(want)")
+        }
+    }
+
+    @Test func translateIgnoresShift() throws {
+        // Shift constrains rotate and corner scale only; translate has no constraint.
+        let session = try session(0, 0, 100, 50)
+        let plain = session.applying(.translate, from: .zero, to: point(7.4, -2.6),
+                                     modifiers: [])
+        let shifted = session.applying(.translate, from: .zero, to: point(7.4, -2.6),
+                                       modifiers: [.shift])
+        #expect(shifted == plain)
+        #expect(plain.integerTranslation?.dx == 7 && plain.integerTranslation?.dy == -3)
+    }
+
     // MARK: - Integer-translation detection
 
     @Test func integerTranslationDetection() throws {

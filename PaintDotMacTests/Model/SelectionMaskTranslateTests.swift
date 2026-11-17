@@ -83,6 +83,19 @@ struct SelectionMaskTranslateTests {
         #expect(mask.translated(dx: -300, dy: 0).isEmpty)
     }
 
+    @Test func translateExtremeOffsetsEmptyNeverCrash() {
+        // The tool clamps a drag to ±1 000 000 px; the mask must survive even the whole
+        // `Int` range without trapping (tile re-indexing stays in bounds).
+        let mask = randomRegionMask(seed: Self.defaultSeed)
+        for shift in [(1_000_000, 0), (-1_000_000, 0), (0, 1_000_000), (0, -1_000_000),
+                      (1_000_000, -999_936), // both a tile and a byte offset at the clamp
+                      (Int.max, Int.max), (Int.min, Int.min), (Int.max, Int.min)] {
+            let shifted = mask.translated(dx: shift.0, dy: shift.1)
+            #expect(shifted.isEmpty, "shift \(shift) empties a 512-wide mask")
+            #expect(shifted.size == mask.size)
+        }
+    }
+
     @Test func translateAcrossTileSeams() {
         // A full tile at (0, 0) of a 512 × 512 canvas shifted by (128, 128) straddles
         // tiles (0, 0)…(1, 1).

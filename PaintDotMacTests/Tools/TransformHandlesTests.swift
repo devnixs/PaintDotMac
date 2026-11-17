@@ -82,6 +82,26 @@ struct TransformHandlesTests {
         #expect(hit(112, 22) == .rotate)
     }
 
+    @Test func hitTestZoomExtremes() throws {
+        // 25 %: the 6 pt nub radius is 24 canvas px; the 20 pt corridor is 80 canvas px.
+        // 800 %: the nub radius shrinks to 0.75 canvas px, the corridor to 2.5.
+        let session = try session()
+        func hit(_ canvasPoint: CGPoint, zoom: Double) -> TransformGesture {
+            let toView = CGAffineTransform(scaleX: zoom, y: zoom)
+            return TransformHandles.hitTest(viewPoint: canvasPoint.applying(toView),
+                                            session: session, canvasToView: toView,
+                                            button: .primary)
+        }
+        #expect(hit(point(132, 20), zoom: 0.25) == .scale(.topRight),
+                "22 canvas px from the TR nub is 5.5 view points at 25 %")
+        #expect(hit(point(140, 45), zoom: 0.25) == .rotate,
+                "30 canvas px right of the frame: 7.5 view points — corridor, no nub")
+        #expect(hit(point(110.5, 20.5), zoom: 8) == .scale(.topRight),
+                "0.71 canvas px from the nub is 5.7 view points at 800 %")
+        #expect(hit(point(112, 22), zoom: 8) == .rotate,
+                "2.8 canvas px from the nub (22.6 view) but 16 view from the edge")
+    }
+
     @Test func hitTestTinyFrame() throws {
         // 1 × 1 selection: all hit circles overlap; nearest wins, ties in allCases order.
         let session = try #require(TransformSession(sourceBounds: CGRect(x: 0, y: 0,

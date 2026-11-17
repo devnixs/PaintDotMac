@@ -24,15 +24,19 @@ struct MoveSelectionWindowIntegrationTests {
         HeadlessAssertions.noVisibleWindows()
     }
 
-    private func openWhiteFixture(_ fixtures: FixtureFiles) async throws -> DocumentHarness {
+    private func openWhiteFixture(_ fixtures: FixtureFiles,
+                                  initialRect: PixelRect = PixelRect(x: 50, y: 50,
+                                                                     width: 100,
+                                                                     height: 100))
+        async throws -> DocumentHarness
+    {
         let url = try fixtures.writePNG(named: "move-fixture.png",
                                         width: 200, height: 200) { _, _ in .white }
         let harness = try await DocumentHarness.open(url)
         harness.window.setContentSize(NSSize(width: 1000, height: 800))
         harness.document.undoBridge.undoManager.groupsByEvent = false
         harness.appModel.setActiveSession(harness.windowController.toolSession)
-        harness.windowController.setInitialSelection(
-            PixelRect(x: 50, y: 50, width: 100, height: 100))
+        harness.windowController.setInitialSelection(initialRect)
         pumpMainRunLoop()
         return harness
     }
@@ -167,6 +171,125 @@ struct MoveSelectionWindowIntegrationTests {
             let white = ColorRGBA8(red: 255, green: 255, blue: 255, alpha: 255)
             #expect(pixels(155, 100) == black, "inside the moved selection")
             #expect(pixels(55, 100) == white, "the vacated edge stays white")
+        }
+    }
+
+    /// Review (spec 0019): the whole gesture chain at window level must never touch a
+    /// pixel. Rotate 90°, scale the rotated frame's BR nub, ⌘-nudge, and drag the
+    /// centre; every step is a selection-only `SelectionHistoryItem`, the saved file
+    /// stays the all-white fixture through the chain and after undoing all of it, and
+    /// the rows are Paint.NET's names. The selection starts (50, 80, 100, 40) — a
+    /// non-square rect so the rotated nubs sit where the math says (a square frame
+    /// rotated 90° looks unmoved).
+    @Test func rotateScaleNudgeKeepPixelsIdentical() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openWhiteFixture(
+                fixtures, initialRect: PixelRect(x: 50, y: 80, width: 100, height: 40))
+            defer { finish(harness) }
+            let bridge = harness.document.undoBridge
+            let manager = try #require(harness.window.undoManager)
+            #expect(harness.shortcut("m"))
+
+            // Rotate +90° about (100, 100) with the right button.
+            harness.dragCanvas(
+                from: harness.viewPoint(forImagePoint: CGPoint(x: 150, y: 100)),
+                to: harness.viewPoint(forImagePoint: CGPoint(x: 100, y: 150)),
+                button: .right)
+            #expect(bridge.state.selection?.bounds
+                        == PixelRect(x: 80, y: 50, width: 40, height: 100),
+                    "the rotated 100 × 40 frame occupies (80, 50, 40, 100)")
+
+            // Scale the rotated frame's BR nub — local (150, 120) rotated to canvas
+            // (80, 150) — by the canvas vector (+20, +20).
+            harness.dragCanvas(
+                from: harness.viewPoint(forImagePoint: CGPoint(x: 80, y: 150)),
+                to: harness.viewPoint(forImagePoint: CGPoint(x: 100, y: 170)))
+
+            // Nudge 10 px right (⌘→), then drag the frame's centre (120, 110) by (12, 8).
+            harness.window.makeFirstResponder(harness.canvasView)
+            harness.keyDown("\u{F703}", keyCode: 124, modifiers: .command)
+            harness.keyUp("\u{F703}", keyCode: 124, modifiers: .command)
+            harness.dragCanvas(
+                from: harness.viewPoint(forImagePoint: CGPoint(x: 120, y: 110)),
+                to: harness.viewPoint(forImagePoint: CGPoint(x: 132, y: 118)))
+            pumpMainRunLoop()
+
+            let steps = bridge.history.steps
+            #expect(steps.map(\.name) == ["Open Image", "Rotate Selection",
+                                          "Scale Selection", "Move Selection",
+                                          "Move Selection"])
+            for step in steps.dropFirst() {
+                #expect(step.item is SelectionHistoryItem, "\(step.name) is selection-only")
+                #expect(step.item?.change == .selection, "\(step.name) carries no pixel diff")
+            }
+
+            let white = ColorRGBA8(red: 255, green: 255, blue: 255, alpha: 255)
+            func scanAllWhite(_ pixels: (Int, Int) -> ColorRGBA8, _ comment: Comment) {
+                var firstOff: (Int, Int)?
+                outer: for y in 0..<200 {
+                    for x in 0..<200 where pixels(x, y) != white {
+                        firstOff = (x, y)
+                        break outer
+                    }
+                }
+                #expect(firstOff == nil,
+                        "every saved pixel is white (\(comment)); first non-white \(String(describing: firstOff))")
+            }
+            scanAllWhite(try await savedPixels(harness), "after the gesture chain")
+
+            for _ in 0..<4 { manager.undo() }
+            pumpMainRunLoop()
+            #expect(bridge.state.selection?.bounds
+                        == PixelRect(x: 50, y: 80, width: 100, height: 40))
+            scanAllWhite(try await savedPixels(harness), "after undoing the chain")
+        }
+    }
+
+    /// Review (spec 0019): the marching ants hide exactly for the drag's duration —
+    /// hidden while the frame drags, back at the new place on release, back immediately
+    /// (and with no step) on Escape mid-drag. Reduce Motion pins the resting mode to
+    /// `.static` for a deterministic comparison (0014's pattern).
+    @Test func antsHiddenDuringDragRestoredOnReleaseAndEscape() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openWhiteFixture(fixtures)
+            defer { finish(harness) }
+            let bridge = harness.document.undoBridge
+            let ants = try #require(harness.windowController.marchingAntsOverlay)
+            ants.reduceMotionOverride = true
+            defer { ants.reduceMotionOverride = false }
+            #expect(harness.shortcut("m"))
+            let inside = harness.viewPoint(forImagePoint: CGPoint(x: 100, y: 100))
+            let moved = harness.viewPoint(forImagePoint: CGPoint(x: 120, y: 120))
+
+            harness.canvasPress(at: inside)
+            harness.canvasDrag(to: moved)
+            pumpMainRunLoop()
+            #expect(ants.mode == .hidden, "the old ants are hidden while the frame drags")
+
+            harness.canvasRelease(at: moved)
+            pumpMainRunLoop()
+            #expect(ants.mode == .static, "the ants come back at the new place")
+            #expect(bridge.history.steps.map(\.name) == ["Open Image", "Move Selection"])
+
+            // Escape mid-drag: no step, the ants return; the dispatcher swallows the
+            // cancelled gesture's release, which then commits nothing (0006).
+            harness.canvasPress(at: moved)
+            harness.canvasDrag(to: inside)
+            pumpMainRunLoop()
+            #expect(ants.mode == .hidden)
+            harness.window.makeFirstResponder(harness.canvasView)
+            harness.keyDown("\u{1b}", keyCode: 53)
+            harness.keyUp("\u{1b}", keyCode: 53)
+            pumpMainRunLoop()
+            #expect(ants.mode == .static, "Escape brings the old ants back")
+            harness.canvasRelease(at: inside)
+            pumpMainRunLoop()
+            #expect(bridge.history.steps.map(\.name) == ["Open Image", "Move Selection"],
+                    "the cancelled drag added no step")
         }
     }
 }
