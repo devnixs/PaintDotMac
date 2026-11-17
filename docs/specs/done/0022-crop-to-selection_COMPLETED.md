@@ -185,6 +185,14 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
   - `==> GREEN`
   - `tests: no crash reports during the run`
 
+- 2026-11-17, `main`, quality gate (`quality-gate.sh`, FULL) re-run on the reviewed tree (adds
+  the review's tests + notes; no product-code change) — verbatim:
+  - `==> Debug build (clean build)` / `No compiler warnings.`
+  - `==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)`
+  - `tests: 1673 passed, 0 failed, 0 skipped (of 1673)`
+  - `==> GREEN`
+  - `tests: no crash reports during the run`
+
 - Tests added (`@Test` functions / XCTest cases): unit `CropToSelectionTests` 18
   (enablement matrix E-3/D-40, rectangle crops every layer with hand-derived pixels,
   non-rectangular mask hand values, `masked` rule table + exhaustive 65,536-pair
@@ -225,7 +233,41 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
   share storage with the source plus 0013's selection bytes (aligned full tiles are
   shared, not copied; unaligned destinations are freshly built); Select-All crops add
   no step at all.
-- Review: pending
+- Review: 2026-11-17 (independent reviewer; the `quality-gate.sh` FULL re-run on the reviewed tree
+  is quoted at the top of this section). Every acceptance criterion and edge case traced to a test
+  with an independent oracle: the crop rect against a direct `mask.coverage` bbox scan, the
+  per-pixel rule against `(a·c+127)/255` written out twice (unit table + 50-iteration seeded
+  property test that re-verifies TILE-level identity, layer properties, sizes, and the selection —
+  never names), hand-derived rectangle/ellipse/disjoint/tile-seam/wide-image pixels, `byteCost`
+  against the by-hand unshared-tile count (NF-4), the command path and menu validation at window
+  level, and undo/redo state equality through the real `UndoBridge`. `SelectionMask.cropped`/
+  `translatedAndCropped` audited: aligned 1:1 tile reuse keeps storages shared (NF-4) and the
+  result always re-normalizes through 0013's `init(size:tiles:)`. Storage sharing audited against
+  later writers: `Tile.bytes` is a private COW `Array` and every writer in `Core` mutates through
+  `mutating` accessors, so a shared crop tile can never be aliased into corrupting the captured
+  `before` snapshot (proven behaviorally by the exact undo/redo and re-apply equality tests).
+  `mul255`'s inline bit-trick in `maskedTile` verified exhaustively equal to `(a·c+127)/255` over
+  all 65,536 pairs. No product-code defect found; test additions below close two real gaps the
+  review found. Mutation campaign — 12 mutations, all killed: crop rect from the path bbox
+  (`boundingBoxIncludesCoverageOne`, `onePixelCrop`), inline `mul255` constant drift
+  (`maskedTilePathExhaustiveAgainstOracle`, `ellipseCropMatchesOracle`), `masked()` not clearing
+  color at α→0 (`maskedPixelRule`, D-27), inline zero branch keeping color (5 tests), full-canvas
+  bounds no-op regardless of mask (`fullBoundsPartialMaskIsNotNoOp`), no-op guard removed
+  (`noOpWhenSelectAll`, H-6/D-34), `byteCost` counting shared storages
+  (`historyCostCountsOnlyUnsharedTiles`), gesture guard removed (`ignoredDuringGesture`),
+  `validateMenuItem` gesture row dropped (`menuEnablement`), selection dropped instead of
+  translated (`selectionIsTranslated`, `onePixelCrop`), aligned sharing disabled
+  (`alignedFullTilesShareStorage`, `historyCostCountsOnlyUnsharedTiles`), and the spec 0019
+  fixture-zoom pin forced to an arbitrary zoom (`rotateScaleNudgeKeepPixelsIdentical`, proving
+  `da7d5ac`'s pin is load-bearing and no assertion was weakened). Tests added in review (3):
+  `CropToSelectionTests.maskedTilePathExhaustiveAgainstOracle` (all 65,536 (alpha, coverage)
+  pairs through the raw tile loop vs the oracle — the tile path's inline rule was previously only
+  sample-covered), the mid-gesture rows in `CropToSelectionWindowIntegrationTests.menuEnablement`
+  (press held → item validates disabled and the command no-ops → release → enabled — the
+  `validateMenuItem` gesture row had no coverage), and spec 0019's
+  `TransformHandlesTests.hitTestIsViewPointSpaceAtEveryZoomAndBacking` (the reported Retina
+  hit-test mismatch traced and proven not to exist — see the note added to
+  `0019-move-selection-tool_COMPLETED.md`; no product change in 0022).
 - Manual verification (not automated):
   - [ ] Open a screenshot, Rectangle Select a region, Image > Crop to Selection: the
         window shows only that region at the same zoom, centered; the marching ants

@@ -146,6 +146,42 @@ struct CropToSelectionTests {
         }
     }
 
+    /// The same exhaustive 65,536-pair check through the RAW TILE PATH: `maskedTile`
+    /// inlines `mul255` as a bit trick and bulk-copies `c == 255` / zero-writes `c == 0`,
+    /// so the per-pixel `masked` table above does not cover it. One 256 × 256 `.partial`
+    /// mask tile whose coverage is the row (0…255) over an image whose alpha is the
+    /// column (0…255): every (alpha, coverage) pair runs through the tile loop and is
+    /// compared to `maskedRef` — the inline trick drifting by one from `(a·c+127)/255`
+    /// fails pixel (alpha, coverage) directly.
+    @Test func maskedTilePathExhaustiveAgainstOracle() throws {
+        let size = PixelSize(width: 256, height: 256)
+        let surface = TestImages.surface(width: 256, height: 256) { x, _ in px(1, 2, 3, x) }
+        // Coverage = y; (0, 0) gets coverage 1 so the mask bounds are the whole canvas
+        // (a full-canvas partial mask is not a no-op — every pixel still runs the rule).
+        let mask = SelectionMask(size: size) { x, y in y == 0 && x == 0 ? UInt8(1) : UInt8(y) }
+        let selection = try #require(Selection(
+            mask: mask,
+            outline: CGPath(rect: CGRect(x: 0, y: 0, width: 256, height: 256), transform: nil)))
+        let state = DocumentState(image: LayeredImage(surface: surface), selection: selection)
+        #expect(CropToSelection.cropRect(for: state) == PixelRect(x: 0, y: 0, width: 256, height: 256))
+        let cropped = try #require(CropToSelection.croppedState(state))
+        #expect(cropped.image.size == size)
+        let result = cropped.image.layers[0].surface
+        var mismatches = 0
+        var first = ""
+        for y in 0..<256 {
+            for x in 0..<256 {
+                let expected = maskedRef(px(1, 2, 3, x), coverage: y == 0 && x == 0 ? 1 : UInt8(y))
+                let got = result.pixel(at: PixelPoint(x: x, y: y))
+                if got != expected {
+                    mismatches += 1
+                    if first.isEmpty { first = "(\(x), \(y)): got \(got) expected \(expected)" }
+                }
+            }
+        }
+        #expect(mismatches == 0, "\(mismatches) tile-path mismatches, first: \(first)")
+    }
+
     @Test func boundingBoxIncludesCoverageOne() throws {
         let size = PixelSize(width: 10, height: 10)
         let image = LayeredImage(surface: layer(size) { x, y in px(x, y, 40, 200) }.surface)

@@ -107,6 +107,26 @@ struct CropToSelectionWindowIntegrationTests {
             #expect(!harness.isEnabled(Self.cropAction), "no selection → disabled")
             selectRect(harness, PixelRect(x: 50, y: 40, width: 120, height: 80))
             #expect(harness.isEnabled(Self.cropAction), "a selection → enabled")
+
+            // Mid-gesture (0022's "disabled mid-gesture" validation row): hold a
+            // Rectangle Select drag open — the selection is still in the state, but the
+            // item must validate disabled and the action must no-op until release.
+            for _ in 0..<4 where harness.appModel.activeToolID != .rectangleSelect {
+                #expect(harness.shortcut("s"))
+            }
+            #expect(harness.appModel.activeToolID == .rectangleSelect)
+            harness.canvasPress(at: harness.viewPoint(forImagePoint: CGPoint(x: 200, y: 150)))
+            harness.canvasDrag(to: harness.viewPoint(forImagePoint: CGPoint(x: 260, y: 200)))
+            pumpMainRunLoop()
+            #expect(harness.appModel.dispatcher.isGestureInProgress, "mid-gesture")
+            #expect(!harness.isEnabled(Self.cropAction), "mid-gesture → disabled")
+            harness.perform(Self.cropAction)
+            pumpMainRunLoop()
+            #expect(harness.statusBar.imageSizeText == "400 × 300",
+                    "the command is ignored while the gesture is open")
+            harness.canvasRelease(at: harness.viewPoint(forImagePoint: CGPoint(x: 260, y: 200)))
+            pumpMainRunLoop()
+            #expect(harness.isEnabled(Self.cropAction), "released → enabled again")
         }
     }
 
