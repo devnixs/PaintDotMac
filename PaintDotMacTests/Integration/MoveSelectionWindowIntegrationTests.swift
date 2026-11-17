@@ -34,6 +34,22 @@ struct MoveSelectionWindowIntegrationTests {
                                         width: 200, height: 200) { _, _ in .white }
         let harness = try await DocumentHarness.open(url)
         harness.window.setContentSize(NSSize(width: 1000, height: 800))
+        // CAN-6 computes the initial zoom once, at the canvas's first layout, and CAN-7
+        // keeps it across resizes — on a never-shown window that layout can land before
+        // `setContentSize` is processed, so the initial zoom became a fixture-race value
+        // (50 % on macOS 27; the race resolved to 100 % on macOS 26.6). Gesture
+        // classification depends on the 6-point handle hit radius measured through the
+        // canvas→view projection, whose effective scale is zoom ÷ backingScaleFactor
+        // against point-space events. Pin the zoom to the window's backing scale so the
+        // projection is exactly 1 canvas px per view point on any display, making the
+        // nub-vs-interior geometry deterministic. (The zoom ÷ backing-space mismatch
+        // between the projection and the point-space press coordinates is a latent
+        // product issue reported separately from this test fix.)
+        let backing = harness.canvasView.transform.backingScale
+        harness.canvasView.navigation?.setZoom(
+            backing,
+            anchoredAtView: CGPoint(x: harness.canvasView.bounds.midX,
+                                    y: harness.canvasView.bounds.midY))
         harness.document.undoBridge.undoManager.groupsByEvent = false
         harness.appModel.setActiveSession(harness.windowController.toolSession)
         harness.windowController.setInitialSelection(initialRect)

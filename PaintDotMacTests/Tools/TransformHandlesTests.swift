@@ -102,6 +102,44 @@ struct TransformHandlesTests {
                 "2.8 canvas px from the nub (22.6 view) but 16 view from the edge")
     }
 
+    @Test func hitTestRotatedScaledSlabCenterDependsOnZoom() throws {
+        // Review fix (spec 0019): the window-level rotate → scale → nudge chain, classified
+        // at the hit radii a fixture can actually present. Source (50, 80, 100, 40);
+        // rotate +90° about (100, 100) with the right button (drag (150, 100) → (100, 150));
+        // drag the rotated BR nub (canvas (80, 150)) to canvas (100, 170) — under the 90°
+        // rotation that canvas vector is local (+20, −20), so the frame becomes a 20 × 120
+        // canvas slab, centered (110, 110); then the ⌘→ nudge (+10, 0) centers it (120, 110).
+        var session = try #require(TransformSession(
+            sourceBounds: CGRect(x: 50, y: 80, width: 100, height: 40)))
+        session = session.applying(.rotate, from: point(150, 100), to: point(100, 150),
+                                   modifiers: [])
+        #expect(abs(session.angle - 90) <= 1e-9, "the right-drag chain rotates +90°")
+        let br = session.canvasPosition(of: .bottomRight)
+        #expect(abs(br.x - 80) <= 1e-9 && abs(br.y - 150) <= 1e-9,
+                "the rotated frame's BR nub sits at canvas (80, 150)")
+        session = session.applying(.scale(.bottomRight), from: point(80, 150),
+                                   to: point(100, 170), modifiers: [])
+        session = session.translatedBy(dx: 10, dy: 0)
+        let top = session.canvasPosition(of: .top)
+        let bottom = session.canvasPosition(of: .bottom)
+        #expect(abs(top.x - 130) <= 1e-9 && abs(top.y - 110) <= 1e-9, "top nub (130, 110)")
+        #expect(abs(bottom.x - 110) <= 1e-9 && abs(bottom.y - 110) <= 1e-9,
+                "bottom nub (110, 110) — 10 canvas px from the center (120, 110)")
+        func hit(_ canvasPoint: CGPoint, zoom: Double) -> TransformGesture {
+            let toView = CGAffineTransform(scaleX: zoom, y: zoom)
+            return TransformHandles.hitTest(viewPoint: canvasPoint.applying(toView),
+                                            session: session, canvasToView: toView,
+                                            button: .primary)
+        }
+        // 100 % (the zoom the window test drives): the center is 10 pt from the nubs —
+        // past the 6 pt radius — inside the frame → translate ("Move Selection").
+        #expect(hit(point(120, 110), zoom: 1) == .translate)
+        // 50 % (a headless fixture's initial-layout zoom): the same press is 5 view
+        // points from the nubs → the nub beats the interior (Paint.NET's order), and the
+        // exact-distance tie resolves in `allCases` order → `.top` ("Scale Selection").
+        #expect(hit(point(120, 110), zoom: 0.5) == .scale(.top))
+    }
+
     @Test func hitTestTinyFrame() throws {
         // 1 × 1 selection: all hit circles overlap; nearest wins, ties in allCases order.
         let session = try #require(TransformSession(sourceBounds: CGRect(x: 0, y: 0,
