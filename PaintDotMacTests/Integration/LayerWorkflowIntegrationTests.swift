@@ -116,6 +116,116 @@ struct LayerWorkflowIntegrationTests {
         #expect(final.layers[1].surface == after.layers[1].surface, "layer 1 unchanged")
     }
 
+    /// Every remaining pixel-writing path targets the ACTIVE layer (0024; L-1 made
+    /// multi-layer stacks observable): Paint Bucket, Eraser, Erase/Fill Selection, and
+    /// Cut on layer 3 of 3 — layers below keep their tile storage — plus a Duplicate
+    /// whose copy is painted: copy-on-write keeps the original bit-identical.
+    @Test func fillEraseAndClipboardPathsTargetActiveLayer() throws {
+        let context = context()
+        let bridge = context.bridge
+        // Stack: white Background, opaque gray Middle, transparent Top (active).
+        bridge.updateLiveState { state in
+            let size = state.image.size
+            var gray = TiledSurface(size: size)
+            gray.fill(ColorRGBA8(red: 128, green: 128, blue: 128, alpha: 255))
+            state.image = LayeredImage(
+                size: size,
+                layers: [state.image.layers[0],
+                         Layer(name: "Middle", surface: gray),
+                         Layer(name: "Top", surface: TiledSurface(size: size))],
+                activeLayerIndex: 2)
+        }
+        func expectBelowUntouched(_ before: LayeredImage) {
+            let after = bridge.state.image
+            for index in [0, 1] {
+                for coordinate in before.layers[index].surface.allocatedTileCoordinates {
+                    #expect(before.layers[index].surface.tile(at: coordinate)!
+                                .sharesStorage(with: after.layers[index].surface
+                                    .tile(at: coordinate)!),
+                            "layer \(index) tile \(coordinate) was written")
+                }
+            }
+            #expect(after.layers[0].surface == before.layers[0].surface)
+            #expect(after.layers[1].surface == before.layers[1].surface)
+        }
+
+        // 1) Paint Bucket (contiguous, black) on the transparent Top layer.
+        context.colors = ColorSelection(primary: .black, secondary: .white)
+        var before = bridge.state.image
+        PaintBucketTool().mouseDown(event(context, 150, 150), context: context)
+        #expect(pixel(bridge.state.image, 2, 150, 150) == .black,
+                "the bucket fills the ACTIVE layer")
+        expectBelowUntouched(before)
+
+        // 2) Eraser drags on the Top layer.
+        before = bridge.state.image
+        let eraser = EraserTool()
+        eraser.mouseDown(event(context, 100, 100), context: context)
+        eraser.mouseDragged(event(context, 140, 100, seed: 1), context: context)
+        eraser.mouseUp(event(context, 140, 100, seed: 2), context: context)
+        #expect(pixel(bridge.state.image, 2, 120, 100) == .clear,
+                "the eraser erases the ACTIVE layer")
+        expectBelowUntouched(before)
+
+        // 3) Fill Selection / Erase Selection on the Top layer (0018's router items).
+        let selection = try #require(Selection(rect: CGRect(x: 40, y: 220, width: 30, height: 30),
+                                               canvasSize: before.size))
+        context.performHistory(SelectionHistoryItem(name: "Select", icon: .generic,
+                                                    before: nil, after: selection))
+        before = bridge.state.image
+        let fillItem = try #require(FillSelection.makeHistoryItem(for: bridge.state,
+                                                                  color: .white))
+        bridge.perform(fillItem)
+        #expect(pixel(bridge.state.image, 2, 50, 230) == .white, "Fill Selection hit layer 2")
+        expectBelowUntouched(before)
+        before = bridge.state.image
+        let eraseItem = try #require(EraseSelection.makeHistoryItem(for: bridge.state))
+        bridge.perform(eraseItem)
+        #expect(pixel(bridge.state.image, 2, 50, 230) == .clear, "Erase Selection cleared layer 2")
+        expectBelowUntouched(before)
+
+        // 4) Cut (0021) erases the selection from the ACTIVE layer only.
+        context.performHistory(SelectionHistoryItem(name: "Select", icon: .generic,
+                                                    before: nil, after: selection))
+        PaintBucketTool().mouseDown(event(context, 50, 230, seed: 3), context: context)
+        let fillLayer = bridge.state.image.layers[2].surface
+        #expect(fillLayer.pixel(at: PixelPoint(x: 50, y: 230)) == .black)
+        before = bridge.state.image
+        let pasteboard = makePrivatePasteboard()
+        defer { pasteboard.releaseGlobally() }
+        DocumentWindowController.performCut(bridge: bridge,
+                                            clipboard: ClipboardController(pasteboard: pasteboard),
+                                            alerts: RecordingAlertPresenter())
+        #expect(pixel(bridge.state.image, 2, 50, 230) == .clear, "Cut erased the ACTIVE layer")
+        #expect(bridge.state.selection == nil)
+        expectBelowUntouched(before)
+        // The clipboard holds the cropped ACTIVE-layer region (0021), not another layer.
+        let pngData = try #require(pasteboard.data(forType: NSPasteboard.PasteboardType(
+            ClipboardImageCodec.pngType)))
+        let cutSurface = try ImageDecoder.decode(pngData).surface
+        #expect(cutSurface.size == PixelSize(width: 30, height: 30))
+        #expect(cutSurface.pixel(at: PixelPoint(x: 10, y: 10)) == .black,
+                "Cut copied the Top layer's fill")
+
+        // 5) Duplicate + paint: copy-on-write keeps the original bit-identical.
+        #expect(LayerCommandRunner.run(.duplicateLayer, bridge: bridge, commitPendingEdit: {}))
+        #expect(bridge.state.image.activeLayerIndex == 3)
+        context.colors = ColorSelection(primary: .white, secondary: .black)
+        before = bridge.state.image
+        #expect(before.layers[3].surface.tile(at: TileCoordinate(column: 0, row: 0))!
+                    .sharesStorage(with: before.layers[2].surface
+                        .tile(at: TileCoordinate(column: 0, row: 0))!),
+                "the duplicate shares its original's tiles")
+        let pencil = PencilTool()
+        pencil.mouseDown(event(context, 20, 20), context: context)
+        pencil.mouseUp(event(context, 20, 20, seed: 1), context: context)
+        let painted = bridge.state.image
+        #expect(pixel(painted, 3, 20, 20) == .white, "the pencil paints the duplicate")
+        #expect(pixel(painted, 2, 20, 20) == .black,
+                "painting the duplicate leaves the original bit-identical (copy-on-write)")
+        #expect(painted.layers[2].surface == before.layers[2].surface)
+    }
+
     @Test func colorPickerImageVsLayer() throws {
         let size = PixelSize(width: 8, height: 8)
         var bottom = TiledSurface(size: size)

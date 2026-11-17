@@ -393,7 +393,8 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
   - Property (1 function → 4 shards × 25 runs × 20 commands): `LayerOperationsPropertyTests`.
   - GPU (11): `MetalCompositorTests` 9 (CPU-parity ±1, hidden/opacity/blend, mip padding,
     ten-layer, identity), `MetalCompositorGoldenTests` 2 (`NormalStack300`,
-    `CanvasTenLayersAt50Percent`; goldens recorded in `PaintDotMacTests/Support/Golden/`).
+    `CanvasTenLayersAt50Percent`; goldens in `PaintDotMacTests/Golden/` — relocated from
+    `Support/Golden/` with `.png` names at review time).
   - Performance (3 XCTest): `MetalCompositorPerformanceTests` — 10-layer 4K pan/zoom
     frame-block 97.6 ms (< 3× 16.7 ms budget), single-tile edit frame 0.77 ms (< 50 ms),
     full 10-layer 4K recomposite 31.1 ms (< 2 s) — NF-1/NF-2 measured on this Mac (Debug).
@@ -403,7 +404,70 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
   (display path now composites the whole stack via `MetalCompositor`), `ImageEncoderTests`
   (multi-layer documents now fail with `.layeredImageNeedsFlatten`), `CanvasReferenceRenderer`
   (mirrors per-layer visibility/opacity; contract constant unchanged).
-- Review: pending
+- Review: 2026-11-17, independent review — **PASS** with the fixes below (all committed on
+  this spec's review commit; gate re-run green — see the tail below the review gate line).
+  - Criteria traced: every acceptance bullet maps to ≥1 failing-if-broken test. Golden oracle
+    independence verified: `assertGolden` always checks the GPU `actual` against the CPU
+    oracle (±1) before the PNG, refuses to record while the oracle disagrees, and a recording
+    run never passes — all three pinned by `GoldenImageTests`. The two goldens are CPU-oracle
+    approved (`CPUCompositor.composite` / `CanvasReferenceRenderer`), not raw Metal captures;
+    merge math re-derived independently (`mergeMatchesTwoLayerCompositeWhenLowerIsPlain`,
+    50 seeded pairs, exact equality with the two-layer `flattened`).
+  - Mutation spot-checks — 9 applied, 9 caught, all restored (`git diff` verified):
+    (1) snapshot `revert` keeping the live active pointer → `applyRevertExact` + the property
+    test red; (2) `merged` blending with the LOWER's opacity → `mergeDownHandValues`,
+    `mergeDownUsesUpperOpacity`, `mergeMatchesTwoLayerComposite…` red (the upper-mode rule
+    itself is code-reviewed: `BlendMode` has one case today, so no test can distinguish it
+    until 0026 adds a second); (3) `deleteLayer` removing index 0 → `deleteTopActivatesBelow`,
+    `deleteMiddle` red; (4) layer snapshot items dropping the selection →
+    `selectionSurvivesLayerOps`, `selectionUnchanged` red; (5) `contributingLayers` ignoring
+    `isVisible` → `randomStacksMatchCPU` red; (6) `compositor_premultiply` SKIPPING the
+    padding write → the new `edgeTilePaddingIsOverwrittenNotSkipped` red (the previous
+    `edgeTilePadding` alone does NOT catch it — a fresh shared texture reads back zero — the
+    new test pre-fills the target with 0xFF and reuses the compositor's pooled transient, so
+    the previous tile's pixels expose the fringe); (7) Paint Bucket pinned to `layers[0]` →
+    the new `fillEraseAndClipboardPathsTargetActiveLayer` red; (8) `EraseSelection` pinned to
+    `layers[0]` → same test red; (9) generic `.encodingFailed` wrap for multi-layer saves →
+    `multiLayerSaveShowsFlattenHint` (window level, NSDocument error text) + `ImageEncoderTests`
+    red. One equivalent mutant documented: deleting the `validSize` guard in `apply_layer`
+    is unreachable — `TiledSurface.setTile` precondition-rejects tiles with non-zero pixels
+    outside the canvas (caught live while writing these tests), so the kernel guard is
+    defense-in-depth only.
+  - Fixed at review: (a) `LayerOperationsPropertyTests` compared only `image.layers` in the
+    undo/redo walk and its comment claimed the walk "ignores the hand-moved active pointer"
+    — a weakened premise against H-6/D-34, which makes every layer step restore the active
+    pointer recorded in that step (overwriting an intervening Go to Layer switch). The test
+    now pins the FULL `DocumentState` against the first step's `before` and the last step's
+    `after` (Go to Layer switches are not history, so they are outside the walk by contract),
+    with a compact failure digest instead of Swift Testing's hundreds-of-MB state reflection.
+    (b) `MetalCompositor.encodeTile` registers the pooled transient's return in the command
+    buffer's completed handler at dequeue (a mid-encode failure at `baseLevel > 0` could
+    previously leak transient textures). (c) goldens moved to the spec-mandated
+    `PaintDotMacTests/Golden/<name>.png` (AGENTS.md *Testing expectations*; 18 KB + 190 KB,
+    well under 1 MB). (d) tests added: `fillEraseAndClipboardPathsTargetActiveLayer` (bucket,
+    eraser, Erase/Fill Selection, Cut on layer 3-of-3 + clipboard origin + Duplicate CoW
+    paint separation — the active-layer targeting 0006–0023 paths gained with multi-layer),
+    `edgeTilePaddingIsOverwrittenNotSkipped`, `missingBlendKernelThrows` (0024 *Metal
+    unavailable / missing kernel*), and the "Go to never marks the document edited" pin in
+    `goToIsNotAHistoryStep`.
+  - Crash / rules audit: no pixel path writes `layers[0]` (all resolve the target via
+    `activeLayerIndex` / `activeLayer.id` + `layerIndex(for:)`); wand/bucket "Layer" and
+    "Image" flood bases read the active layer / `CPUCompositor` composite respectively
+    (0016's `FloodFillSource.make`, pinned by `MagicWandToolTests.samplingLayerVsImage`);
+    `Core` imports stay AppKit-free; all GPU tests render offscreen; staging/accumulator/
+    transient pools are bounded by in-flight frames (returned through completed handlers);
+    100-layer residency composites ±1 CPU (`hundredLayers`); an empty stack is impossible
+    (`LayeredImage.isConsistent` precondition) and 1-layer `ImageEncoder` zero-layer stays
+    `.encodingFailed`; pending-edit finishing runs through the real `ToolDispatcher`
+    (`floatingPixelsFinishBeforeLayerCommand`, `goToAlsoFinishesFloatingPixels` — the
+    production `prepareForNavigation` wiring, not direct tool calls); menu validation matrix
+    at window level via `validateMenuItem` (`singleLayerMenuState`,
+    `addDuplicateMergeFlattenWithUndo`).
+  - Review gate (full, clean build, `quality-gate.sh`): **GREEN** —
+    `tests: 1839 passed, 0 failed, 0 skipped (of 1839)`; no crash reports during the run;
+    `build-for-testing` warning scan: zero compiler warnings. Re-measured this run:
+    NF-2 pan/zoom 10-layer 4K average 0.91 ms/frame (≤ 16.7 ms target), NF-1 single-tile
+    edit frame 0.82 ms, full 10-layer 4K recomposite 38.3 ms (< 2 s gate).
 - Manual verification (not yet performed):
   - [ ] Open a photo, ⇧⌘N, paint over it with a semi-transparent color: strokes appear over the
         photo; Layers > Go to Layer Below then paint: strokes go under the earlier ones.

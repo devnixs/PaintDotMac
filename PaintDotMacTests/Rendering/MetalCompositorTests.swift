@@ -484,6 +484,124 @@ struct MetalCompositorTests {
             expectNoMismatches(comparison, "base-3 level \(3 + index)")
         }
     }
+
+    /// Edge-tile padding is written, not assumed: the premultiply kernel must overwrite
+    /// every texel outside the valid region with `(0,0,0,0)` (0024 item 3 — the low-zoom
+    /// fringe bug is a skipped write, since `TiledSurface` itself keeps stored padding
+    /// zero, enforced by `setTile`'s debug precondition). Two layers of defense:
+    /// (1) the target is pre-filled with `0xFF` garbage at every mip level before the
+    /// encode; (2) the compositor's own pooled transient survives a previous full-tile
+    /// encode, so a skipped write bleeds the PREVIOUS TILE into the new tile's mips.
+    @Test func edgeTilePaddingIsOverwrittenNotSkipped() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let compositor = try makeCompositor(device)
+        let cpu = CPUCompositor()
+        let size = PixelSize(width: 300, height: 300)
+        let coord = TileCoordinate(column: 1, row: 1)   // 44×44 in canvas
+        let red = ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 255)
+        let blue = ColorRGBA8(red: 0, green: 0, blue: 255, alpha: 128)
+        var edgeSurface = TiledSurface(size: size)
+        var edgeTile = Tile()
+        for y in 0..<44 {
+            for x in 0..<44 {
+                edgeTile.setPixel((x + y) % 3 == 0 ? blue : red, x: x, y: y)
+            }
+        }
+        edgeSurface.setTile(edgeTile, at: coord)
+        let stack = image([layer(name: "Edge", surface: edgeSurface)])
+        let reference = try #require(cpu.compositeTile(coord, of: stack))
+
+        // (1) A target pre-filled with 0xFF at every level: level-0 padding must come
+        // back exactly zero, and the chain must equal the CPU one.
+        let queue = try MetalTestTarget.makeCommandQueue(device)
+        let garbage = [UInt8](repeating: 0xFF, count: 256 * 256 * 4)
+        let target = try readableTileTexture(device, baseLevel: 0)
+        for level in 0..<TileMipmapper.levelCount {
+            let side = 256 >> level
+            garbage.withUnsafeBytes { base in
+                target.replace(region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: level,
+                               withBytes: base.baseAddress!, bytesPerRow: side * 4)
+            }
+        }
+        let buffer = try #require(queue.makeCommandBuffer())
+        #expect(compositor.encodeTile(coord, of: stack, baseLevel: 0,
+                                      into: target, commandBuffer: buffer))
+        buffer.commit()
+        buffer.waitUntilCompleted()
+        var bytes = [UInt8](repeating: 0x5A, count: 256 * 256 * 4)
+        target.getBytes(&bytes, bytesPerRow: 256 * 4,
+                        from: MTLRegionMake2D(0, 0, 256, 256), mipmapLevel: 0)
+        for y in 0..<256 {
+            for x in 0..<256 where x >= 44 || y >= 44 {
+                let offset = (y * 256 + x) * 4
+                #expect(bytes[offset] == 0 && bytes[offset + 1] == 0
+                            && bytes[offset + 2] == 0 && bytes[offset + 3] == 0,
+                        "premultiplied padding (\(x), \(y)) was not overwritten")
+            }
+        }
+        let chain = TileMipmapper.mipChain(
+            level0: cpuPadded(reference, validWidth: 44, validHeight: 44), baseLevel: 0)
+        for (index, cpuLevel) in chain.enumerated() {
+            let side = 256 >> index
+            expectNoMismatches(GoldenImage.compare(
+                readLevel(target, level: index, side: side),
+                to: cpuLevel, width: side, height: side, tolerance: 1),
+                "prefilled level \(index)")
+        }
+
+        // (2) Pooled transient reuse: encode a FULL white tile first (its contents fill
+        // the transient), then the 44×44 edge tile in a later command buffer — the same
+        // transient comes back from the pool. A premultiply that skipped padding would
+        // leave the white tile's coarse mip data in the edge tile's mips: a fringe.
+        var fullSurface = TiledSurface(size: size)
+        fullSurface.fill(.white)
+        let fullStack = image([layer(name: "Full", surface: fullSurface)])
+        let firstBuffer = try #require(queue.makeCommandBuffer())
+        let coarseTarget = try readableTileTexture(device, baseLevel: 3)
+        #expect(compositor.encodeTile(TileCoordinate(column: 0, row: 0), of: fullStack,
+                                      baseLevel: 3, into: coarseTarget,
+                                      commandBuffer: firstBuffer))
+        firstBuffer.commit()
+        firstBuffer.waitUntilCompleted()
+        let secondBuffer = try #require(queue.makeCommandBuffer())
+        #expect(compositor.encodeTile(coord, of: stack, baseLevel: 3,
+                                      into: coarseTarget, commandBuffer: secondBuffer))
+        secondBuffer.commit()
+        secondBuffer.waitUntilCompleted()
+        let coarseChain = TileMipmapper.mipChain(
+            level0: cpuPadded(reference, validWidth: 44, validHeight: 44), baseLevel: 3)
+        for (index, cpuLevel) in coarseChain.enumerated() {
+            let side = 32 >> index
+            let comparison = GoldenImage.compare(
+                readLevel(coarseTarget, level: index, side: side),
+                to: cpuLevel, width: side, height: side, tolerance: 1)
+            expectNoMismatches(comparison,
+                "transient-reuse level \(3 + index): fringe means the previous tile's pixels survived")
+        }
+    }
+
+    /// A Metal library without the blend kernels fails `init` with `.functionMissing`
+    /// naming the missing function (0024 *Metal unavailable / missing kernel*) — the
+    /// canvas then follows 0003's existing error handling; nothing crashes.
+    @Test func missingBlendKernelThrows() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let library = try #require(
+            try? device.makeLibrary(source: """
+                #include <metal_stdlib>
+                kernel void unrelated(device const float* x [[buffer(0)]]) {}
+                """, options: nil),
+            "could not compile the empty library")
+        var thrown: CanvasRendererError?
+        do { _ = try MetalCompositor(device: device, library: library) }
+        catch { thrown = error }
+        guard case .functionMissing(let name)? = thrown else {
+            Issue.record("expected .functionMissing, got \(String(describing: thrown))")
+            return
+        }
+        #expect(BlendMode.allCases.map(\.rawValue).contains(name)
+                    || name == "compositor_premultiply" || name == "compositor_downsample",
+                "unexpected missing-function name \(name)")
+    }
 }
 
 private extension ColorRGBA8 {

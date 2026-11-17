@@ -72,6 +72,8 @@ struct LayerCommandRunnerTests {
 
     @Test func goToIsNotAHistoryStep() throws {
         let bridge = fixture(layers: 2)
+        var editedFlags: [Bool] = []
+        bridge.onEditedChange = { editedFlags.append($0) }
         #expect(bridge.state.image.activeLayerIndex == 1)
         let revisionBefore = bridge.historyRevision
         #expect(LayerCommandRunner.goTo(.below, bridge: bridge, commitPendingEdit: {}))
@@ -79,6 +81,7 @@ struct LayerCommandRunnerTests {
         #expect(bridge.history.steps.count == 1, "Go to is not a history step")
         #expect(bridge.historyRevision == revisionBefore)
         #expect(!bridge.undoManager.canUndo)
+        #expect(editedFlags.isEmpty, "Go to never changes the edited state (D-51)")
         // Already at the bottom.
         #expect(!LayerCommandRunner.goTo(.below, bridge: bridge, commitPendingEdit: {}))
         #expect(LayerCommandRunner.goTo(.above, bridge: bridge, commitPendingEdit: {}))

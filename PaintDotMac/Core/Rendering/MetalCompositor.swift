@@ -108,6 +108,11 @@ final class MetalCompositor {
         var transient: Transient?
         if baseLevel > 0 {
             guard let pooled = dequeueTransient() else { return false }
+            // Return the transient through the completed handler right away — every path
+            // out of `encode` (including a mid-encode resource failure) gives it back.
+            commandBuffer.addCompletedHandler { [weak self] _ in
+                Task { @MainActor [weak self] in self?.transientPool.append(pooled) }
+            }
             transient = pooled
         }
         return encode(tile, of: image, baseLevel: baseLevel, into: target,
@@ -240,8 +245,9 @@ final class MetalCompositor {
         }
         compute.endEncoding()
 
-        // (6) `baseLevel > 0`: blit the transient's coarse tail into the target and
-        // return the transient to its pool once the frame completes.
+        // (6) `baseLevel > 0`: blit the transient's coarse tail into the target. (The
+        // transient returns to its pool through the completed handler `encodeTile`
+        // registered when it was dequeued.)
         if baseLevel > 0, let transient {
             guard let blit = commandBuffer.makeBlitCommandEncoder() else { return false }
             var coarseSide = side >> baseLevel
@@ -254,9 +260,6 @@ final class MetalCompositor {
                 coarseSide /= 2
             }
             blit.endEncoding()
-            commandBuffer.addCompletedHandler { [weak self] _ in
-                Task { @MainActor [weak self] in self?.transientPool.append(transient) }
-            }
         }
         return true
     }

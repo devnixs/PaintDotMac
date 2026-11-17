@@ -37,12 +37,19 @@ enum GoldenImage {
     /// PRD §4 / AGENTS.md: ±1 per channel tolerates GPU differences.
     static let defaultTolerance = 1
 
-    /// `<repo>/PaintDotMacTests/Golden/`, located through `#filePath` (this file lives
-    /// in `PaintDotMacTests/Support/`).
+    /// `<repo>/PaintDotMacTests/Golden/` (AGENTS.md *Testing expectations*), located
+    /// through `#filePath` (this file lives in `PaintDotMacTests/Support/`).
     static var directory: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()   // Support/
+            .deletingLastPathComponent()   // PaintDotMacTests/
             .appendingPathComponent("Golden", isDirectory: true)
+    }
+
+    /// Golden files are `<name>.png` (AGENTS.md): PNG data read by 0002's
+    /// `ImageDecoder`, committed under 1 MB.
+    static func url(for name: String) -> URL {
+        directory.appendingPathComponent("\(name).png")
     }
 
     /// `RECORD_GOLDENS=1` (`TEST_RUNNER_RECORD_GOLDENS=1` for `xcodebuild test`).
@@ -144,8 +151,7 @@ enum GoldenImage {
             do {
                 try FileManager.default.createDirectory(at: directory,
                                                         withIntermediateDirectories: true)
-                try writePNG(actual, width: width, height: height,
-                             to: directory.appendingPathComponent(name))
+                try writePNG(actual, width: width, height: height, to: url(for: name))
             } catch {
                 Issue.record("Could not write Golden/\(name): \(error)",
                              sourceLocation: sourceLocation)
@@ -155,7 +161,7 @@ enum GoldenImage {
                          sourceLocation: sourceLocation)
             return
         }
-        let url = directory.appendingPathComponent(name)
+        let url = url(for: name)
         guard FileManager.default.fileExists(atPath: url.path) else {
             Issue.record("""
                 Golden \(name) missing; record it with RECORD_GOLDENS=1 \
