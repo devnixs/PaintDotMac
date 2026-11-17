@@ -159,6 +159,68 @@ struct FloatingPixelsTests {
                     == bytes(state.image.layers[0].surface, floating.sourceRect))
     }
 
+    /// An antialiased selection for the compositing oracles: coverage 128 at (2, 2),
+    /// 255 at every other pixel of the rect (2, 2, 3, 3).
+    private func halfCoveredSelection() throws -> Selection {
+        let mask = SelectionMask(size: PixelSize(width: 8, height: 8)) { x, y in
+            (2...4).contains(x) && (2...4).contains(y) ? (x == 2 && y == 2 ? 128 : 255) : 0
+        }
+        let outline = CGPath(rect: CGRect(x: 2, y: 2, width: 3, height: 3), transform: nil)
+        return try #require(Selection(mask: mask, outline: outline))
+    }
+
+    /// The spec's compositing formula against a hand-computed oracle: a ⌘-lift keeps the
+    /// original, so the coverage-weighted source pixel (L(2,2) at alpha 128) lands on an
+    /// EXISTING opaque pixel. Porter-Duff source-over in straight alpha (spec 0009's
+    /// `normal`, re-derived by hand here, never read from the code): at (3, 2) with
+    /// `Sa = 128, Da = 255`: `fa = 128·255 + 255·127 = 65 025`,
+    /// `outA = (65 025 + 127)/255 = 255`; red
+    /// `(60·128·255 + 90·255·127 + 32 512)/65 025 = 4 905 562/65 025 = 75`;
+    /// green `(60·128·255 + 60·255·127 + 32 512)/65 025 = 3 934 012/65 025 = 60`;
+    /// blue `(100·128·255 + 100·255·127 + 32 512)/65 025 = 6 535 012/65 025 = 100`.
+    @Test func rendersSemiTransparentOverExistingPixels() throws {
+        let state = DocumentState(image: layerImage(),
+                                  selection: try halfCoveredSelection())
+        let floating = try #require(FloatingPixels.lift(from: state, duplicate: true,
+                                                        baseStepID: 0))
+        var moved = floating
+        moved.session = floating.session.translatedBy(dx: 1, dy: 0)  // nearest path
+        #expect(moved.resamplingMode == .nearestNeighbor)
+        var surface = state.image.layers[0].surface
+        moved.render(into: &surface, region: PixelRect(x: 1, y: 1, width: 6, height: 6))
+        // The 128-coverage pixel composited over the opaque destination (90, 60, 100, 255).
+        #expect(surface.pixel(at: PixelPoint(x: 3, y: 2))
+                    == ColorRGBA8(red: 75, green: 60, blue: 100, alpha: 255))
+        // A fully covered source pixel (alpha 255) replaces the destination exactly.
+        #expect(surface.pixel(at: PixelPoint(x: 4, y: 2)) == l(3, 2))
+        #expect(surface.pixel(at: PixelPoint(x: 5, y: 4)) == l(4, 4))
+        // The original stays untouched (⌘ lift — no hole) and so does everything
+        // outside the destination.
+        #expect(surface.pixel(at: PixelPoint(x: 2, y: 2)) == l(2, 2))
+        #expect(surface.pixel(at: PixelPoint(x: 1, y: 1)) == l(1, 1))
+        #expect(surface.pixel(at: PixelPoint(x: 6, y: 6)) == l(6, 6))
+    }
+
+    /// The half-coverage pixel over its OWN holed underlay (128-alpha lifted colour over
+    /// the 127-alpha remainder): `fa = 128·255 + 127·127 = 48 769`,
+    /// `outA = (48 769 + 127)/255 = 191`, colour stays `(60, 60, 100)` — the identity
+    /// render of an antialiased lift blends rather than restoring the original byte.
+    @Test func identityRenderOverHoleBlendsCoverage() throws {
+        let state = DocumentState(image: layerImage(),
+                                  selection: try halfCoveredSelection())
+        let floating = try #require(FloatingPixels.lift(from: state, duplicate: false,
+                                                        baseStepID: 0))
+        var surface = state.image.layers[0].surface
+        floating.render(into: &surface, region: state.image.size.bounds)
+        #expect(surface.pixel(at: PixelPoint(x: 2, y: 2))
+                    == ColorRGBA8(red: 60, green: 60, blue: 100, alpha: 191))
+        // Full-coverage pixels round-trip exactly: source 255 over the clear hole.
+        #expect(surface.pixel(at: PixelPoint(x: 3, y: 2)) == l(3, 2))
+        #expect(surface.pixel(at: PixelPoint(x: 4, y: 4)) == l(4, 4))
+        // Outside the source rect: bit-for-bit the underlay.
+        #expect(surface.pixel(at: PixelPoint(x: 5, y: 5)) == l(5, 5))
+    }
+
     // MARK: - Render
 
     @Test func renderIdentityMatchesOriginalForHardSelection() throws {

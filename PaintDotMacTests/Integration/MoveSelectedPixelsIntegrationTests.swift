@@ -197,13 +197,26 @@ struct MoveSelectedPixelsIntegrationTests {
     // MARK: - Save
 
     @Test func saveKeepsFloating() throws {
-        let (tool, context, _) = try fixture()
+        let (_, context, dispatcher) = try fixture()
+        // The real window wiring: the dispatcher's ACTIVE tool answers for the document
+        // (0020 item 9) — without this the bridge hook would commit the default tool and
+        // the test would pass vacuously.
+        #expect(dispatcher.selectTool(.moveSelectedPixels))
+        guard let tool = dispatcher.activeTool as? MoveSelectedPixelsTool else {
+            Issue.record("expected the Move Selected Pixels tool")
+            return
+        }
         let bridge = context.bridge
         drag(tool, context, from: CGPoint(x: 3, y: 3), to: CGPoint(x: 5, y: 3))
         let steps = bridge.history.steps.count
         bridge.prepareForSave()
         #expect(bridge.history.steps.count == steps, "save records no step (D-47c)")
         #expect(context.floatingPixels != nil, "still floating afterwards")
+        // A `.command` stamp instead of `.save` would commit "Finish Pixels" here —
+        // navigation/save must route through `prepareForHistoryNavigation`.
+        bridge.prepareForManagerNavigation()
+        #expect(bridge.history.steps.count == steps, "undo-prep records no step either")
+        #expect(context.floatingPixels != nil)
         // The PNG contains the rendered layer: the hole is transparent, the destination
         // carries the moved pixels.
         let data = try ImageEncoder.encode(context.image, as: .png)

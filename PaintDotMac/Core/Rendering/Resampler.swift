@@ -69,9 +69,14 @@ enum Resampler {
         let maxX = ceil(corners.map(\.x).max()!)
         let minY = floor(corners.map(\.y).min()!)
         let maxY = ceil(corners.map(\.y).max()!)
+        // `Int(exactly:)` on the ORIGIN too: a translation of ~1e20 keeps a small width
+        // (the corners collapse to the same Double) while the origin itself is far outside
+        // `Int` — a plain `Int(minX)` conversion would trap. Such a transform samples no
+        // canvas pixel anyway: `.zero` is the defined answer.
         guard let width = Int(exactly: maxX - minX), let height = Int(exactly: maxY - minY),
+              let originX = Int(exactly: minX), let originY = Int(exactly: minY),
               width >= 0, height >= 0 else { return .zero }
-        return PixelRect(x: Int(minX), y: Int(minY), width: width, height: height)
+        return PixelRect(x: originX, y: originY, width: width, height: height)
     }
 
     /// One sample at a source-canvas point (source pixel (0,0) sits at `sourceOrigin`).
@@ -79,6 +84,9 @@ enum Resampler {
     /// buffers.
     static func sample(_ source: TiledSurface, sourceOrigin: PixelPoint, at point: CGPoint,
                        mode: ResamplingMode) -> ColorRGBA8 {
+        // A non-finite point maps nowhere: `.clear` (an `Int(floor(NaN))` conversion
+        // would trap; callers feed finite canvas points, this keeps the oracle total).
+        guard point.componentsAreFinite else { return .clear }
         let local = CGPoint(x: point.x - Double(sourceOrigin.x),
                             y: point.y - Double(sourceOrigin.y))
         switch mode {
@@ -225,10 +233,13 @@ enum Resampler {
         source.pixel(at: PixelPoint(x: x, y: y))
     }
 
-    /// `floor` of a possibly astronomically large (but finite) Double → an `Int` that
-    /// will fail `Int(exactly:)` lookups downstream rather than trap.
+    /// `floor` of a possibly astronomically large or non-finite Double → an `Int` that
+    /// will fail the tile lookups downstream rather than trap (`Int(NaN)` is fatal).
+    /// The accompanying fractional weight goes NaN/∞ and `combine` drops it, so the
+    /// sample resolves to `.clear` either way.
     private static func clamped(_ value: Double) -> Double {
-        value < -1e18 ? -1e18 : (value > 1e18 ? 1e18 : value)
+        guard value.isFinite else { return 0 }
+        return value < -1e18 ? -1e18 : (value > 1e18 ? 1e18 : value)
     }
 
     /// Premultiplied, weights-sum-to-1 combination (spec 0020 item 1): `A = Σ w·a`,
@@ -241,12 +252,17 @@ enum Resampler {
         var premultipliedBlue = 0.0
         for sample in samples {
             let weight = sample.weight
+            // An adversarial matrix (finite entries, ~0 determinant) can overflow the
+            // inverse-mapped band coordinates to ±∞; such a sample reads transparent
+            // pixels whose weight would poison the sums with NaN.
+            guard weight.isFinite else { continue }
             let a = Double(sample.pixel.alpha)
             alpha += weight * a
             premultipliedRed += weight * a * Double(sample.pixel.red)
             premultipliedGreen += weight * a * Double(sample.pixel.green)
             premultipliedBlue += weight * a * Double(sample.pixel.blue)
         }
+        guard alpha.isFinite else { return .clear }
         let outAlpha = min(255, Int(alpha + 0.5))
         guard outAlpha > 0, alpha > 0 else { return .clear }
         func channel(_ premultiplied: Double) -> UInt8 {

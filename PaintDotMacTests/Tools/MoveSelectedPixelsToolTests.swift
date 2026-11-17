@@ -153,6 +153,58 @@ struct MoveSelectedPixelsToolTests {
         #expect(pixel(context, 2, 2) == .clear, "the hole stays")
     }
 
+    /// Edge case "Tile boundaries" at the step level: on a 600 × 400 canvas the hole
+    /// (columns 250–269, straddling tiles (0,0) and (1,0)) and the destination (columns
+    /// 550–569, tile (2,0)) share no tile — the committed step's diff must cover BOTH
+    /// regions, or undo leaves the un-vacated source behind.
+    @MainActor
+    @Test func crossTileDragRecordsFullStep() throws {
+        let canvas = PixelSize(width: 600, height: 400)
+        func color(_ x: Int, _ y: Int) -> ColorRGBA8 {
+            ColorRGBA8(red: UInt8(x % 256), green: UInt8(y % 256), blue: 77, alpha: 255)
+        }
+        var image = LayeredImage.blank(size: canvas, fill: .clear)
+        for y in 0..<400 {
+            for x in 0..<600 {
+                image.activeLayer.surface.setPixel(color(x, y), at: PixelPoint(x: x, y: y))
+            }
+        }
+        let context = FakeToolContext(image: image)
+        context.nav.transform = CanvasTransform(
+            imageSize: canvas, viewSize: CGSize(width: 600, height: 400),
+            backingScale: 1, zoom: 1, center: CGPoint(x: 300, y: 200))
+        context.performHistory(SelectionHistoryItem(name: "setup", icon: .generic, before: nil,
+                                                    after: try #require(
+                                                        Selection(rect: CGRect(x: 250, y: 10,
+                                                                                width: 20, height: 20),
+                                                                    canvasSize: canvas))))
+        let original = context.image.activeLayer.surface
+        let tool = MoveSelectedPixelsTool()
+        tool.activate(context: context)
+        drag(tool, context, from: CGPoint(x: 260, y: 20), to: CGPoint(x: 560, y: 20))
+        #expect(names(context) == ["New Image", "setup", "Move Pixels"])
+        // Live after the committed step (apply re-lands the diff tiles): hole punched
+        // across tile (0,0) and (1,0), pixels at tile (2,0).
+        #expect(pixel(context, 250, 10) == .clear, "hole, tile (0,0)")
+        #expect(pixel(context, 269, 29) == .clear, "hole, tile (1,0)")
+        #expect(pixel(context, 550, 10) == color(250, 10), "destination, tile (2,0)")
+        #expect(pixel(context, 569, 29) == color(269, 29), "destination, tile (2,0)")
+        #expect(pixel(context, 249, 29) == color(249, 29), "outside: unchanged")
+        #expect(pixel(context, 570, 10) == color(570, 10), "outside: unchanged")
+        // Undo → byte-identical original (the diff carried the hole tiles too); redo →
+        // the moved state.
+        context.navigateForTests { history, state in _ = history.undo(&state) }
+        #expect(context.image.activeLayer.surface == original, "undo restores the hole tile")
+        var expected = original
+        expected.fill(.clear, in: PixelRect(x: 250, y: 10, width: 20, height: 20))
+        expected.writePixels(
+            original.readPixels(in: PixelRect(x: 250, y: 10, width: 20, height: 20)),
+            to: PixelRect(x: 550, y: 10, width: 20, height: 20))
+        context.navigateForTests { history, state in _ = history.redo(&state) }
+        #expect(context.image.activeLayer.surface == expected,
+                "redo re-lands hole AND destination")
+    }
+
     @Test func clickAddsNoPixelStep() throws {
         let (tool, context) = try activated(rect: CGRect(x: 2, y: 2, width: 3, height: 3))
         drag(tool, context, from: CGPoint(x: 3, y: 3), to: CGPoint(x: 3, y: 3))

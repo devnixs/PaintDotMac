@@ -287,6 +287,78 @@ struct ResamplerTests {
                                       mode: .bilinear,
                                       destination: PixelRect(x: 0, y: 0, width: 4, height: 4))
         #expect(flat.allSatisfy { $0 == 0 })
+        // Scale-to-zero through a nub (degenerate d) is equally defined.
+        let squashed = Resampler.resample(source, sourceOrigin: .zero,
+                                          transform: t(1, 0, 0, 0, 0, 0), mode: .bilinear,
+                                          destination: PixelRect(x: 0, y: 0, width: 4, height: 4))
+        #expect(squashed.allSatisfy { $0 == 0 })
+    }
+
+    @Test func hugeAndNonFiniteTransformsAreDefinedNotFatal() {
+        // Review focus (spec 0020): offsets beyond `Int`, infinite matrices, and
+        // near-zero determinants resolve to defined empty/clear results — never a trap.
+        let (source, _) = source16()
+        let sourceRect = PixelRect(x: 0, y: 0, width: 4, height: 4)
+        // A translation of 1e20 keeps a collapsed width (the corners land on the same
+        // Double) while the ORIGIN is far outside `Int` — `destinationBounds` answers
+        // `.zero` instead of trapping on `Int(1e20)`.
+        for offset in [1e20, -1e20, .greatestFiniteMagnitude] {
+            let move = CGAffineTransform(translationX: offset, y: offset)
+            #expect(Resampler.destinationBounds(sourceRect: sourceRect, transform: move,
+                                                mode: .nearestNeighbor) == .zero,
+                    "offset \(offset)")
+            #expect(Resampler.destinationBounds(sourceRect: sourceRect, transform: move,
+                                                mode: .bilinear) == .zero)
+            // Resampling a canvas-sized destination through it is all-clear, not fatal.
+            let bytes = Resampler.resample(source, sourceOrigin: .zero, transform: move,
+                                           mode: .nearestNeighbor,
+                                           destination: PixelRect(x: 0, y: 0, width: 4, height: 4))
+            #expect(bytes.allSatisfy { $0 == 0 })
+        }
+        // A scale so large the mapped box exceeds `Int` width: `.zero`, not fatal.
+        #expect(Resampler.destinationBounds(sourceRect: sourceRect, transform: t(1e150, 0, 0, 1e150, 0, 0),
+                                            mode: .bilinear) == .zero)
+        // Non-finite transform entries: `.zero` bounds, all-clear output.
+        let bogus = CGAffineTransform(a: .nan, b: 0, c: 0, d: 1, tx: 0, ty: 0)
+        #expect(Resampler.destinationBounds(sourceRect: sourceRect, transform: bogus,
+                                            mode: .bilinear) == .zero)
+        #expect(Resampler.resample(source, sourceOrigin: .zero, transform: bogus,
+                                   mode: .bilinear,
+                                   destination: PixelRect(x: 0, y: 0, width: 4, height: 4))
+                    .allSatisfy { $0 == 0 })
+        // A near-singular matrix (finite entries, determinant ≠ 0): the inverse-mapped
+        // coordinates are huge but finite — every pixel resolves defined, the band path
+        // matches the per-pixel oracle, and transparent output is (0,0,0,0) (NaN would
+        // trap in `Int(…)` or leak colour under alpha 0).
+        let nearSingular = CGAffineTransform(a: 1e9, b: 1e9, c: 1e9, d: 1e9 + 1e-7, tx: 0, ty: 0)
+        let destination = PixelRect(x: 0, y: 0, width: 4, height: 4)
+        let bytes = Resampler.resample(source, sourceOrigin: .zero, transform: nearSingular,
+                                       mode: .bilinear, destination: destination)
+        #expect(bytes.count == 4 * 4 * 4)
+        for index in 0..<16 where bytes[index * 4 + 3] == 0 {
+            #expect(bytes[index * 4] == 0 && bytes[index * 4 + 1] == 0
+                        && bytes[index * 4 + 2] == 0, "pixel \(index) keeps D-27")
+        }
+        let inverse = nearSingular.inverted()
+        for y in 0..<4 {
+            for x in 0..<4 {
+                let centre = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5).applying(inverse)
+                let offset = (y * 4 + x) * 4
+                #expect(ColorRGBA8(red: bytes[offset], green: bytes[offset + 1],
+                                   blue: bytes[offset + 2], alpha: bytes[offset + 3])
+                            == Resampler.sample(source, sourceOrigin: .zero, at: centre,
+                                                mode: .bilinear),
+                        "band path == oracle at (\(x), \(y))")
+            }
+        }
+        // Non-finite sample points (the test oracle path) are `.clear`.
+        for point in [CGPoint(x: .nan, y: 0.5), CGPoint(x: 0.5, y: .infinity),
+                      CGPoint(x: -Double.infinity, y: .nan)] {
+            for mode in [ResamplingMode.nearestNeighbor, .bilinear] {
+                #expect(Resampler.sample(source, sourceOrigin: .zero, at: point, mode: mode)
+                            == ColorRGBA8.clear, "point \(point) \(mode)")
+            }
+        }
     }
 
     @Test func resampleMatchesPerPixelSample() throws {
