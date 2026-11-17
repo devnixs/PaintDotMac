@@ -29,6 +29,10 @@ final class ToolOverlayView: NSView {
             drawSelectionShape(preview, transform: canvasView.transform)
         case .lassoPath(let points, let rubberBand)?:
             drawLassoPath(points: points, rubberBand: rubberBand, transform: canvasView.transform)
+        case .transformHandles(let preview)?:
+            if let ctx = NSGraphicsContext.current?.cgContext {
+                TransformHandlesOverlay.draw(preview, transform: canvasView.transform, in: ctx)
+            }
         case nil:
             break
         }

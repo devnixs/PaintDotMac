@@ -149,6 +149,11 @@ struct ToolOptionsContent: View {
         case .zoom, .pan:
             // Paint.NET shows no Zoom/Pan options.
             EmptyView()
+        case .moveSelection:
+            // T-6 / 0019: Paint.NET's MoveSelectionTool has ToolBarConfigItems.None —
+            // no tool-specific controls. The re-rasterization quality comes from the
+            // shared selection-clipping option set (0014) in the selection tools.
+            EmptyView()
         default:
             // Options arrive with each tool's spec (0012 Color Picker, …).
             EmptyView()

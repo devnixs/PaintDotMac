@@ -67,9 +67,10 @@ struct ToolRegistryTests {
     @Test func standardRegistersPaintbrush() {
         // Later tool specs extend this list as they register their tool (0011 added the
         // Eraser and the Pencil; 0012 the Color Picker; 0014 the two selection tools;
-        // 0015 the Lasso; 0016 the Magic Wand; 0017 the Paint Bucket).
+        // 0015 the Lasso; 0016 the Magic Wand; 0017 the Paint Bucket; 0019 Move
+        // Selection).
         #expect(ToolRegistry.standard().implementedIDs
-                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand, .moveSelection,
                         .zoom, .pan, .paintBucket,
                         .paintbrush, .eraser, .pencil, .colorPicker])
         #expect(ToolRegistry.standard().makeTool(.magicWand) is MagicWandTool)
@@ -121,7 +122,7 @@ struct ToolRegistryTests {
         #expect(registry.shortcutGroup(for: "p") == [.pencil])
         #expect(registry.shortcutGroup(for: "e") == [.eraser])
         #expect(registry.implementedIDs
-                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand, .moveSelection,
                         .zoom, .pan, .paintBucket,
                         .paintbrush, .eraser, .pencil, .colorPicker],
                 "paintbrush, eraser, pencil, color picker consecutively — ToolID.allCases order")
@@ -180,5 +181,23 @@ struct ToolRegistryTests {
         #expect(registry.shortcutGroup(for: "f") == [.paintBucket])
         #expect(registry.implementedIDs.contains(.paintBucket))
         #expect(registry.makeTool(.paintBucket) is PaintBucketTool)
+    }
+
+    /// 0019 *Acceptance*: M's group is just Move Selection today (Move Selected Pixels
+    /// arrives with 0020, which replaces this test with `moveGroupOrder`); the resolver
+    /// yields `.moveSelection` for M and for Shift+M.
+    @Test func moveGroupHasMoveSelection() {
+        let registry = ToolRegistry.standard()
+        #expect(registry.shortcutGroup(for: "m") == [.moveSelection])
+        #expect(registry.implementedIDs.contains(.moveSelection))
+        #expect(registry.makeTool(.moveSelection) is MoveSelectionTool)
+        var resolver = ToolShortcutResolver()
+        #expect(resolver.resolve(key: "m", shift: false,
+                                 group: registry.shortcutGroup(for: "m"),
+                                 activeTool: .paintbrush, timestamp: 0) == .moveSelection)
+        var shifting = ToolShortcutResolver()
+        #expect(shifting.resolve(key: "m", shift: true,
+                                 group: registry.shortcutGroup(for: "m"),
+                                 activeTool: .paintbrush, timestamp: 0) == .moveSelection)
     }
 }

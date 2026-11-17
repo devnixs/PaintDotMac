@@ -97,6 +97,9 @@ final class FakeToolContext: ToolContext {
 
     private(set) var activatedTools: [ToolID] = []
     private(set) var overlays: [ToolOverlay?] = []
+    /// The most recent `setOverlay` payload (`nil` when the last call cleared it or no
+    /// call happened yet; 0019 convenience over the recorded list).
+    var lastOverlay: ToolOverlay? { overlays.last ?? nil }
     private(set) var cursorInvalidations = 0
 
     init(size: PixelSize = PixelSize(width: 64, height: 64), background: ColorRGBA8 = .clear,

@@ -4,9 +4,13 @@ import Foundation
 /// `CGPath` is not `Sendable` in the macOS 26 SDK; an immutable `CGPath` is thread-safe
 /// (CoreGraphics documents path construction as producing an immutable, freely shareable
 /// object), so the unchecked box is sound — every mutation path in the app builds a new
-/// path instead.
-private struct SendablePath: @unchecked Sendable {
+/// path instead. Shared with 0019's `TransformHandlesPreview`.
+struct SendablePath: @unchecked Sendable, Equatable {
     let path: CGPath
+
+    static func == (lhs: SendablePath, rhs: SendablePath) -> Bool {
+        CFEqual(lhs.path, rhs.path)
+    }
 }
 
 /// The selection value: a vector outline plus its cached, rasterized 8-bit antialiased
@@ -56,10 +60,18 @@ struct Selection: Sendable, Equatable {
     }
 
     /// 0016 Magic Wand: mask from `FloodFill`, outline traced by 0016. Stores the outline
-    /// clipped to the canvas and the given mask unchanged.
+    /// clipped to the canvas and the given mask unchanged. An outline whose bounding box
+    /// already lies inside the canvas is stored as-is: the boolean clip would rebuild the
+    /// path without changing its geometry, and keeping the exact path preserves cheap
+    /// `CFEqual` identity for 0019's pixel-exact integer moves.
     init?(mask: SelectionMask, outline: CGPath) {
         guard !mask.isEmpty, !mask.size.isEmpty else { return nil }
-        let clipped = outline.isEmpty ? outline : outline.intersection(Self.canvasPath(mask.size))
+        let bbox = outline.boundingBoxOfPath
+        let canvas = CGRect(x: 0, y: 0,
+                            width: mask.size.width, height: mask.size.height)
+        let needsClip = !outline.isEmpty && (!MaskRasterizer.rectIsFinite(bbox)
+                                             || !canvas.contains(bbox))
+        let clipped = needsClip ? outline.intersection(Self.canvasPath(mask.size)) : outline
         self.init(canvasSize: mask.size, path: clipped, mask: mask)
     }
 

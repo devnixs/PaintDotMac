@@ -81,6 +81,44 @@ enum ToolOverlay: Sendable, Equatable {
     /// The Lasso outline in progress (spec 0015), canvas space: the kept points in order
     /// plus the Polygon rubber-band hover point (`nil` while Freeform dragging).
     case lassoPath(points: [CGPoint], rubberBand: CGPoint?)
+    /// The Move tools' transform frame with its 8 nubs (spec 0019, extended by 0020).
+    case transformHandles(TransformHandlesPreview)
+}
+
+extension ToolOverlay {
+    /// True when the overlay asks the marching ants to hide while it lives (0014's
+    /// Replace-mode shape preview, 0019's transform-handle drag).
+    var hidesCurrentSelection: Bool {
+        switch self {
+        case .selectionShape(let preview): preview.hidesCurrentSelection
+        case .transformHandles(let preview): preview.hidesCurrentSelection
+        default: false
+        }
+    }
+}
+
+/// The transform frame the Move tools draw (spec 0019; 0020 adds its pixel-preview use).
+/// `outline` is the live outline while dragging (canvas space; `nil` when idle),
+/// `corners` the frame's TL/TR/BR/BL corners (canvas space, any winding), `center` the
+/// rotation-center marker shown while rotating, and `hidesCurrentSelection` the drag's
+/// "the live outline replaces the ants" rule.
+struct TransformHandlesPreview: Sendable, Equatable {
+    private let storedOutline: SendablePath?
+    /// Canvas space; the live outline while dragging, `nil` when idle.
+    var outline: CGPath? { storedOutline?.path }
+    var corners: [CGPoint]
+    var showsHandles: Bool
+    var center: CGPoint?
+    var hidesCurrentSelection: Bool
+
+    init(outline: CGPath?, corners: [CGPoint], showsHandles: Bool,
+         center: CGPoint?, hidesCurrentSelection: Bool) {
+        self.storedOutline = outline.map { SendablePath(path: $0) }
+        self.corners = corners
+        self.showsHandles = showsHandles
+        self.center = center
+        self.hidesCurrentSelection = hidesCurrentSelection
+    }
 }
 
 /// The rectangle/ellipse outline a selection tool previews while dragging (spec 0014; the
@@ -110,4 +148,10 @@ enum ToolCursor: Sendable, Equatable {
     case openHand
     case closedHand
     case iBeam
+    /// Four-way move arrow (spec 0019).
+    case move
+    /// Rotation cursor (spec 0019).
+    case rotate
+    /// The frame-resize cursor matching a transform handle (spec 0019).
+    case resize(TransformHandle)
 }

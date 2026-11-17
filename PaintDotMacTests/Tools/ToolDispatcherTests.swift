@@ -336,6 +336,14 @@ struct ToolDispatcherTests {
         }
     }
 
+    /// 0019: the arrow keys arrive as `charactersIgnoringModifiers` `"\u{F70x}"` private
+    /// use characters — never tool shortcuts, even though `s` etc. are members.
+    @Test func functionKeyCharactersAreNotToolShortcuts() {
+        for characters in ["\u{F702}", "\u{F703}", "\u{F700}", "\u{F701}"] {
+            #expect(ToolShortcutResolver.toolKey(fromCharactersIgnoringModifiers: characters) == nil)
+        }
+    }
+
     @Test func autoRepeatIgnored() {
         let f = fixture()
         f.dispatcher.handleShortcut(charactersIgnoringModifiers: "s", modifiers: [],

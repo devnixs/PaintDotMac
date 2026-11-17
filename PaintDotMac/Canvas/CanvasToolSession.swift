@@ -79,16 +79,18 @@ final class CanvasToolSession: ToolContext {
 
     func setOverlay(_ overlay: ToolOverlay?) {
         overlayView?.overlay = overlay
-        // 0014: a selection-shape preview (or its removal) drives the status-bar selection
-        // size, and the Replace mode hides the current ants for the drag's duration.
+        // 0014/0019: overlays that hide the current selection (a Replace-mode shape
+        // preview, a transform-handle drag) hide the marching ants for their duration;
+        // any other overlay — and removing one — shows them again.
+        marchingAntsOverlay?.suppressesSelection = overlay?.hidesCurrentSelection ?? false
+        // The status-bar selection size follows a selection-shape preview while it
+        // lives (0014, APP-5); the transform preview shows no live size (0019).
         switch overlay {
         case .selectionShape(let preview):
             selectionPreview = preview
-            marchingAntsOverlay?.suppressesSelection = preview.hidesCurrentSelection
             refreshSelectionSize()
         case nil:
             selectionPreview = nil
-            marchingAntsOverlay?.suppressesSelection = false
             refreshSelectionSize()
         default:
             break
