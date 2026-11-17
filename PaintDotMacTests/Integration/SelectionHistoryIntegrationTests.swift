@@ -26,6 +26,9 @@ struct SelectionHistoryIntegrationTests {
             return selection.mask
         }
         var selection: Selection? { bridge.state.selection }
+        var floatingPixels: FloatingPixels? { bridge.state.floatingPixels }
+        var history: HistoryStack { bridge.history }
+        func jumpHistory(to index: Int) { bridge.jump(to: index) }
         var previousToolID: ToolID?
         var image: LayeredImage { bridge.state.image }
         var transform: CanvasTransform { nav.transform }

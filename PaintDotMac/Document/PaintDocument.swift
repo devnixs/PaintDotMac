@@ -148,12 +148,13 @@ class PaintDocument: NSDocument {
     // MARK: - Edited state and saved marker (spec 0008)
 
     /// Save commits a pending tool edit first (0009's in-progress stroke, later shapes
-    /// and text), so an uncommitted edit is committed and lands in the file. 0009 relies
-    /// on this call and adds none of its own.
+    /// and text), so an uncommitted edit is committed and lands in the file. 0020: the
+    /// reason is `.save` — Move Selected Pixels keeps its pixels floating and the file
+    /// simply gets the rendered layer (D-47b).
     override func save(to url: URL, ofType typeName: String,
                        for saveOperation: NSDocument.SaveOperationType,
                        completionHandler: @escaping (Error?) -> Void) {
-        undoBridge.prepareForNavigation?()
+        undoBridge.prepareForSave()
         super.save(to: url, ofType: typeName, for: saveOperation,
                    completionHandler: completionHandler)
     }

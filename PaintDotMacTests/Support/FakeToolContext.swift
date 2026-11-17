@@ -133,6 +133,14 @@ final class FakeToolContext: ToolContext {
         body(&state.image)
     }
 
+    // MARK: - Floating pixels and history navigation (spec 0020)
+
+    var floatingPixels: FloatingPixels? { state.floatingPixels }
+
+    func jumpHistory(to index: Int) {
+        _ = history.jump(to: index, &state)
+    }
+
     /// Runs a navigation step on the fake's `HistoryStack` (tools test undo/redo
     /// without an `UndoBridge`; 0009's property tests).
     func navigateForTests(_ step: (inout HistoryStack, inout DocumentState) -> Void) {

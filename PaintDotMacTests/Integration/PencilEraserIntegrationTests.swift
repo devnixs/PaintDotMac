@@ -23,6 +23,9 @@ struct PencilEraserIntegrationTests {
         var paintClipMask: (any BrushClipMask)?
         var selection: Selection?
         var previousToolID: ToolID?
+        var floatingPixels: FloatingPixels? { bridge.state.floatingPixels }
+        var history: HistoryStack { bridge.history }
+        func jumpHistory(to index: Int) { bridge.jump(to: index) }
         var image: LayeredImage { bridge.state.image }
         var transform: CanvasTransform { nav.transform }
 

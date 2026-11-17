@@ -53,6 +53,17 @@ protocol ToolContext: AnyObject {
     /// Live drawing (in-progress strokes): mutates the document's image without recording
     /// a step. The only way tools write live pixels.
     func updateImage(_ body: (inout LayeredImage) -> Void)
+
+    // MARK: - Floating pixels and history navigation (spec 0020)
+
+    /// The lifted (or pasted, 0021) pixels floating over the layer, or `nil` (0020).
+    var floatingPixels: FloatingPixels? { get }
+    /// The document's recorded steps — Escape uses them to find the session's start
+    /// (0020 item 6).
+    var history: HistoryStack { get }
+    /// History-panel-style navigation: the tool jumps to `index` so Escape cancels a
+    /// whole floating session exactly, leaving the session's steps as redo steps.
+    func jumpHistory(to index: Int)
 }
 
 /// The navigation surface tools use — 0004's `CanvasNavigation` semantics, clamped

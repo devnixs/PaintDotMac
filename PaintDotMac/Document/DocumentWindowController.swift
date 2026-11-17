@@ -209,14 +209,20 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
     private func attachBridge() {
         let bridge = (document as? PaintDocument)?.undoBridge
         toolSession?.attachUndoBridge(bridge)
-        bridge?.prepareForNavigation = { [weak self] in
+        bridge?.prepareForNavigation = { [weak self, weak bridge] in
             guard let self, let session = self.toolSession,
-                  self.wiredModel.activeSession === session
+                  self.wiredModel.activeSession === session, let bridge
             else { return }
-            self.wiredModel.dispatcher.commitPendingEdit()
+            // 0020 item 9: the bridge stamps the reason — commands commit the pending
+            // edit ("Finish Pixels" first), undo/redo/jump/save route through the
+            // tool's navigation hook instead.
+            self.wiredModel.dispatcher.resolvePendingEdit(for: bridge.pendingEditReason)
         }
-        bridge?.onStateChange = { [weak self] change in
-            MainActor.assumeIsolated { self?.refreshCanvas(for: change) }
+        bridge?.onStateChange = { [weak self, weak bridge] change in
+            MainActor.assumeIsolated {
+                self?.refreshCanvas(for: change)
+                self?.followFloatingPixels(bridge: bridge)
+            }
         }
         // A document attached to a fresh (or rewired) window shows its current selection
         // (0013) — opens and Revert reset it to nil, so this starts the ants hidden and the
@@ -251,6 +257,27 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         // 0014: every step, undo, redo, jump, and reset re-reads the status-bar selection
         // size (the size also follows the image size for `structure` changes).
         toolSession?.refreshSelectionSize()
+    }
+
+    /// Spec 0020 item 11, after every history-driven refresh (this window's session
+    /// active): re-mirror the dispatcher's pending-edit state (undo can create or clear
+    /// floating pixels without a tool event), follow floating pixels across tools —
+    /// undoing "Finish Pixels" selects Move Selected Pixels again (0021's Paste lands
+    /// here too) — and let the tool redraw its idle handles over the new state.
+    private func followFloatingPixels(bridge: UndoBridge?) {
+        guard let bridge, let session = toolSession,
+              wiredModel.activeSession === session else { return }
+        let dispatcher = wiredModel.dispatcher
+        dispatcher.refreshPendingState()
+        if let id = FloatingPixelsPolicy.toolToActivate(
+            hasFloatingPixels: bridge.state.floatingPixels != nil,
+            activeTool: dispatcher.activeToolID) {
+            dispatcher.selectTool(id)
+        }
+        if dispatcher.activeToolID == .moveSelectedPixels {
+            // The tool re-runs its idle-overlay logic (its `optionsDidChange` hook).
+            dispatcher.optionsDidChange()
+        }
     }
 
     /// Re-reads the marching-ants outline from the document's selection under the current

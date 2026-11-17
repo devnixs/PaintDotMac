@@ -58,6 +58,12 @@ final class UndoBridge {
     /// `Tool.commit`). Weak-owner pattern: the document owns the bridge, so the closure
     /// captures its owner weakly.
     @ObservationIgnored var prepareForNavigation: (@MainActor () -> Void)?
+    /// Why the hook is about to run (spec 0020 item 9): `.historyNavigation` around the
+    /// hook inside `prepareForManagerNavigation` (menu ⌘Z/⇧⌘Z) and `jump(to:)`, `.save`
+    /// inside `prepareForSave()`; every direct caller of `prepareForNavigation` (the Edit
+    /// commands and every later command) sees `.command`. The window controller forwards
+    /// this value to `ToolDispatcher.resolvePendingEdit(for:)`.
+    @ObservationIgnored private(set) var pendingEditReason: PendingEditReason = .command
     /// Canvas invalidation after perform/undo/redo/jump/reset.
     @ObservationIgnored var onStateChange: (@MainActor (HistoryChange) -> Void)?
     /// After every history mutation, with `!history.isAtSavedState`.
@@ -82,7 +88,23 @@ final class UndoBridge {
     /// jump calls the hook itself once, before its loop).
     func prepareForManagerNavigation() {
         guard !isReplayingJump else { return }
-        prepareForNavigation?()
+        withPendingEditReason(.historyNavigation) { prepareForNavigation?() }
+    }
+
+    /// Before a save (spec 0020 item 9): the hook runs with reason `.save` — Move
+    /// Selected Pixels keeps its pixels floating and the file gets the rendered layer
+    /// (D-47b).
+    func prepareForSave() {
+        withPendingEditReason(.save) { prepareForNavigation?() }
+    }
+
+    /// Stamps `pendingEditReason` for the hook, then restores it (top level → `.command`).
+    private func withPendingEditReason(_ reason: PendingEditReason,
+                                       _ hook: @MainActor () -> Void) {
+        let previous = pendingEditReason
+        pendingEditReason = reason
+        defer { pendingEditReason = previous }
+        hook()
     }
 
     /// In-progress tool drawing (0006 live strokes): mutates the state without recording
@@ -115,7 +137,7 @@ final class UndoBridge {
     func jump(to index: Int) {
         let distance = history.currentIndex - index
         guard index >= 0, index < history.steps.count, distance != 0 else { return }
-        prepareForNavigation?()
+        withPendingEditReason(.historyNavigation) { prepareForNavigation?() }
         isReplayingJump = true
         replayedChanges = []
         for _ in 0..<abs(distance) {
@@ -169,10 +191,16 @@ final class UndoBridge {
 
     /// 0013: a selection is either absent or exactly canvas-sized; size-change specs
     /// (0022, 0035–0037) must transform or drop it in their snapshot (loud in debug, no
-    /// release trap).
+    /// release trap). 0020: floating pixels, when present, name a live layer and an
+    /// underlay sized to the canvas — commands finish the session before snapshot
+    /// operations run.
     private func assertSelectionConsistent() {
         assert(state.selection == nil || state.selection?.canvasSize == state.image.size,
                "DocumentState.selection must be nil or canvas-sized")
+        assert(state.floatingPixels == nil
+                   || (state.image.layerIndex(for: state.floatingPixels!.layerID) != nil
+                       && state.floatingPixels!.underlay.size == state.image.size),
+               "floating pixels need a live layer and a canvas-sized underlay")
     }
 
     // MARK: - Registration

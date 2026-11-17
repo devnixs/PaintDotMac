@@ -272,3 +272,20 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
 - Paint.NET's resampling dropdown, Gamma split button, draggable rotation pivot, status-bar angle readout.
 - Finishing when the active layer changes in the Layers panel → **0025** must call `undoBridge.prepareForNavigation?()` (reason `.command`) before switching layers.
 - Layer Flip/Rotate/Zoom → **0060**; image rotation → **0037**.
+
+## Verification status
+
+- 2026-11-17, `main`, quality gate (`quality-gate.sh`, FULL) — verbatim:
+  - `==> Debug build (clean build)` / `No compiler warnings.`
+  - `==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)`
+  - `tests: 1548 passed, 0 failed, 0 skipped (of 1548)`
+  - `==> GREEN`
+  - `tests: no crash reports during the run`
+- Tests added (counts from the gate run): unit `ResamplerTests` 14 (hand-computed goldens, mode selection per D-21, integer-exact nearest, banded bilinear, D-27 clears, destination-bounds), `FloatingPixelsTests` 15 (lift/paste-free session, underlay CoW, render round trip, semi-transparent compositing over existing pixels, off-canvas clipping), `FloatingPixelsHistoryItemTests` 7, `MoveSelectedPixelsToolTests` 19 (drag/step/nudge/rotate/scale/flip/⌘-copy/Escape/policy/cursor through `FakeToolContext`), `FloatingPixelsPolicyTests` 2 (finish-before-tool table over all tool IDs); integration `MoveSelectedPixelsIntegrationTests` 6 (real `UndoBridge` + dispatcher: one-step-per-gesture undo/redo byte-identity, command-finishes-first, exact Escape cancel incl. budget-fold fallback, save-keeps-floating, 100-session seeded undo/redo identity property); window-level `MoveSelectedPixelsWindowIntegrationTests` 7 (headless `DocumentHarness`: real router drags, `canvas.transformHandles` AX value, Return/Finish, ⌘-drag copy, tool-switch/deselect finish, Escape + "Redo Move Pixels", undo-restores-floating, M-cycle D-13 — pixels checked by saving and decoding the PNG); performance 2 (below). Pre-existing expectations extended for the new tool: implemented-tool lists in `ToolRegistryTests` (+ `moveGroupOrder`), `ToolRegistryColorPickerTests`, `AppModelToolTests`; dispatcher/bridge extensions in `ToolDispatcherTests` (`resolvePendingEditByReason`, `refreshPendingStateFiresOnChange`) and `UndoBridgeTests` (`pendingEditReason`).
+- Performance (Debug, 1024 × 1024 floating region on a 4096 × 3072 surface) — medians from the gate run: 30° rotated re-render (bilinear) **273.9 ms** (target 150 ms, gated at 450 ms); integer-move re-render (nearest) **94.2 ms** (target 60 ms, gated at 180 ms). Per-event cost stays O(selection area): only `lastRegion ∪ destinationBounds` is resampled; the two 1024² cases confirm the linear constant for Paint.NET-class work.
+- Review: pending.
+- Manual verification (not executable headlessly):
+  - [ ] At 100 %, 400 %, and fit zoom on Retina: nubs and frame look right and keep a constant on-screen size; the hole shows the checkerboard.
+  - [ ] Cursors: four-way arrow inside, resize on nubs, rotate in the corridor and while right-dragging.
+  - [ ] Rotating a 1000 × 1000 photo selection by dragging feels smooth; edges are antialiased; Shift-rotation by 90° is pixel-sharp; a 2× nub drag stays pixel-sharp.
+  - [ ] The live outline follows the pixels while dragging and marching ants resume at the new place on release; works in dark mode.

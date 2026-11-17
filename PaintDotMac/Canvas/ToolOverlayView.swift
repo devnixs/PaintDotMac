@@ -140,4 +140,39 @@ final class ToolOverlayView: NSView {
         NSColor.black.setStroke()
         overline.stroke()
     }
+
+    // MARK: - Accessibility (spec 0020 item 12)
+
+    /// While the Move tools' transform frame is shown, one child element
+    /// `canvas.transformHandles` whose value is the frame's integer bounding box
+    /// `"x,y,w,h"` (floor of the min, ceil of the max, canvas coordinates) — for
+    /// VoiceOver and the headless integration tests. Other overlays expose nothing.
+    override func accessibilityRole() -> NSAccessibility.Role? {
+        if case .transformHandles? = overlay { return .group }
+        return super.accessibilityRole()
+    }
+
+    override func accessibilityChildren() -> [Any]? {
+        guard case .transformHandles(let preview)? = overlay, !preview.corners.isEmpty else {
+            return super.accessibilityChildren()
+        }
+        let element = NSAccessibilityElement()
+        element.setAccessibilityRole(.group)
+        element.setAccessibilityLabel("Transform handles")
+        element.setAccessibilityIdentifier(Self.transformHandlesIdentifier)
+        element.setAccessibilityValue(Self.transformHandlesValue(corners: preview.corners))
+        return [element]
+    }
+
+    static let transformHandlesIdentifier = "canvas.transformHandles"
+
+    /// The corners' integer bounding box as `"x,y,w,h"` — floor of the min, ceil of the
+    /// max (canvas coordinates).
+    static func transformHandlesValue(corners: [CGPoint]) -> String {
+        let minX = floor(corners.map(\.x).min() ?? 0)
+        let minY = floor(corners.map(\.y).min() ?? 0)
+        let maxX = ceil(corners.map(\.x).max() ?? 0)
+        let maxY = ceil(corners.map(\.y).max() ?? 0)
+        return "\(Int(minX)),\(Int(minY)),\(Int(maxX - minX)),\(Int(maxY - minY))"
+    }
 }

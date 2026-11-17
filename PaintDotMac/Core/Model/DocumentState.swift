@@ -13,9 +13,18 @@ struct DocumentState: Sendable, Equatable {
     var image: LayeredImage
     /// The active selection, or `nil` when the whole image is editable (E-3, D-40).
     var selection: Selection?
+    /// Pixels lifted by Move Selected Pixels (or pasted, 0021) that float over the
+    /// layer until finished (spec 0020 item 3). Invariant (asserted by `UndoBridge`):
+    /// `floatingPixels == nil || (image.layerIndex(for: floatingPixels.layerID) != nil
+    /// && floatingPixels.underlay.size == image.size)`. Snapshot operations (layer or
+    /// canvas-size changes) only run with `floatingPixels == nil` because commands
+    /// finish the session first (0020 item 9).
+    var floatingPixels: FloatingPixels?
 
-    init(image: LayeredImage, selection: Selection? = nil) {
+    init(image: LayeredImage, selection: Selection? = nil,
+         floatingPixels: FloatingPixels? = nil) {
         self.image = image
         self.selection = selection
+        self.floatingPixels = floatingPixels
     }
 }

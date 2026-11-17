@@ -75,6 +75,12 @@ final class StubTool: Tool {
         record("insertText(\(text))")
     }
 
+    func prepareForHistoryNavigation(context: any ToolContext) {
+        record("prepareForHistoryNavigation", context: context)
+        // Mirrors the protocol default so `resolvePendingEditByReason` exercises it.
+        if hasPendingEdit { commit(context: context) }
+    }
+
     func commit(context: any ToolContext) { record("commit", context: context) }
 
     func cancel(context: any ToolContext) { record("cancel", context: context) }

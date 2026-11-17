@@ -21,7 +21,7 @@ struct ToolRegistryColorPickerTests {
         let registry = ToolRegistry.standard()
         #expect(registry.implementedIDs
                     == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
-                        .moveSelection, .zoom, .pan,
+                        .moveSelectedPixels, .moveSelection, .zoom, .pan,
                         .paintBucket,
                         .paintbrush, .eraser, .pencil, .colorPicker])
         #expect(registry.implementedIDs.filter { $0 == .colorPicker }.count == 1)

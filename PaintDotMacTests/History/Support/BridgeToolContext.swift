@@ -24,6 +24,11 @@ final class BridgeToolContext: ToolContext {
     var paintClipMask: (any BrushClipMask)?
     /// 0013: the bridge's current selection.
     var selection: Selection? { bridge.state.selection }
+    /// 0020: the bridge's floating pixels and real history stack; jumps go through the
+    /// bridge so the undo manager sees them (Escape's session cancel).
+    var floatingPixels: FloatingPixels? { bridge.state.floatingPixels }
+    var history: HistoryStack { bridge.history }
+    func jumpHistory(to index: Int) { bridge.jump(to: index) }
     var previousToolID: ToolID?
     var image: LayeredImage { bridge.state.image }
     var transform: CanvasTransform { nav.transform }

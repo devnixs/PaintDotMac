@@ -450,4 +450,49 @@ struct ToolDispatcherTests {
         let moved = f.stub(.pan).receivedEvents
         #expect(moved.isEmpty, "default mouseMoved must not reach recorded overrides")
     }
+
+    // MARK: - Pending-edit reasons (spec 0020)
+
+    /// 0020 item 8: `.command` commits (Paint.NET drops on a command);
+    /// `.historyNavigation`/`.save` route through `prepareForHistoryNavigation`, whose
+    /// default then commits — so the stub (which mirrors the default) logs both.
+    @Test func resolvePendingEditByReason() {
+        let f = fixture()
+        f.dispatcher.setContext(f.context)
+        let pan = f.stub(.pan)
+        #expect(pan.calls == ["activate"])
+        var consumed = 1
+        func sinceLastResolve() -> [String] {
+            defer { consumed = pan.calls.count }
+            return Array(pan.calls[consumed...])
+        }
+        pan.hasPendingEdit = true
+        f.dispatcher.resolvePendingEdit(for: .command)
+        #expect(sinceLastResolve() == ["commit"], "command → commit only")
+        f.dispatcher.resolvePendingEdit(for: .historyNavigation)
+        #expect(sinceLastResolve() == ["prepareForHistoryNavigation", "commit"],
+                "navigation → the hook, then the default's commit")
+        f.dispatcher.resolvePendingEdit(for: .save)
+        #expect(sinceLastResolve() == ["prepareForHistoryNavigation", "commit"])
+    }
+
+    /// 0020 item 11: state changes outside any tool event (undo creating/clearing
+    /// floating pixels) still re-mirror and fire `onStateChange` exactly once.
+    @Test func refreshPendingStateFiresOnChange() {
+        let f = fixture()
+        f.dispatcher.setContext(f.context)
+        var stateChanges = 0
+        f.dispatcher.onStateChange = { stateChanges += 1 }
+        f.dispatcher.refreshPendingState()
+        #expect(stateChanges == 0, "no change → no notification")
+        f.stub(.pan).hasPendingEdit = true
+        f.dispatcher.refreshPendingState()
+        #expect(stateChanges == 1)
+        #expect(f.dispatcher.hasPendingEdit)
+        f.dispatcher.refreshPendingState()
+        #expect(stateChanges == 1, "already mirrored")
+        f.stub(.pan).hasPendingEdit = false
+        f.dispatcher.refreshPendingState()
+        #expect(stateChanges == 2, "losing the pending edit also notifies")
+    }
 }

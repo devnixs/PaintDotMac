@@ -8,6 +8,17 @@ enum ToolPhysicalButton: Sendable {
     case right
 }
 
+/// Why the active tool is being asked about its pending edit (spec 0020 item 8). A
+/// command commits (Paint.NET drops the lifted pixels when the selection or document
+/// changes); history navigation and save route through
+/// `Tool.prepareForHistoryNavigation(context:)` instead, so Move Selected Pixels'
+/// floating state survives undo, redo, History jumps, and save (D-47c).
+enum PendingEditReason: Sendable {
+    case command
+    case historyNavigation
+    case save
+}
+
 /// One pointer event before button mapping (the AppKit glue builds these).
 struct ToolPointerInput: Sendable, Equatable {
     var physicalButton: ToolPhysicalButton
@@ -286,6 +297,30 @@ final class ToolDispatcher {
             activeTool.commit(context: context)
             mirrorState()
         }
+    }
+
+    /// The `UndoBridge.prepareForNavigation` entry (spec 0020 item 9): the bridge stamps
+    /// `pendingEditReason` before calling the hook, and the window controller forwards it
+    /// here. `.command` commits as before; `.historyNavigation`/`.save` give the tool the
+    /// navigation hook.
+    func resolvePendingEdit(for reason: PendingEditReason) {
+        handle {
+            guard let context else { return }
+            switch reason {
+            case .command:
+                activeTool.commit(context: context)
+            case .historyNavigation, .save:
+                activeTool.prepareForHistoryNavigation(context: context)
+            }
+            mirrorState()
+        }
+    }
+
+    /// Re-runs the pending-edit mirroring and fires `onStateChange` on change (spec 0020
+    /// item 11): undo/redo/jump can create or clear floating pixels without any tool
+    /// event, and the Finish button must follow.
+    func refreshPendingState() {
+        mirrorState()
     }
 
     func cursor(at location: CGPoint?, modifiers: ToolModifiers) -> ToolCursor {

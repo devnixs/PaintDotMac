@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// An integer pixel coordinate (FMT/NF geometry; spec 0002). Values may be negative — a
@@ -98,6 +99,12 @@ struct PixelRect: Hashable, Sendable, CustomStringConvertible {
 
     func offsetBy(dx: Int, dy: Int) -> PixelRect {
         PixelRect(x: x + dx, y: y + dy, width: width, height: height)
+    }
+
+    /// The exact floating-point rect (0020: sessions and `Selection(rect:)` take canvas
+    /// geometry; the conversion idiom of `CanvasTransform.pixelRectToView`).
+    var cgRect: CGRect {
+        CGRect(x: Double(x), y: Double(y), width: Double(width), height: Double(height))
     }
 
     var description: String { "(\(x), \(y), \(width) × \(height))" }

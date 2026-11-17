@@ -130,4 +130,14 @@ final class CanvasToolSession: ToolContext {
         // stroke would only appear at commit (mouse-up) or the next transform change.
         canvasView?.needsDisplay = true
     }
+
+    // MARK: - Floating pixels and history navigation (spec 0020)
+
+    var floatingPixels: FloatingPixels? { undoBridge?.state.floatingPixels }
+
+    /// The document's steps; without a document (no bridge) an empty stack — tools read
+    /// it only while a session is live.
+    var history: HistoryStack { undoBridge?.history ?? HistoryStack(base: .newImage) }
+
+    func jumpHistory(to index: Int) { undoBridge?.jump(to: index) }
 }

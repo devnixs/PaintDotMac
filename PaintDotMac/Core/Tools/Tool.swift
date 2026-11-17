@@ -33,6 +33,10 @@ protocol Tool: AnyObject {
     /// Finish button, Return, tool switch, document switch; later also undo and save
     /// (0008/0009 call it). Default: no-op.
     func commit(context: any ToolContext)
+    /// Before undo, redo, a History jump, or a save (0020 item 8). Default: commit —
+    /// every tool behaves as before 0020; Move Selected Pixels overrides it to keep
+    /// floating pixels (they live in history; only an in-flight drag is cancelled).
+    func prepareForHistoryNavigation(context: any ToolContext)
     /// Escape; must leave the tool idle with no partial edit. Default: no-op.
     func cancel(context: any ToolContext)
     /// An option changed while the tool is active (live-edited shapes/text restyle).
@@ -75,6 +79,10 @@ extension Tool {
     func cursor(at location: CGPoint?, modifiers: ToolModifiers) -> ToolCursor { .arrow }
 
     func commit(context: any ToolContext) {}
+
+    func prepareForHistoryNavigation(context: any ToolContext) {
+        if hasPendingEdit { commit(context: context) }
+    }
 
     func cancel(context: any ToolContext) {}
 

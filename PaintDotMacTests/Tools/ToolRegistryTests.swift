@@ -68,9 +68,10 @@ struct ToolRegistryTests {
         // Later tool specs extend this list as they register their tool (0011 added the
         // Eraser and the Pencil; 0012 the Color Picker; 0014 the two selection tools;
         // 0015 the Lasso; 0016 the Magic Wand; 0017 the Paint Bucket; 0019 Move
-        // Selection).
+        // Selection; 0020 Move Selected Pixels).
         #expect(ToolRegistry.standard().implementedIDs
-                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand, .moveSelection,
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
+                        .moveSelectedPixels, .moveSelection,
                         .zoom, .pan, .paintBucket,
                         .paintbrush, .eraser, .pencil, .colorPicker])
         #expect(ToolRegistry.standard().makeTool(.magicWand) is MagicWandTool)
@@ -122,7 +123,8 @@ struct ToolRegistryTests {
         #expect(registry.shortcutGroup(for: "p") == [.pencil])
         #expect(registry.shortcutGroup(for: "e") == [.eraser])
         #expect(registry.implementedIDs
-                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand, .moveSelection,
+                    == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
+                        .moveSelectedPixels, .moveSelection,
                         .zoom, .pan, .paintBucket,
                         .paintbrush, .eraser, .pencil, .colorPicker],
                 "paintbrush, eraser, pencil, color picker consecutively — ToolID.allCases order")
@@ -183,18 +185,23 @@ struct ToolRegistryTests {
         #expect(registry.makeTool(.paintBucket) is PaintBucketTool)
     }
 
-    /// 0019 *Acceptance*: M's group is just Move Selection today (Move Selected Pixels
-    /// arrives with 0020, which replaces this test with `moveGroupOrder`); the resolver
-    /// yields `.moveSelection` for M and for Shift+M.
-    @Test func moveGroupHasMoveSelection() {
+    /// 0020 *Acceptance*: M's group is Move Selected Pixels → Move Selection (D-13);
+    /// the resolver yields Move Selected Pixels for a fresh M, Move Selection for the
+    /// cycle and for Shift+M. (Replaces 0019's `moveGroupHasMoveSelection`.)
+    @Test func moveGroupOrder() {
         let registry = ToolRegistry.standard()
-        #expect(registry.shortcutGroup(for: "m") == [.moveSelection])
-        #expect(registry.implementedIDs.contains(.moveSelection))
+        #expect(registry.shortcutGroup(for: "m") == [.moveSelectedPixels, .moveSelection])
+        #expect(registry.implementedIDs.contains(.moveSelectedPixels))
+        #expect(registry.makeTool(.moveSelectedPixels) is MoveSelectedPixelsTool)
         #expect(registry.makeTool(.moveSelection) is MoveSelectionTool)
         var resolver = ToolShortcutResolver()
+        // Fresh M → the group's first tool; M again within 1 s → Move Selection.
         #expect(resolver.resolve(key: "m", shift: false,
                                  group: registry.shortcutGroup(for: "m"),
-                                 activeTool: .paintbrush, timestamp: 0) == .moveSelection)
+                                 activeTool: .paintbrush, timestamp: 0) == .moveSelectedPixels)
+        #expect(resolver.resolve(key: "m", shift: false,
+                                 group: registry.shortcutGroup(for: "m"),
+                                 activeTool: .moveSelectedPixels, timestamp: 0.5) == .moveSelection)
         var shifting = ToolShortcutResolver()
         #expect(shifting.resolve(key: "m", shift: true,
                                  group: registry.shortcutGroup(for: "m"),

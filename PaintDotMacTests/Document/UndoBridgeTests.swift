@@ -399,4 +399,39 @@ struct UndoBridgeTests {
         fixture.undoManager.undo()
         #expect(fixture.bridge.state.selection == nil)
     }
+
+    // MARK: - Pending-edit reasons (spec 0020)
+
+    /// The hook sees `.historyNavigation` during undo, redo, and once per jump, `.save`
+    /// during `prepareForSave()`, and `.command` when called directly and afterwards —
+    /// the window controller forwards exactly this value to the dispatcher (item 9).
+    @Test func pendingEditReason() throws {
+        let fixture = BridgeFixture()
+        var seen: [PendingEditReason] = []
+        fixture.setPrepare { seen.append(fixture.bridge.pendingEditReason) }
+
+        try fixture.commitPaint("A")
+        try fixture.commitPaint("B")
+        try fixture.commitPaint("C")
+
+        #expect(seen.isEmpty, "recording steps never runs the hook")
+
+        fixture.undoManager.undo()
+        #expect(seen == [.historyNavigation], "undo → navigation")
+        fixture.undoManager.redo()
+        #expect(seen == [.historyNavigation, .historyNavigation], "redo → navigation")
+
+        seen.removeAll()
+        fixture.bridge.jump(to: 0)
+        #expect(seen == [.historyNavigation], "a 3-step jump calls the hook exactly once")
+
+        seen.removeAll()
+        fixture.bridge.prepareForSave()
+        #expect(seen == [.save])
+
+        seen.removeAll()
+        fixture.bridge.prepareForNavigation?()
+        #expect(seen == [.command], "direct calls (Edit commands) are `.command`")
+        #expect(fixture.bridge.pendingEditReason == .command, "…and it resets afterwards")
+    }
 }

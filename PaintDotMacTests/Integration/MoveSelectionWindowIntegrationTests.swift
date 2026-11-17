@@ -7,8 +7,8 @@ import Testing
 /// `DocumentHarness` (never shown), a fresh-suite `AppModel`, canvas input through
 /// `harness.dragCanvas`, keys through `harness.shortcut`/`harness.keyDown`; pixels
 /// checked by saving and decoding the file. The fixture is a 200 × 200 white PNG with
-/// `setInitialSelection((50, 50, 100, 100))`. 0020 updates these three tests once Move
-/// Selected Pixels joins the M group (M then selects it; use Shift+M here).
+/// `setInitialSelection((50, 50, 100, 100))`. Since 0020 the M group leads with Move
+/// Selected Pixels, so these tests open the tool with Shift+M.
 @MainActor
 @Suite(.serialized)
 struct MoveSelectionWindowIntegrationTests {
@@ -79,19 +79,20 @@ struct MoveSelectionWindowIntegrationTests {
 
     // MARK: - Tests
 
-    @Test func mKeySelectsMoveSelection() async throws {
+    /// 0020: plain M now leads the group with Move Selected Pixels, so Move Selection is
+    /// reached with Shift+M (a fresh Shift press takes the group's last tool, D-13).
+    @Test func shiftMSelectsMoveSelection() async throws {
         try await TestRunGate.withLock {
             let fixtures = try FixtureFiles()
             defer { cleanup(); fixtures.removeAll() }
             let harness = try await openWhiteFixture(fixtures)
             defer { finish(harness) }
 
-            #expect(harness.shortcut("m"))
+            #expect(harness.shortcut("m", modifiers: [.shift]))
             #expect(harness.appModel.activeToolID == .moveSelection)
 
             #expect(harness.shortcut("b"))
             #expect(harness.appModel.activeToolID == .paintbrush)
-            // 0020 changes this to plain "m" once Move Selected Pixels leads the group.
             #expect(harness.shortcut("m", modifiers: [.shift]))
             #expect(harness.appModel.activeToolID == .moveSelection)
         }
@@ -105,7 +106,7 @@ struct MoveSelectionWindowIntegrationTests {
             defer { finish(harness) }
             let bridge = harness.document.undoBridge
             let manager = try #require(harness.window.undoManager)
-            #expect(harness.shortcut("m"))
+            #expect(harness.shortcut("m", modifiers: [.shift]))
 
             harness.dragCanvas(
                 from: harness.viewPoint(forImagePoint: CGPoint(x: 100, y: 100)),
@@ -143,7 +144,7 @@ struct MoveSelectionWindowIntegrationTests {
             let harness = try await openWhiteFixture(fixtures)
             defer { finish(harness) }
             let bridge = harness.document.undoBridge
-            #expect(harness.shortcut("m"))
+            #expect(harness.shortcut("m", modifiers: [.shift]))
 
             // ⌘→ to the canvas (first responder): the keyDown carries the right-arrow
             // virtual key code 124.
@@ -190,7 +191,7 @@ struct MoveSelectionWindowIntegrationTests {
             defer { finish(harness) }
             let bridge = harness.document.undoBridge
             let manager = try #require(harness.window.undoManager)
-            #expect(harness.shortcut("m"))
+            #expect(harness.shortcut("m", modifiers: [.shift]))
 
             // Rotate +90° about (100, 100) with the right button.
             harness.dragCanvas(
@@ -261,7 +262,7 @@ struct MoveSelectionWindowIntegrationTests {
             let ants = try #require(harness.windowController.marchingAntsOverlay)
             ants.reduceMotionOverride = true
             defer { ants.reduceMotionOverride = false }
-            #expect(harness.shortcut("m"))
+            #expect(harness.shortcut("m", modifiers: [.shift]))
             let inside = harness.viewPoint(forImagePoint: CGPoint(x: 100, y: 100))
             let moved = harness.viewPoint(forImagePoint: CGPoint(x: 120, y: 120))
 
