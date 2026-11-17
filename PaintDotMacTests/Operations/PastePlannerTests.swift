@@ -54,6 +54,49 @@ struct PastePlannerTests {
         #expect(plan.origin == PixelPoint(x: 0, y: 0), "closed on the top-left edges")
     }
 
+    /// Placement fed through real `CanvasTransform.visibleCanvasRect` values at the
+    /// zoom extremes (800 %, 25 %, 100 % panned both ways): the numbers are derived
+    /// by hand from 0004's rule `visible = center ∓ drawable ÷ (2·zoom)` — view
+    /// 800×600 pt at backing scale 2 → drawable 1600×1200 device px.
+    @Test func placementFollowsViewportAtZoomExtremes() {
+        let big = PixelSize(width: 4000, height: 3000)
+        func origin(zoom: Double, center: CGPoint) -> PixelPoint {
+            let transform = CanvasTransform(
+                imageSize: big, viewSize: CGSize(width: 800, height: 600),
+                backingScale: 2, zoom: zoom, center: center)
+            return PastePlanner.plan(clipboardSize: PixelSize(width: 40, height: 30),
+                                     canvasSize: big,
+                                     visibleCanvasRect: transform.visibleCanvasRect,
+                                     choice: nil).origin
+        }
+        // 800 %: half-extents 1600 ÷ 16 × 1200 ÷ 16 = 100 × 75 → visible (1400, 925, …).
+        #expect(origin(zoom: 8, center: CGPoint(x: 1500, y: 1000)) == PixelPoint(x: 1400, y: 925))
+        // 25 %: half-extents 3200 × 2400 — the canvas top-left is far inside the
+        // (negative-min) visible rect → (0, 0).
+        #expect(origin(zoom: 0.25, center: CGPoint(x: 1500, y: 1000)) == PixelPoint(x: 0, y: 0))
+        // 100 % panned so (0, 0) shows at the top-left: visible minX = −700 → (0, 0).
+        #expect(origin(zoom: 1, center: CGPoint(x: 100, y: 80)) == PixelPoint(x: 0, y: 0))
+        // 100 % panned to the middle: half 800 × 600 → visible (700, 300, …) → (700, 300).
+        #expect(origin(zoom: 1, center: CGPoint(x: 1500, y: 900)) == PixelPoint(x: 700, y: 300))
+    }
+
+    /// A corrupt transform (NaN / infinite / astronomical coordinates) can never
+    /// trap or place the paste outside the canvas (`Int(1e300)` traps — the clamp
+    /// runs on the Double before the conversion).
+    @Test func placementNonFiniteVisibleRectStaysInCanvas() {
+        func origin(_ rect: CGRect) -> PixelPoint {
+            PastePlanner.plan(clipboardSize: PixelSize(width: 5, height: 5), canvasSize: canvas,
+                              visibleCanvasRect: rect, choice: nil).origin
+        }
+        let nan = origin(CGRect(x: CGFloat.nan, y: CGFloat.infinity, width: 10, height: 10))
+        #expect(nan == PixelPoint(x: canvas.width - 1, y: canvas.height - 1),
+                "non-finite lands on the last canvas pixel")
+        let huge = origin(CGRect(x: 1e300, y: -1e300, width: 1e308, height: 10))
+        #expect(huge == PixelPoint(x: canvas.width - 1, y: 0), "finite-but-absurd clamps, never traps")
+        let tiny = origin(CGRect(x: -1e300, y: -0.5, width: 10, height: 10))
+        #expect(tiny == PixelPoint(x: 0, y: 0))
+    }
+
     @Test func expandPlan() {
         let plan = PastePlanner.plan(clipboardSize: PixelSize(width: 1000, height: 500),
                                      canvasSize: canvas,

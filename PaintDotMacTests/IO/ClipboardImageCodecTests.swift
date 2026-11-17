@@ -176,6 +176,61 @@ struct ClipboardImageCodecTests {
         #expect(image.size == PixelSize(width: 3, height: 3))
     }
 
+    /// The clipboard is untrusted input. Malformed blobs — random bodies behind real
+    /// signatures, aggressively truncated valid files, absurd header dimensions — must
+    /// be skipped or reported as a limit error, never decode, never crash, and never
+    /// allocate before 0002's header validation (deterministic seeds; failures print
+    /// the seed).
+    @Test(arguments: (0..<16).map { UInt64($0 &+ 42) })
+    func malformedBlobsSkipOrReportLimits(seed: UInt64) throws {
+        var rng = SeededRandom(seed: seed)
+        func read(_ contents: ClipboardContents) -> Result<ClipboardImage, ClipboardReadError> {
+            ClipboardImageCodec.read(contents, limits: .standard,
+                                     readFile: { _ throws -> Data in throw CocoaError(.fileReadUnknown) })
+        }
+        // Random garbage behind a real PNG or TIFF signature.
+        let signature: [UInt8] = seed.isMultiple(of: 2)
+            ? [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]   // PNG
+            : [0x49, 0x49, 0x2A, 0x00]                            // little-endian TIFF
+        var blob = Data(signature)
+        blob.append(contentsOf: (0..<rng.int(in: 0...2048)).map { _ in rng.byte() })
+        if case .success = read(ClipboardContents(pngData: blob, tiffData: blob)) {
+            Issue.record("seed \(seed): garbage decoded as an image")
+        }
+        // Random garbage with no signature at all.
+        let plain = Data((0..<rng.int(in: 1...64)).map { _ in rng.byte() })
+        #expect(read(ClipboardContents(pngData: plain, tiffData: plain)) == .failure(.noImage),
+                "seed \(seed)")
+
+        // An aggressively truncated valid PNG or TIFF falls through to the next candidate.
+        let fullPNG = png(width: 8, height: 6, Self.red)
+        let fullTIFF = tiff(width: 9, height: 7, Self.blue)
+        let truncated = seed.isMultiple(of: 3)
+            ? fullPNG.prefix(max(1, fullPNG.count / rng.int(in: 2...9)))
+            : fullTIFF.prefix(max(1, fullTIFF.count / rng.int(in: 2...9)))
+        let image = try read(ClipboardContents(pngData: Data(truncated),
+                                               tiffData: seed.isMultiple(of: 3)
+                                                   ? fullTIFF : fullPNG)).get()
+        #expect(image.size == (seed.isMultiple(of: 3)
+                                    ? PixelSize(width: 9, height: 7)
+                                    : PixelSize(width: 8, height: 6)),
+                "seed \(seed): the corrupt candidate is skipped")
+
+        // Absurd declared dimensions fail at the header, before any allocation
+        // (w × h × 4 overflows even Int — 0002's overflow-checked byteCount).
+        let absurd = UInt32.max
+        #expect(read(ClipboardContents(pngData: TestImages.pngHeaderOnly(width: absurd,
+                                                                         height: absurd)))
+                == .failure(.limitExceeded(.dimensionsOutOfRange(width: Int(absurd),
+                                                                 height: Int(absurd)))),
+                "seed \(seed)")
+        #expect(read(ClipboardContents(pngData: TestImages.pngHeaderOnly(width: 3_000_000_000,
+                                                                         height: 2_000_000_000)))
+                == .failure(.limitExceeded(.dimensionsOutOfRange(width: 3_000_000_000,
+                                                                 height: 2_000_000_000))),
+                "seed \(seed): w·h·4 overflows Int64; dimensions reject first")
+    }
+
     // MARK: - FMT-B conversion through the read side
 
     @Test func displayP3ConvertedToSRGB() throws {

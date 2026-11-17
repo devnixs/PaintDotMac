@@ -203,6 +203,27 @@ struct PasteIntegrationTests {
         #expect(f.bridge.state.selection?.bounds == PixelRect(x: 100, y: 50, width: 50, height: 40))
     }
 
+    @Test func secondDragAfterPasteLeavesNoResidue() throws {
+        // Regression (the 0020 gap fixed with 0021): the first move of a SECOND gesture
+        // into a live floating session must re-render the previously drawn destination,
+        // or the first drag's block stays burnt into the layer. Session started by
+        // Paste (external to the tool), dragged twice, still live after both.
+        let f = fixture(size: PixelSize(width: 400, height: 300))
+        defer { f.finish() }
+        try putOnClipboard(f, width: 40, height: 30)
+        f.paste()
+        activateMoveTool(f)
+        f.drag(from: CGPoint(x: 10, y: 10), to: CGPoint(x: 60, y: 10))  // to (50, 0)
+        #expect(f.names == ["Open Image", "Paste", "Move Pixels"])
+        f.drag(from: CGPoint(x: 70, y: 20), to: CGPoint(x: 70, y: 60))  // then (50, 40)
+        #expect(f.names == ["Open Image", "Paste", "Move Pixels", "Move Pixels"])
+        TestImages.expectPixels(f.layer, match: { x, y in
+            (50..<90).contains(x) && (40..<70).contains(y) ? self.red() : .white
+        }, "the first drag's destination (50..<90, 0..<30) was re-rendered, no residue")
+        f.tool.commit(context: f.context)
+        #expect(f.names.last == "Finish Pixels")
+    }
+
     // MARK: - E-6 expand / keep
 
     @Test func expandIsPartOfPasteStep() throws {

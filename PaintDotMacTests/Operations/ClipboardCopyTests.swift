@@ -95,6 +95,39 @@ struct ClipboardCopyTests {
         #expect(BlendOps.mul255(128, 128) == 64, "the 0009 rounding rule")
     }
 
+    /// Copy is the ACTIVE layer verbatim (E-2) — not layer 0, and not the composite
+    /// (Copy Merged is 0030) — even when the active layer is hidden (Paint.NET does).
+    @Test func copyUsesActiveLayerNotCompositeOrLayerZero() throws {
+        let bottom = TestImages.surface(width: 16, height: 8) { _, _ in
+            ColorRGBA8(red: 0, green: 200, blue: 0, alpha: 255)
+        }
+        let top = TestImages.surface(width: 16, height: 8) { x, _ in
+            ColorRGBA8(red: 0, green: 0, blue: 255, alpha: UInt8(x % 2 == 0 ? 128 : 200))
+        }
+        let image = LayeredImage(
+            size: PixelSize(width: 16, height: 8), dpi: 96,
+            layers: [Layer(name: "Background", surface: bottom),
+                     Layer(name: "Active hidden", surface: top, isVisible: false)],
+            activeLayerIndex: 1)
+        #expect(!image.layers[1].isVisible, "the active layer is hidden")
+        func pixels(_ surface: TiledSurface) -> [ColorRGBA8] {
+            (0..<surface.size.height).flatMap { y in
+                (0..<surface.size.width).map { x in
+                    surface.pixel(at: PixelPoint(x: x, y: y))
+                }
+            }
+        }
+        let copied = ClipboardCopy.copiedSurface(from: DocumentState(image: image))
+        #expect(pixels(copied) == pixels(top),
+                "the active layer's exact bytes, semi-transparent pixels included")
+        // The oracles are pairwise different, so the equality above is meaningful:
+        // not layer 0, and not the composite (the hidden active layer drops out of it).
+        let composited = CPUCompositor().composite(image, in: image.size.bounds)
+        #expect(pixels(copied) != pixels(bottom), "not the bottom layer")
+        #expect(composited.pixels == pixels(bottom), "the composite skips the hidden layer")
+        #expect(pixels(copied) != composited.pixels, "Copy ≠ Copy Merged")
+    }
+
     @Test func copyDoesNotChangeDocument() throws {
         let surface = seededSurface(seed: 21)
         let selection = try #require(Selection(rect: CGRect(x: 40, y: 40, width: 100, height: 100),
@@ -138,6 +171,40 @@ struct ClipboardCopyTests {
         #expect(layer.surface.pixel(at: PixelPoint(x: 9, y: 40))
                 == state.image.layers[0].surface.pixel(at: PixelPoint(x: 9, y: 40)))
         #expect(after.selection == nil, "the selection is cleared")
+    }
+
+    /// Cut erases the selection MASK, not its bounding box: with an antialiased
+    /// ellipse, the bounds' corner pixels (inside bounds, coverage 0) must stay
+    /// untouched — a bounds-erase implementation is red here.
+    @Test func cutEllipseErasesMaskNotBounds() throws {
+        let surface = TestImages.surface(width: 64, height: 48) { x, y in
+            ColorRGBA8(red: 9, green: UInt8(y % 256), blue: 77, alpha: 255)
+        }
+        let ellipse = CGMutablePath()
+        ellipse.addEllipse(in: CGRect(x: 16, y: 12, width: 24, height: 18))
+        let selection = try #require(Selection(path: ellipse, canvasSize: surface.size))
+        let state = DocumentState(image: LayeredImage(surface: surface), selection: selection)
+        let (copied, item) = try #require(ClipboardCopy.cut(state))
+        var after = state
+        item.apply(to: &after)
+        let erased = after.image.layers[0].surface
+
+        // Oracle: 0018's Erase Selection on the same mask, applied independently.
+        let expected = EraseSelection.erase(surface, mask: selection.mask).surface
+        TestImages.expectPixels(erased, match: { x, y in
+            expected.pixel(at: PixelPoint(x: x, y: y))
+        }, "Cut's erase is Erase Selection(mask), not an erase of bounds")
+
+        let corner = PixelPoint(x: selection.bounds.minX, y: selection.bounds.minY)
+        #expect(selection.mask.coverage(x: corner.x, y: corner.y) == 0)
+        #expect(erased.pixel(at: corner) == surface.pixel(at: corner),
+                "the bounds corner outside the mask keeps its pixels")
+        #expect(copied.pixel(at: .zero) == ColorRGBA8(red: 0, green: 0, blue: 0, alpha: 0),
+                "Copy weights it to (0,0,0,0) outside the mask")
+        let center = PixelPoint(x: selection.bounds.minX + selection.bounds.width / 2,
+                                y: selection.bounds.minY + selection.bounds.height / 2)
+        #expect(erased.pixel(at: center) == ColorRGBA8(red: 0, green: 0, blue: 0, alpha: 0),
+                "the mask core is erased")
     }
 
     @Test func cutOfTransparentRegionIsStillAStep() throws {

@@ -151,6 +151,12 @@ struct MoveSelectedPixelsToolTests {
                     && floating.session.integerTranslation?.dy == 2)
         #expect(pixel(context, 6, 4) == l(2, 2), "second move stacked onto the first")
         #expect(pixel(context, 2, 2) == .clear, "the hole stays")
+        // Regression (0021's first-drag fix): the second gesture's first move must
+        // re-render the first drag's destination too — the strip of the first
+        // destination (6, 2, 3, 3, clipped to the canvas at x = 7) that the second
+        // destination no longer covers returns to the layer's own pixels.
+        #expect(pixel(context, 6, 2) == l(6, 2), "no residue at the first destination")
+        #expect(pixel(context, 7, 3) == l(7, 3), "no residue at the first destination")
     }
 
     /// Edge case "Tile boundaries" at the step level: on a 600 × 400 canvas the hole

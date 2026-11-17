@@ -180,15 +180,22 @@ struct SelectionWindowIntegrationTests {
         }
     }
 
-    @Test func selectAllAfterUnimplementedPasteDoesNotCrash() async throws {
+    @Test func pasteOnEmptyBoardDoesNotCrash() async throws {
         try await TestRunGate.withLock {
             let fixtures = try FixtureFiles()
             defer { cleanup(); fixtures.removeAll() }
             let harness = try await openWhiteFixture(fixtures)
+            let clipboard = harness.useClipboard(makePrivatePasteboard())
+            defer { clipboard.restore() }
             defer { finish(harness) }
-            // `paste:` (0021) has no handler yet: the responder chain ignores it (the
-            // send fails cleanly, no crash) and the selection commands keep working.
-            #expect(!NSApp.sendAction(NSSelectorFromString("paste:"), to: nil, from: nil))
+            // 0021: `paste:` is implemented — with an empty board it alerts through the
+            // injected presenter, changes nothing, and leaves no residue; the selection
+            // commands keep working afterwards.
+            harness.perform(NSSelectorFromString("paste:"))
+            pumpMainRunLoop()
+            #expect(clipboard.alerts.alerts.map(\.message)
+                    == ["The clipboard doesn\u{2019}t contain an image."])
+            #expect(harness.document.undoBridge.history.steps.map(\.name) == ["Open Image"])
             harness.perform(NSSelectorFromString("selectAll:"))
             pumpMainRunLoop()
             #expect(harness.document.undoBridge.state.selection

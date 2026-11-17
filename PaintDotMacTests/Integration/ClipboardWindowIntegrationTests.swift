@@ -358,6 +358,15 @@ struct ClipboardWindowIntegrationTests {
             pumpMainRunLoop()
             #expect(harness.statusBar.imageSizeText == "64 \u{00D7} 48",
                     "one undo restores the old canvas size")
+            #expect(harness.statusBar.zoom == zoomBefore, "the undo keeps the zoom too")
+
+            // Redo re-runs the `.structure` path: size and zoom return to the expanded
+            // document (0022/0035–0037 reuse the same withImageSize branch).
+            try #require(harness.window.undoManager).redo()
+            pumpMainRunLoop()
+            #expect(harness.statusBar.imageSizeText == "100 \u{00D7} 80",
+                    "redo re-applies the expansion")
+            #expect(harness.statusBar.zoom == zoomBefore, "the redo keeps the zoom too")
         }
     }
 
@@ -440,6 +449,150 @@ struct ClipboardWindowIntegrationTests {
                     "the same alert through the document controller")
             #expect(clipboard.alerts.alerts[1].message == "The image is too large to paste.")
             #expect(NSDocumentController.shared.documents.count == 1, "no new document")
+        }
+    }
+
+    @Test func pasteDuringGestureIsIgnored() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openFixture(fixtures)
+            let clipboard = harness.useClipboard(makePrivatePasteboard())
+            defer { clipboard.restore() }
+            defer { finish(harness) }
+            writeImage(width: 30, height: 20, pixel: { _, _ in self.red },
+                       to: clipboard.pasteboard)
+            // Hold a gesture open: Rectangle Select (0014 cycling idiom), press, drag,
+            // no release — the clipboard commands must be disabled and no-op.
+            for _ in 0..<4 where harness.appModel.activeToolID != .rectangleSelect {
+                #expect(harness.shortcut("s"))
+            }
+            #expect(harness.appModel.activeToolID == .rectangleSelect)
+            harness.canvasPress(at: view(harness, 10, 10))
+            harness.canvasDrag(to: view(harness, 40, 30))
+            pumpMainRunLoop()
+            #expect(harness.appModel.dispatcher.isGestureInProgress, "mid-gesture")
+            #expect(!harness.isEnabled(Selector("paste:")), "Paste is disabled mid-gesture")
+            #expect(!harness.isEnabled(Selector("copy:")), "Copy is disabled mid-gesture")
+
+            harness.perform(Selector("paste:"))   // the key-equivalent path
+            harness.perform(Selector("copy:"))
+            pumpMainRunLoop()
+            #expect(names(harness) == ["Open Image"], "no step while the gesture is open")
+            let board = try #require(readPNG(from: clipboard.pasteboard))
+            #expect(board.width == 30 && board.height == 20,
+                    "Copy never touched the board — still the 30×20 clipboard image")
+
+            harness.canvasRelease(at: view(harness, 40, 30))
+            pumpMainRunLoop()
+        }
+    }
+
+    @Test func copyWhileFloatingFinishesPixelsFirst() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openFixture(fixtures, named: "float-copy.png",
+                                                pixel: { _, _ in .white })
+            let clipboard = harness.useClipboard(makePrivatePasteboard())
+            defer { clipboard.restore() }
+            defer { finish(harness) }
+            // A horizontal gradient block: copying the layer at the moved position
+            // yields the gradient, copying the un-finished pre-move layer yields white.
+            let pattern: (Int, Int) -> ColorRGBA8 = { x, _ in
+                ColorRGBA8(red: UInt8(x * 6 + 5), green: 3, blue: 9, alpha: 255)
+            }
+            writeImage(width: 40, height: 30, pixel: pattern, to: clipboard.pasteboard)
+            harness.perform(Selector("paste:"))
+            pumpMainRunLoop()
+            harness.dragCanvas(from: view(harness, 20, 15), to: view(harness, 90, 65))
+            pumpMainRunLoop()
+            #expect(names(harness) == ["Open Image", "Paste", "Move Pixels"])
+            #expect(harness.document.undoBridge.state.floatingPixels != nil,
+                    "the session is still floating when Copy runs")
+
+            // 0020: every command finishes the pending session first (via the window
+            // action's prepareForNavigation), then Copy reads the layer.
+            harness.perform(Selector("copy:"))
+            pumpMainRunLoop()
+            #expect(names(harness) == ["Open Image", "Paste", "Move Pixels", "Finish Pixels"])
+            let png = try #require(readPNG(from: clipboard.pasteboard))
+            #expect(png.width == 40 && png.height == 30, "the moved selection bounds")
+            #expect(png.rgba == TestImages.rgbaBytes(width: 40, height: 30, pattern),
+                    "the copy shows the moved pixels — the session committed before copying")
+        }
+    }
+
+    @Test func pasteFromDeletedFileURL() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let harness = try await openFixture(fixtures)
+            let clipboard = harness.useClipboard(makePrivatePasteboard())
+            defer { clipboard.restore() }
+            defer { finish(harness) }
+            let url = try fixtures.writePNG(named: "doomed.png", width: 25, height: 25,
+                                            pixel: { _, _ in self.red })
+            writeFileURL(url, to: clipboard.pasteboard)
+            try FileManager.default.removeItem(at: url)
+            // The file is never opened for validation — the extension still says image.
+            #expect(harness.isEnabled(Selector("paste:")))
+
+            harness.perform(Selector("paste:"))
+            pumpMainRunLoop()
+            #expect(clipboard.alerts.alerts.map(\.message)
+                    == ["The clipboard doesn\u{2019}t contain an image."],
+                    "the unreadable candidate is skipped; nothing else is on the board")
+            #expect(names(harness) == ["Open Image"], "no change")
+        }
+    }
+
+    // MARK: - Without any document
+
+    @Test func noDocumentClipboardMenuStates() async throws {
+        try await TestRunGate.withLock {
+            HeadlessAssertions.closeAllDocuments()
+            defer { cleanup() }
+            let pasteboard = makePrivatePasteboard()
+            let originalClipboard = ClipboardController.shared
+            defer {
+                ClipboardController.shared = originalClipboard
+                pasteboard.releaseGlobally()
+            }
+            ClipboardController.shared = ClipboardController(pasteboard: pasteboard)
+            let controller = try #require(
+                NSDocumentController.shared as? PaintDocumentController)
+            let original = (controller.alertPresenter, controller.showsWindows)
+            defer { (controller.alertPresenter, controller.showsWindows) = original }
+            let alerts = RecordingAlertPresenter()
+            controller.alertPresenter = alerts
+            controller.showsWindows = false
+
+            let item = NSMenuItem(title: "", action: NSSelectorFromString("pasteIntoNewImage:"),
+                                  keyEquivalent: "v")
+            #expect(!controller.validateUserInterfaceItem(item),
+                    "an empty board disables Paste into New Image")
+            writeImage(width: 9, height: 7, to: pasteboard)
+            #expect(controller.validateUserInterfaceItem(item),
+                    "Paste into New Image is enabled with no document open")
+
+            // Cut / Copy / Paste without a document: nothing in the app-level responder
+            // chain implements them, so menu auto-enabling disables them.
+            var chain: [AnyObject] = [NSApp]
+            if let delegate = NSApp.delegate { chain.append(delegate as AnyObject) }
+            chain.append(controller)
+            for selector in ["cut:", "copy:", "paste:"] {
+                let action = NSSelectorFromString(selector)
+                #expect(!chain.contains { $0.responds(to: action) },
+                        "\(selector) has no responder with no document")
+            }
+
+            // A direct call with an empty board (validation bypassed) is a clean no-op.
+            _ = pasteboard.clearContents()
+            controller.pasteIntoNewImage(nil)
+            #expect(alerts.alerts.map(\.message)
+                    == ["The clipboard doesn\u{2019}t contain an image."])
+            #expect(NSDocumentController.shared.documents.isEmpty, "no document created")
         }
     }
 

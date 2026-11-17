@@ -339,7 +339,67 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
   - `tests: no crash reports during the run`
 - Tests added (counts are `@Test` functions; `ClipboardRoundTripTests` parametrizes each case over 25 seeds): unit `ClipboardImageCodecTests` 15 (E-5 read order PNG→TIFF→file URLs with per-candidate skipping, the `canPaste` matrix, lossless sRGB-profiled PNG, exact-size TIFF (±1 alpha ≥ 128), Display P3/16-bit/gray/EXIF-orientation through 0002's pipeline, limit errors reported from header validation without allocating), `ClipboardControllerTests` 3 (write puts one item with exactly `public.png` + `public.tiff`, reads go through the injected pasteboard, `canPaste` re-evaluates when the pasteboard changes), `ClipboardRoundTripTests` 3×25 seeds (encode→read byte-identical via PNG and via TIFF, Copy→Paste identity for random non-antialiased rect selections), `ClipboardCopyTests` 9 (whole layer incl. alpha-0 pixels with non-zero color, rect bounds, per-pixel `mul255(a, coverage)` ellipse oracle incl. coverage-0 `(0,0,0,0)`, alpha 128 × coverage 128 = 64, no document/history change, Cut equals 0018's Erase Selection output + deselect, transparent-region Cut is still a step, undo/redo exact, no selection → nil), `PastePlannerTests` 10 (strict `>` prompt rule, placement: top-left visible/zoomed floor-and-clamp/edge-inclusive/off-canvas, expand and keep plans, expanded state fills the bottom layer with the secondary color and keeps ids/names/opacity/visibility/blend/dpi/active index, selection nil, limits enforced), `PasteStepTests` 3 (3-sub-item composition recognized by 0020's `stepStartsSession`, apply/revert exact, expansion adds the leading `DocumentSnapshotHistoryItem`); integration `PasteIntegrationTests` 11 (real `UndoBridge`/`HistoryStack`/0020 tool with a private pasteboard: floating-paste state, undo/redo/Escape cancels the whole session, drag→commit leaves nothing at the original spot, expansion inside the one Paste step, Keep clips on commit, ⌥⌘V ignores clipboard DPI (96), pending floating commits "Finish Pixels" first, Cut→Paste round trip, 4000×3000 perf sanity); `ClipboardWindowIntegrationTests` 13 (⌘X/⌘C/⌘V/⌥⌘V through the real responder chain with private pasteboards, save-and-decode pixel checks, menu enablement across document/selection/pasteboard states, E-6 Expand/Keep/Cancel with zoom kept and one undo restoring the old size, over-limit rejection for both Paste and Paste into New Image, TIFF-only and file-URL pastes, floating-session interplay at window level). Extended: `MainMenuTests.editMenuClipboardItems` (new) plus updated `editMenuItems` and `DocumentOpenIntegrationTests.harnessFindsDocumentActions` for the now-implemented actions, `CanvasTransformNavigationTests` +2 (`withImageSize` keeps zoom and re-centers, same size is identity). Also fixed a 0020 latent gap the paste flow exposed: the first drag on an externally-started floating session (a Paste, or a second gesture on a live session) now repaints the previously drawn destination, so no old copy is left behind.
 - Performance: none of NF-1…NF-4 targeted. Sanity `pasteLargeImageIsReasonable`: read + full paste of a 4000 × 3000 opaque PNG in < 3 s on Debug (in-test `ContinuousClock` gate; the gate run measured 2.816 s for the test, PNG generation included).
-- Review: pending.
+- Review: 2026-11-17, independent reviewer on top of `8a85855` — approved with the fixes below.
+  - Traced: every acceptance criterion and edge case to a failing-if-broken test; pixel
+    oracles re-derived independently (the 0009 mul255 rule restated as its own formula,
+    `EraseSelection` output as the Cut oracle, active layer vs layer 0 vs the 0012
+    `CPUCompositor` composite as a three-way oracle, `visibleCanvasRect` placement values
+    hand-derived at 800 % / 25 % / 100 % zoom, E-6 strict `>` via exact-size-never-prompts,
+    expand anchor/fill per explicit per-layer pixel oracles, ⌥⌘V 96 DPI via
+    `state.image.dpi == 96`).
+  - Mutation spot-checks (14 mutants, all caught, none survived): Copy takes layer 0 not
+    the active layer (`copyUsesActiveLayerNotCompositeOrLayerZero`); Copy ignores mask
+    coverage (`copyEllipseWeightsAlphaByCoverage`, `semiTransparentSourceTimesCoverage`);
+    Cut erases bounds not mask (`cutEllipseErasesMaskNotBounds`); E-6 `>` → `>=`
+    (`needsExpansionPrompt`); placement `floor` → `round` (`placementZoomedIn`); Expand
+    uses the clipboard size, not the max (`expandPlan`, `expandOneSide`);
+    `expandedState` fills the top layer (`expandedStateFillsBottomLayer`); the Paste step
+    drops its `FloatingPixelsHistoryItem` (`composition`, `withExpansion`);
+    `withImageSize` stops re-centering (`withImageSizeKeepsZoomAndRecenters`); the E-6
+    Cancel falls through to Keep (`pasteLargerCancel`); `canPaste` cached on `changeCount`
+    alone (`canPasteTracksThePasteboard`, `menuEnablement`,
+    `noDocumentClipboardMenuStates` — these also prove `setData` does not bump a named
+    board's `changeCount`, which is why the snapshot cache key is required); ⌥⌘V keeps the
+    clipboard DPI (`pasteIntoNewImageIgnoresClipboardDPI`); `PasteStep` skips the layer
+    render (`pasteCreatesFloatingPixels`, `pasteUndoRedo`, `composition`,
+    `cutThenPasteRoundTrip`, `expandIsPartOfPasteStep`, `keepCanvasSizeClipsOnCommit`);
+    `MoveSelectedPixelsTool`'s first-drag `lastRegion` seeding removed
+    (`pasteMoveCommit`, `pasteMoveAndUndo`, `secondDragAfterPasteLeavesNoResidue`,
+    `secondDragAddsStep`).
+  - Fixed: `PastePlanner.clampedOrigin` converted a finite-but-absurd
+    `visibleCanvasRect` coordinate to `Int` before clamping — `Int(1e300)` is a runtime
+    trap (demonstrated), so a corrupt transform would have crashed Paste instead of staying
+    in-canvas; the clamp now runs on the `Double` before the conversion
+    (`placementNonFiniteVisibleRectStaysInCanvas` pins NaN / ±∞ / 1e300 → in-canvas,
+    never a trap).
+  - Tests added by the review (13 `@Test` functions + 2 strengthened):
+    `copyUsesActiveLayerNotCompositeOrLayerZero` (also the hidden-active-layer edge),
+    `cutEllipseErasesMaskNotBounds`, `placementFollowsViewportAtZoomExtremes`,
+    `placementNonFiniteVisibleRectStaysInCanvas`, `malformedBlobsSkipOrReportLimits`
+    (16 deterministic seeds: random bodies behind real PNG/TIFF signatures, aggressively
+    truncated valid files, `UInt32.max` header dimensions and w·h·4 beyond `Int64` —
+    skipped or limit-reported, never decoded, never allocated),
+    `writeFailureLeavesPasteboardUntouched` (encode before `clearContents`),
+    `multiItemPasteboardReadsTheImageItem`, `malformedPasteboardDataIsNoImage`
+    (board-level fuzz through the injected private pasteboard),
+    `secondDragAfterPasteLeavesNoResidue` + the strengthened `secondDragAddsStep`
+    (both halves of the externally-started-session first-drag fix),
+    `pasteDuringGestureIsIgnored`, `copyWhileFloatingFinishesPixelsFirst`,
+    `pasteFromDeletedFileURL`, `noDocumentClipboardMenuStates` (⌥⌘V enabled with no
+    document, Cut/Copy/Paste unanswered at the app level, empty-board direct call is a
+    clean no-op), and the expand-undo **redo** coverage in `pasteLargerExpand`.
+    0013's `selectAllAfterUnimplementedPasteDoesNotCrash` asserted a premise 0021
+    falsifies (`paste:` now has handlers); rewritten as `pasteOnEmptyBoardDoesNotCrash`
+    through the recording seams.
+  - Audited: `NSPasteboard.general` appears only as the injected production default; every
+    clipboard test uses a fresh private board and releases it; no test constructs or drives
+    `ModalAlertPresenter`/`ModalPasteExpandPrompt` (recording/scripted seams only); `Core`
+    stays AppKit-free; every pixel write goes through `UndoBridge`; all pasteboard access
+    and validation is `@MainActor`.
+  - Full quality gate after these review fixes (full, not incremental, Debug):
+    `tests: 1635 passed, 0 failed, 0 skipped (of 1635)`, `** TEST SUCCEEDED **`, no compiler
+    warnings, `tests: no crash reports during the run`, sanitizers UNAVAILABLE on this Mac
+    (toolchain/OS, not our code) → `==> GREEN`.
 - Manual verification (not executable headlessly):
   - [ ] In Preview, copy a selection from a photo (⌘C); in PaintDotMac ⌘V → it pastes at the visible top-left and can be dragged; Return commits.
   - [ ] Take a screenshot to the clipboard (⌃⇧⌘4); ⌥⌘V → a new image of the screenshot's pixel size, colors look identical to the screen.

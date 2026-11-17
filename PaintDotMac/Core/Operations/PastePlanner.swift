@@ -90,10 +90,12 @@ enum PastePlanner {
         return DocumentState(image: image, selection: nil, floatingPixels: nil)
     }
 
-    /// floor(x) clamped into `0…limit − 1`; a non-finite or negative coordinate past the
-    /// `<= 0` branch cannot occur, but the clamp keeps a corrupt transform in-canvas.
+    /// floor(x) clamped into `0…limit − 1`; a non-finite coordinate past the `<= 0` branch
+    /// cannot occur, and a finite one is clamped as a `Double` *before* the `Int`
+    /// conversion — `Int(1e300)` traps, so converting first would crash on a corrupt
+    /// transform instead of keeping the origin in-canvas.
     private static func clampedOrigin(_ value: Double, limit: Int) -> Int {
         guard value.isFinite else { return limit - 1 }
-        return min(max(Int(value), 0), limit - 1)
+        return Int(min(max(value, 0), Double(limit - 1)))
     }
 }
