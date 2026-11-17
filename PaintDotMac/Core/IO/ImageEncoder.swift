@@ -23,13 +23,16 @@ enum ImageEncoder {
         }
     }
 
-    /// Document-level entry point (interim rule 5): a document always has exactly one layer
-    /// until 0024, and the PNG writer encodes that layer's surface. Any other layer count is
-    /// refused with `.encodingFailed` — an alert, never a crash. 0029's `SavePlan` replaces
-    /// this with flatten-on-export through `CPUCompositor`.
+    /// Document-level entry point (interim rule 5, extended by 0024): the PNG writer
+    /// encodes one layer's surface. More than one layer is refused with
+    /// `.layeredImageNeedsFlatten` — Paint.NET's flatten-on-export confirmation arrives
+    /// with 0029's `SavePlan`; until then the alert names Image > Flatten. Zero layers is
+    /// a malformed document and stays `.encodingFailed` — an alert, never a crash.
     static func encode(_ image: LayeredImage, as format: FileFormat) throws(ImageCodecError) -> Data {
         guard format.canWrite else { throw .unsupportedWriteFormat(format) }
-        guard image.layers.count == 1 else { throw .encodingFailed }
+        guard image.layers.count == 1 else {
+            throw image.layers.isEmpty ? .encodingFailed : .layeredImageNeedsFlatten
+        }
         return try encode(image.layers[0].surface, size: image.size, dpi: image.dpi, as: format)
     }
 

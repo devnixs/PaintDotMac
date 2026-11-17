@@ -128,18 +128,28 @@ struct ImageEncoderTests {
         }
     }
 
-    /// Interim rule 5: any layer count other than 1 is refused (a document always has one
-    /// layer until 0024; a hand-built violation must alert, not crash).
+    /// Interim rule 5 (0024 update): more than one layer is refused with the Flatten
+    /// hint; zero layers stays the generic failure.
     @Test func multiLayerRefused() throws {
         let surface = TestImages.surface(width: 2, height: 2) { _, _ in .white }
         var image = LayeredImage(surface: surface, dpi: 96)
         image.layers.append(Layer(name: "Layer 2", surface: surface))
-        #expect(throws: ImageCodecError.encodingFailed) {
+        #expect(throws: ImageCodecError.layeredImageNeedsFlatten) {
             try ImageEncoder.encode(image, as: .png)
         }
         image.layers = []
         #expect(throws: ImageCodecError.encodingFailed) {
             try ImageEncoder.encode(image, as: .png)
         }
+    }
+
+    /// 0024: the multi-layer error names the fix (L-1/IMG-5 interim rule; 0029 replaces it).
+    @Test func multiLayerNeedsFlatten() throws {
+        let surface = TestImages.surface(width: 2, height: 2) { _, _ in .white }
+        var image = LayeredImage(surface: surface, dpi: 96)
+        image.layers.append(Layer(name: "Layer 2", surface: surface))
+        let error = ImageCodecError.layeredImageNeedsFlatten
+        #expect(error.errorDescription == "This image has more than one layer.")
+        #expect(error.recoverySuggestion?.contains("Image > Flatten") == true)
     }
 }

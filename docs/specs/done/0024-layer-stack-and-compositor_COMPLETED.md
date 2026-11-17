@@ -368,3 +368,49 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
 - Import From File, Copy Merged, Paste into New Layer, drag-and-drop as layer → **0030**.
 - Layer flip/rotate/zoom → **0060**. Go to Top/Bottom Layer, Move Layer to Top/Bottom (not in L-1).
 - Shortcut table refactor → **0045**; NF-1/NF-2 optimization beyond the measurements here → **0048**.
+
+## Verification status — 2026-11-17
+
+- Full quality gate: **GREEN** (verbatim tail):
+
+  ```
+  ==> Debug build (clean build)
+  No compiler warnings.
+
+  ==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)
+  tests: 1836 passed, 0 failed, 0 skipped (of 1836)
+
+  ==> GREEN
+  tests: 1836 passed, 0 failed, 0 skipped (of 1836)
+  tests: no crash reports during the run
+  ```
+
+- Test-source warning scan (`xcodebuild build-for-testing | grep "warning:"`): zero warnings.
+- Tests added (87 functions / 90 executed cases) by kind:
+  - Unit (61): `LayerNamingTests` 3, `ActiveLayerStepTests` 2, `LayerOperationsTests` 22,
+    `LayerHistoryTests` 4, `CPUCompositorMergeTests` 6, `CompositeChangeTrackerTests` 12,
+    `LayerCommandRunnerTests` 4, `GoldenImageTests` 8.
+  - Property (1 function → 4 shards × 25 runs × 20 commands): `LayerOperationsPropertyTests`.
+  - GPU (11): `MetalCompositorTests` 9 (CPU-parity ±1, hidden/opacity/blend, mip padding,
+    ten-layer, identity), `MetalCompositorGoldenTests` 2 (`NormalStack300`,
+    `CanvasTenLayersAt50Percent`; goldens recorded in `PaintDotMacTests/Support/Golden/`).
+  - Performance (3 XCTest): `MetalCompositorPerformanceTests` — 10-layer 4K pan/zoom
+    frame-block 97.6 ms (< 3× 16.7 ms budget), single-tile edit frame 0.77 ms (< 50 ms),
+    full 10-layer 4K recomposite 31.1 ms (< 2 s) — NF-1/NF-2 measured on this Mac (Debug).
+  - Window integration (12): `LayerWorkflowIntegrationTests` 7, `LayersMenuWindowIntegrationTests` 5.
+- Pre-existing suites changed (contract updates, no weakened assertions): `MainMenuTests`
+  (Layers menu items + ⇧⌘N/⇧⌘⌫/⇧⌘D/⌘E/⇧⌘F wiring), `MetalCanvasRendererTests`
+  (display path now composites the whole stack via `MetalCompositor`), `ImageEncoderTests`
+  (multi-layer documents now fail with `.layeredImageNeedsFlatten`), `CanvasReferenceRenderer`
+  (mirrors per-layer visibility/opacity; contract constant unchanged).
+- Review: pending
+- Manual verification (not yet performed):
+  - [ ] Open a photo, ⇧⌘N, paint over it with a semi-transparent color: strokes appear over the
+        photo; Layers > Go to Layer Below then paint: strokes go under the earlier ones.
+  - [ ] Pan and pinch-zoom a 10-layer 4K document (open a 4K photo, ⇧⌘D nine times): smooth
+        60 fps (Metal HUD).
+  - [ ] Paint on the top layer of that document: no visible lag vs a single-layer image.
+  - [ ] Zoom to 1 %, 12 %, 50 %, 100 %, 800 % on a layered image with transparency: no seams,
+        no fringes, checkerboard correct, layers in the right order.
+  - [ ] History panel: each layer command shows its name and icon; clicking an earlier step
+        restores the layer count on the canvas; redoing restores it.

@@ -633,6 +633,62 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
             && CropToSelection.isEnabled(in: bridge.state)
     }
 
+    // MARK: - Layer commands (Layers menu and Image > Flatten, spec 0024)
+
+    /// The responder-chain actions for the Layers menu (target nil). Every one ignores a
+    /// gesture in progress and runs through `LayerCommandRunner`, which commits the
+    /// active tool's pending edit first (`prepareForNavigation`, reason `.command` —
+    /// 0020: floating pixels record "Finish Pixels" before the command's own step).
+    @objc func addNewLayer(_ sender: Any?) { runLayerCommand(.addNewLayer) }
+
+    @objc func deleteLayer(_ sender: Any?) { runLayerCommand(.deleteLayer) }
+
+    @objc func duplicateLayer(_ sender: Any?) { runLayerCommand(.duplicateLayer) }
+
+    @objc func mergeLayerDown(_ sender: Any?) { runLayerCommand(.mergeLayerDown) }
+
+    @objc func moveLayerUp(_ sender: Any?) { runLayerCommand(.moveLayerUp) }
+
+    @objc func moveLayerDown(_ sender: Any?) { runLayerCommand(.moveLayerDown) }
+
+    @objc func flattenImage(_ sender: Any?) { runLayerCommand(.flatten) }
+
+    /// Go to Layer Above / Below: a temporary switch of the editing focus — no history
+    /// step, no edited-state change, and no redraw (the composite doesn't depend on the
+    /// active layer).
+    @objc func goToLayerAbove(_ sender: Any?) { runGoToLayer(.above) }
+
+    @objc func goToLayerBelow(_ sender: Any?) { runGoToLayer(.below) }
+
+    private func runLayerCommand(_ command: LayerCommand) {
+        guard let bridge = (document as? PaintDocument)?.undoBridge,
+              !appModel.dispatcher.isGestureInProgress else { return }
+        LayerCommandRunner.run(command, bridge: bridge,
+                               commitPendingEdit: { bridge.prepareForNavigation?() })
+    }
+
+    private func runGoToLayer(_ step: ActiveLayerStep) {
+        guard let bridge = (document as? PaintDocument)?.undoBridge,
+              !appModel.dispatcher.isGestureInProgress else { return }
+        LayerCommandRunner.goTo(step, bridge: bridge,
+                                commitPendingEdit: { bridge.prepareForNavigation?() })
+    }
+
+    /// Menu validation: enabled iff no gesture is in flight and the command's own
+    /// enablement holds (Go to: the target index exists). The existing `.structure`
+    /// handling of `onStateChange` (set `canvasView.image`, `invalidateAll()`, status
+    /// bar) covers the redraw after a command; after `goTo` nothing needs redrawing.
+    private func layerCommandIsEnabled(_ command: LayerCommand) -> Bool {
+        guard let bridge = (document as? PaintDocument)?.undoBridge else { return false }
+        return !appModel.dispatcher.isGestureInProgress && command.isEnabled(in: bridge.state)
+    }
+
+    private func goToLayerIsEnabled(_ step: ActiveLayerStep) -> Bool {
+        guard let bridge = (document as? PaintDocument)?.undoBridge else { return false }
+        return !appModel.dispatcher.isGestureInProgress
+            && step.targetIndex(in: bridge.state.image) != nil
+    }
+
     // MARK: - Test seam (spec 0013)
 
     /// Sets the document's selection without a history step — the document stays clean
@@ -683,6 +739,15 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         case #selector(copy(_:)): return clipboardCommandIsEnabled(.copy)
         case #selector(paste(_:)): return clipboardCommandIsEnabled(.paste)
         case #selector(cropToSelection(_:)): return cropToSelectionIsEnabled()
+        case #selector(addNewLayer(_:)): return layerCommandIsEnabled(.addNewLayer)
+        case #selector(deleteLayer(_:)): return layerCommandIsEnabled(.deleteLayer)
+        case #selector(duplicateLayer(_:)): return layerCommandIsEnabled(.duplicateLayer)
+        case #selector(mergeLayerDown(_:)): return layerCommandIsEnabled(.mergeLayerDown)
+        case #selector(moveLayerUp(_:)): return layerCommandIsEnabled(.moveLayerUp)
+        case #selector(moveLayerDown(_:)): return layerCommandIsEnabled(.moveLayerDown)
+        case #selector(flattenImage(_:)): return layerCommandIsEnabled(.flatten)
+        case #selector(goToLayerAbove(_:)): return goToLayerIsEnabled(.above)
+        case #selector(goToLayerBelow(_:)): return goToLayerIsEnabled(.below)
         default: return true
         }
     }

@@ -93,6 +93,102 @@ struct CPUCompositor: Sendable {
         return result
     }
 
+    /// Paint.NET's Merge Layer Down (spec 0024 item 2, D-51): `upper` blended onto
+    /// `lower`'s stored straight pixels with the **upper** layer's blend mode and
+    /// opacity; the visibility of either layer is ignored (Paint.NET 3.36 renders the
+    /// upper layer regardless). Result has `lower.size`; the lower layer's own opacity,
+    /// blend mode, and visibility are *not* applied to its pixels — they still apply when
+    /// the merged layer is composited.
+    ///
+    /// Per tile coordinate: when `upper.opacity == 0` or `upper` has no allocated tile
+    /// there, the result tile **is** lower's tile (shared storage, or unallocated when
+    /// lower has none). Otherwise only the tile's in-canvas region is blended
+    /// (`lowerPixel = (0, 0, 0, 0)` where lower has no tile); a result whose valid pixels
+    /// are all zero stays unallocated (sparse stays sparse), and edge-tile padding stays
+    /// zero. The blended pixels are exactly what the D-16 loop produces for the
+    /// two-layer stack with the lower layer plain, which the tests pin down.
+    func merged(_ upper: Layer, onto lower: Layer) -> TiledSurface {
+        precondition(upper.size == lower.size,
+                     "merged needs equal layer sizes (upper \(upper.size), lower \(lower.size))")
+        var result = TiledSurface(size: lower.size)
+        guard upper.opacity > 0 else {
+            // A 0-opacity upper layer contributes nothing to any pixel (spec edge case);
+            // every tile is shared with lower unchanged.
+            for row in 0..<lower.surface.tileRows {
+                for column in 0..<lower.surface.tileColumns {
+                    let coordinate = TileCoordinate(column: column, row: row)
+                    result.setTile(lower.surface.tile(at: coordinate), at: coordinate)
+                }
+            }
+            return result
+        }
+        for row in 0..<lower.surface.tileRows {
+            for column in 0..<lower.surface.tileColumns {
+                let coordinate = TileCoordinate(column: column, row: row)
+                guard let upperTile = upper.surface.tile(at: coordinate) else {
+                    result.setTile(lower.surface.tile(at: coordinate), at: coordinate)
+                    continue
+                }
+                // Full 256×256 tiles; only the in-canvas area is read or written, so the
+                // edge padding of every tile stays zero.
+                let area = lower.surface.pixelRect(of: coordinate)
+                let lowerTile = lower.surface.tile(at: coordinate)
+                var out = Tile()
+                out.withUnsafeMutableBytes { destination in
+                    upperTile.withUnsafeBytes { upperBytes in
+                        if let lowerTile {
+                            lowerTile.withUnsafeBytes { lowerBytes in
+                                Self.blendTileBytes(dst: lowerBytes, into: destination,
+                                                    src: upperBytes, area: area,
+                                                    blendMode: upper.blendMode,
+                                                    opacity: upper.opacity)
+                            }
+                        } else {
+                            // An unallocated lower tile reads (0, 0, 0, 0) per pixel —
+                            // the destination buffer is already zero.
+                            Self.blendTileBytes(dst: UnsafeRawBufferPointer(start: nil, count: 0),
+                                                into: destination, src: upperBytes, area: area,
+                                                blendMode: upper.blendMode,
+                                                opacity: upper.opacity)
+                        }
+                    }
+                }
+                if !out.isFullyTransparent {
+                    result.setTile(out, at: coordinate)
+                }
+            }
+        }
+        return result
+    }
+
+    /// Blends `src` over `dst` tile bytes into `destination` over `area` (the tile's
+    /// in-canvas rect, tile-local origin). A nil/empty `dst` reads `(0, 0, 0, 0)`. Bytes
+    /// outside `area` are left as they are in `destination` (a freshly zeroed tile).
+    private static func blendTileBytes(dst: UnsafeRawBufferPointer,
+                                       into destination: UnsafeMutableRawBufferPointer,
+                                       src: UnsafeRawBufferPointer, area: PixelRect,
+                                       blendMode: BlendMode, opacity: UInt8) {
+        func pixel(_ buffer: UnsafeRawBufferPointer, _ offset: Int) -> ColorRGBA8 {
+            guard !buffer.isEmpty else { return .clear }
+            return ColorRGBA8(red: buffer[offset], green: buffer[offset + 1],
+                              blue: buffer[offset + 2], alpha: buffer[offset + 3])
+        }
+        for y in 0..<area.height {
+            let rowBase = y * Tile.bytesPerRow
+            for x in 0..<area.width {
+                let offset = rowBase + x * PixelFormat.rgba8.bytesPerPixel
+                let blended = BlendOps.blend(blendMode,
+                                             dst: pixel(dst, offset),
+                                             src: pixel(src, offset),
+                                             opacity: opacity)
+                destination[offset] = blended.red
+                destination[offset + 1] = blended.green
+                destination[offset + 2] = blended.blue
+                destination[offset + 3] = blended.alpha
+            }
+        }
+    }
+
     // MARK: - Pixel contract
 
     /// The per-pixel loop of the D-16 contract, with the fast paths the spec requires —

@@ -18,6 +18,7 @@ enum MainMenu {
     static let editMenuIdentifier = NSUserInterfaceItemIdentifier("menu.edit")
     static let viewMenuIdentifier = NSUserInterfaceItemIdentifier("menu.view")
     static let imageMenuIdentifier = NSUserInterfaceItemIdentifier("menu.image")
+    static let layersMenuIdentifier = NSUserInterfaceItemIdentifier("menu.layers")
     static let windowMenuIdentifier = NSUserInterfaceItemIdentifier("menu.window")
     static let helpMenuIdentifier = NSUserInterfaceItemIdentifier("menu.help")
     static let servicesItemIdentifier = NSUserInterfaceItemIdentifier("menu.app.services")
@@ -46,6 +47,18 @@ enum MainMenu {
     // Image > Crop to Selection (0022, ⇧⌘X — Paint.NET's Ctrl+Shift+X, PRD §5.12).
     static let cropToSelectionItemIdentifier =
         NSUserInterfaceItemIdentifier("menu.image.cropToSelection")
+    // Image > Flatten (0024, ⇧⌘F — Paint.NET's Ctrl+Shift+F, PRD §5.12), last in the menu.
+    static let imageFlattenItemIdentifier = NSUserInterfaceItemIdentifier("menu.image.flatten")
+    // Layers menu items (0024, PRD §5.4 L-1 / §5.12).
+    static let layersAddItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.addNewLayer")
+    static let layersDeleteItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.deleteLayer")
+    static let layersDuplicateItemIdentifier =
+        NSUserInterfaceItemIdentifier("menu.layers.duplicateLayer")
+    static let layersMergeItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.mergeLayerDown")
+    static let layersGoToAboveItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.goToLayerAbove")
+    static let layersGoToBelowItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.goToLayerBelow")
+    static let layersMoveUpItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.moveLayerUp")
+    static let layersMoveDownItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.moveLayerDown")
     // Edit > clipboard items (0021; the block 0001 placed, 0021 implements).
     static let editCutItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.cut")
     static let editCopyItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.copy")
@@ -79,6 +92,18 @@ enum MainMenu {
     /// The Image menu's actions (0022), sent first-responder-style to
     /// `DocumentWindowController` (target nil).
     static let cropToSelectionAction = NSSelectorFromString("cropToSelection:")
+    static let flattenImageAction = NSSelectorFromString("flattenImage:")
+
+    /// The Layers menu's actions (0024), sent first-responder-style to
+    /// `DocumentWindowController` (target nil).
+    static let addNewLayerAction = NSSelectorFromString("addNewLayer:")
+    static let deleteLayerAction = NSSelectorFromString("deleteLayer:")
+    static let duplicateLayerAction = NSSelectorFromString("duplicateLayer:")
+    static let mergeLayerDownAction = NSSelectorFromString("mergeLayerDown:")
+    static let goToLayerAboveAction = NSSelectorFromString("goToLayerAbove:")
+    static let goToLayerBelowAction = NSSelectorFromString("goToLayerBelow:")
+    static let moveLayerUpAction = NSSelectorFromString("moveLayerUp:")
+    static let moveLayerDownAction = NSSelectorFromString("moveLayerDown:")
 
     // Actions AppKit routes through the responder chain that no class exposes to Swift;
     // every action is sent to the first responder (target = nil).
@@ -115,6 +140,7 @@ enum MainMenu {
         menu.addItem(topLevelItem(title: "Edit", identifier: editMenuIdentifier, submenu: editMenu()))
         menu.addItem(topLevelItem(title: "View", identifier: viewMenuIdentifier, submenu: viewMenu()))
         menu.addItem(topLevelItem(title: "Image", identifier: imageMenuIdentifier, submenu: imageMenu()))
+        menu.addItem(topLevelItem(title: "Layers", identifier: layersMenuIdentifier, submenu: layersMenu()))
         menu.addItem(topLevelItem(title: "Window", identifier: windowMenuIdentifier, submenu: windowMenu()))
         menu.addItem(topLevelItem(title: "Help", identifier: helpMenuIdentifier, submenu: helpMenu()))
         return menu
@@ -249,12 +275,11 @@ enum MainMenu {
         return menu
     }
 
-    /// Paint.NET's Image menu (ImageMenu.html): commands that affect all layers. Crop to
-    /// Selection is the only item so far. 0024 (Flatten), 0035 (Resize Image), 0036
-    /// (Canvas Size / Resize Canvas), and 0037 (Flip/Rotate) append their items after this
-    /// one, in Paint.NET's order (Crop to Selection, Resize, Canvas Size, Flip/Rotate,
-    /// Flatten); 0024's Layers menu and 0031's Adjustments and Effects menus go between
-    /// the Image and Window menus.
+    /// Paint.NET's Image menu (ImageMenu.html): commands that affect all layers. Flatten
+    /// is last (Paint.NET's Image menu ends with it). 0035 (Resize Image), 0036 (Canvas
+    /// Size / Resize Canvas), and 0037 (Flip/Rotate) insert their items between Crop to
+    /// Selection and Flatten, in Paint.NET's order (Crop to Selection, Resize, Canvas
+    /// Size, Flip/Rotate, Flatten).
     private static func imageMenu() -> NSMenu {
         let menu = NSMenu(title: "Image")
         // Crop to Selection ⇧⌘X (Paint.NET's Ctrl+Shift+X → ⇧⌘X, PRD §5.12). Disabled
@@ -264,6 +289,57 @@ enum MainMenu {
                                 action: cropToSelectionAction)
         cropItem.identifier = cropToSelectionItemIdentifier
         menu.addItem(cropItem)
+        menu.addItem(.separator())
+        // Flatten ⇧⌘F (0024, IMG-5 — Paint.NET's Ctrl+Shift+F, PRD §5.12).
+        let flattenItem = makeItem(LayerCommand.flatten.name, key: "f",
+                                   modifiers: [.command, .shift], action: flattenImageAction)
+        flattenItem.identifier = imageFlattenItemIdentifier
+        menu.addItem(flattenItem)
+        return menu
+    }
+
+    /// Paint.NET's Layers menu (LayersMenu.html), the L-1 subset (0024): Add New Layer,
+    /// Delete Layer, Duplicate Layer, Merge Layer Down, —, Go to Layer Above, Go to Layer
+    /// Below, —, Move Layer Up, Move Layer Down. Later specs slot in: 0030 "Import From
+    /// File…" after Merge Layer Down; 0060 flips/rotate before Go to Layer Above; 0025
+    /// "Layer Properties…" at the end after a separator. Go to/Move Layer get no shortcut
+    /// (PRD §5.12 lists none; 0045 audits).
+    private static func layersMenu() -> NSMenu {
+        let menu = NSMenu(title: "Layers")
+        // ⇧⌘N (Paint.NET's Ctrl+Shift+N). "n"/⌘ is File > New, so the ⇧ distinguishes it.
+        let addItem = makeItem(LayerCommand.addNewLayer.name, key: "n", modifiers: [.command, .shift],
+                               action: addNewLayerAction)
+        addItem.identifier = layersAddItemIdentifier
+        menu.addItem(addItem)
+        // ⇧⌘⌫ — `NSBackspaceCharacter` (⌫) with ⇧⌘ (Paint.NET's Ctrl+Shift+Backspace).
+        let deleteItem = makeItem(LayerCommand.deleteLayer.name, key: "\u{8}",
+                                  modifiers: [.command, .shift], action: deleteLayerAction)
+        deleteItem.identifier = layersDeleteItemIdentifier
+        menu.addItem(deleteItem)
+        // ⇧⌘D (Paint.NET's Ctrl+Shift+D).
+        let duplicateItem = makeItem(LayerCommand.duplicateLayer.name, key: "d",
+                                     modifiers: [.command, .shift], action: duplicateLayerAction)
+        duplicateItem.identifier = layersDuplicateItemIdentifier
+        menu.addItem(duplicateItem)
+        // ⌘E (Paint.NET's Ctrl+E).
+        let mergeItem = makeItem(LayerCommand.mergeLayerDown.name, key: "e", modifiers: .command,
+                                 action: mergeLayerDownAction)
+        mergeItem.identifier = layersMergeItemIdentifier
+        menu.addItem(mergeItem)
+        menu.addItem(.separator())
+        let goToAboveItem = makeItem("Go to Layer Above", action: goToLayerAboveAction)
+        goToAboveItem.identifier = layersGoToAboveItemIdentifier
+        menu.addItem(goToAboveItem)
+        let goToBelowItem = makeItem("Go to Layer Below", action: goToLayerBelowAction)
+        goToBelowItem.identifier = layersGoToBelowItemIdentifier
+        menu.addItem(goToBelowItem)
+        menu.addItem(.separator())
+        let moveUpItem = makeItem(LayerCommand.moveLayerUp.name, action: moveLayerUpAction)
+        moveUpItem.identifier = layersMoveUpItemIdentifier
+        menu.addItem(moveUpItem)
+        let moveDownItem = makeItem(LayerCommand.moveLayerDown.name, action: moveLayerDownAction)
+        moveDownItem.identifier = layersMoveDownItemIdentifier
+        menu.addItem(moveDownItem)
         return menu
     }
 

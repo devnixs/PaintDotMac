@@ -741,4 +741,246 @@ struct MetalCanvasRendererTests {
         #expect(MetalCanvasRenderer.uniformLayoutIsSound,
                 "CanvasUniforms size/stride mismatch makes setVertexBytes read past the stack slot")
     }
+
+    // MARK: - Multi-layer compositing (spec 0024)
+
+    /// The 0024 oracle: the straight multi-layer composite through the pixel entry.
+    private func compositedOracle(_ image: LayeredImage, canvasTransform: CanvasTransform,
+                                  checkerboard: CheckerboardStyle = .standard) -> [ColorRGBA8] {
+        let composite = CPUCompositor().composite(image, in: image.size.bounds)
+        return CanvasReferenceRenderer.render(pixels: composite.pixels, size: image.size,
+                                              opacity: 1, isVisible: true,
+                                              transform: canvasTransform, checkerboard: checkerboard,
+                                              backgroundColor: Self.background)
+    }
+
+    private func expectComposited(_ actual: [ColorRGBA8], image: LayeredImage,
+                                  canvasTransform: CanvasTransform, _ comment: Comment? = nil,
+                                  sourceLocation: SourceLocation = #_sourceLocation) {
+        MetalTestTarget.assertPixelsMatch(actual, match: compositedOracle(image, canvasTransform: canvasTransform),
+                                          width: canvasTransform.drawableSize.width,
+                                          height: canvasTransform.drawableSize.height,
+                                          tolerance: 1, comment, sourceLocation: sourceLocation)
+    }
+
+    private func seededLayer(_ name: String, seed: UInt64, width: Int, height: Int,
+                             isVisible: Bool = true, opacity: UInt8 = 255) -> Layer {
+        var random = SeededRandom(seed: seed)
+        let surface = TestImages.surface(width: width, height: height) { _, _ in
+            let color = random.color()
+            return ColorRGBA8(red: color.red, green: color.green, blue: color.blue,
+                              alpha: random.byte())
+        }
+        return Layer(name: name, surface: surface, isVisible: isVisible, opacity: opacity)
+    }
+
+    @Test func multiLayerOracleAcceptsZooms() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        let size = PixelSize(width: 700, height: 500)
+        let image = LayeredImage(size: size,
+                                 layers: [seededLayer("A", seed: 0xA1, width: 700, height: 500),
+                                          seededLayer("B", seed: 0xB2, width: 700, height: 500, opacity: 128),
+                                          seededLayer("C", seed: 0xC3, width: 700, height: 500, isVisible: false)],
+                                 activeLayerIndex: 1)
+        for (zoom, scale) in [(1.0, 1.0), (0.5, 1.0), (1.0 / 3.0, 1.0), (2.0, 2.0)] {
+            let canvasTransform = wholeImageTransform(size, zoom: zoom, scale: scale)
+            let output = try render(image: image, canvasTransform: canvasTransform,
+                                    renderer: renderer, device: device)
+            expectComposited(output, image: image, canvasTransform: canvasTransform,
+                             "zoom \(zoom) scale \(scale)")
+        }
+    }
+
+    @Test func multiLayerOpacityAndVisibilityMix() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        let size = PixelSize(width: 300, height: 300)
+        var image = LayeredImage(size: size,
+                                 layers: [seededLayer("A", seed: 0xD1, width: 300, height: 300),
+                                          seededLayer("B", seed: 0xD2, width: 300, height: 300, opacity: 200),
+                                          seededLayer("C", seed: 0xD3, width: 300, height: 300, isVisible: false)],
+                                 activeLayerIndex: 0)
+        let canvasTransform = wholeImageTransform(size, zoom: 1, scale: 1)
+        var output = try render(image: image, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        expectComposited(output, image: image, canvasTransform: canvasTransform, "initial mix")
+        // Hide the bottom, show the top → a new oracle for the new frame.
+        image.layers[0].isVisible = false
+        image.layers[2].isVisible = true
+        output = try render(image: image, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        expectComposited(output, image: image, canvasTransform: canvasTransform, "visibility toggled")
+        image.layers[1].opacity = 40
+        output = try render(image: image, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        expectComposited(output, image: image, canvasTransform: canvasTransform, "opacity changed")
+    }
+
+    @Test func multiLayerEditRebuildsOnlyChangedTile() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        func flat(_ color: ColorRGBA8) -> Layer {
+            var surface = TiledSurface(size: PixelSize(width: 1024, height: 1024))
+            surface.fill(color)
+            return Layer(name: "L", surface: surface)
+        }
+        let image = LayeredImage(size: PixelSize(width: 1024, height: 1024),
+                                 layers: [flat(.white), flat(.black), flat(ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 255))], activeLayerIndex: 2)
+        // 512 device px at zoom 0.5 → the whole 4×4 tile grid.
+        let canvasTransform = transform(image: PixelSize(width: 1024, height: 1024),
+                                        drawable: (512, 512), scale: 1, zoom: 0.5,
+                                        center: CGPoint(x: 512, y: 512))
+        _ = try render(image: image, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 16)
+        #expect(renderer.statistics.layerTilesCopiedLastFrame == 16 * 3,
+                "16 composite tiles × 3 contributing layers")
+        var edited = image
+        edited.layers[1].surface.setPixel(ColorRGBA8(red: 0, green: 200, blue: 0, alpha: 255), at: PixelPoint(x: 2 * 256 + 5, y: 1 * 256 + 5))
+        let output = try render(image: edited, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 1)
+        #expect(renderer.statistics.layerTilesCopiedLastFrame == 3)
+        expectComposited(output, image: edited, canvasTransform: canvasTransform, "after one-tile edit")
+        _ = try render(image: edited, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 0)
+        #expect(renderer.statistics.layerTilesCopiedLastFrame == 0)
+    }
+
+    @Test func activeLayerSwitchRebuildsNothing() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        let size = PixelSize(width: 600, height: 600)
+        let image = LayeredImage(size: size,
+                                 layers: [seededLayer("A", seed: 0xE1, width: 600, height: 600),
+                                          seededLayer("B", seed: 0xE2, width: 600, height: 600)],
+                                 activeLayerIndex: 0)
+        let canvasTransform = wholeImageTransform(size, zoom: 1, scale: 1)
+        let output = try render(image: image, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        var switched = image
+        switched.activeLayerIndex = 1
+        let output2 = try render(image: switched, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 0, "active layer is not composited")
+        #expect(output == output2)
+    }
+
+    @Test func structureChangeRebuildsVisible() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        let size = PixelSize(width: 600, height: 600)   // 3×3 tiles
+        let image = LayeredImage(size: size,
+                                 layers: [seededLayer("A", seed: 0xF1, width: 600, height: 600)],
+                                 activeLayerIndex: 0)
+        let canvasTransform = wholeImageTransform(size, zoom: 1, scale: 1)
+        _ = try render(image: image, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 9)
+        // A structure change (new layer above) rebuilds every visible tile.
+        var stacked = image
+        stacked.layers.append(seededLayer("B", seed: 0xF2, width: 600, height: 600, opacity: 100))
+        stacked.activeLayerIndex = 1
+        let output = try render(image: stacked, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 9)
+        expectComposited(output, image: stacked, canvasTransform: canvasTransform, "after add")
+        // `invalidateAll` (undo-style whole-image replacement) re-uploads too.
+        renderer.invalidateAll()
+        _ = try render(image: stacked, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 9)
+    }
+
+    @Test func zoomWithinFullChainRebuildsNothing() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        let size = PixelSize(width: 1024, height: 1024)
+        let image = LayeredImage.blank(size: size, fill: .black)
+        let full = transform(image: size, drawable: (1024, 1024), scale: 1, zoom: 1,
+                             center: CGPoint(x: 512, y: 512))
+        _ = try render(image: image, canvasTransform: full, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 16)
+        var edited = image
+        edited.layers[0].surface.setPixel(.white, at: PixelPoint(x: 300, y: 300))
+        _ = try render(image: edited, canvasTransform: full, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 1)
+        // Zoom to 50 %: the full 0…6 chains survive → nothing rebuilds.
+        let half = transform(image: size, drawable: (512, 512), scale: 1, zoom: 0.5,
+                             center: CGPoint(x: 512, y: 512))
+        let output = try render(image: edited, canvasTransform: half, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 0, "full chains survive the zoom")
+        for coordinate in try #require(half.visibleTileRange).coordinates {
+            #expect(renderer.statistics.baseLevel(of: coordinate) == 0)
+        }
+        expectComposited(output, image: edited, canvasTransform: half, "50 % after zoom")
+    }
+
+    @Test func emptyStackShowsCheckerboard() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        let size = PixelSize(width: 300, height: 300)
+        let image = LayeredImage(size: size,
+                                 layers: [seededLayer("A", seed: 0x1A, width: 300, height: 300, isVisible: false),
+                                          seededLayer("B", seed: 0x1B, width: 300, height: 300, opacity: 0)],
+                                 activeLayerIndex: 0)
+        let canvasTransform = wholeImageTransform(size, zoom: 1, scale: 1)
+        let output = try render(image: image, canvasTransform: canvasTransform, renderer: renderer, device: device)
+        // Checkerboard inside the image rect, background outside — the invisible-layer oracle.
+        assertMatchesOracle(output, image: image, canvasTransform: canvasTransform, "no visible layer")
+        #expect(renderer.statistics.residentTileCount == 0, "no composite textures for an empty stack")
+    }
+
+    @Test func rendersNothingForZeroSizeCanvas() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        let size = PixelSize(width: 64, height: 64)
+        let image = LayeredImage.blank(size: size, fill: .black)
+        let good = transform(image: size, drawable: (64, 64), scale: 1, zoom: 1,
+                             center: CGPoint(x: 32, y: 32))
+        _ = try render(image: image, canvasTransform: good, renderer: renderer, device: device)
+        #expect(renderer.statistics.tilesUploadedLastFrame == 1)
+        #expect(renderer.lastFrameSize == CGSize(width: 64, height: 64))
+        let before = renderer.statistics
+        // A zero-size canvas (view being created/collapsed) encodes nothing.
+        let zero = transform(image: size, drawable: (0, 0), scale: 1, zoom: 1,
+                             center: CGPoint(x: 32, y: 32))
+        let frame = CanvasFrame(image: image, transform: zero, backgroundColor: Self.background)
+        let queue = try MetalTestTarget.makeCommandQueue(device)
+        let target = try MetalTestTarget.makeTarget(device, width: 4, height: 4)
+        let commandBuffer = try #require(queue.makeCommandBuffer())
+        renderer.encode(frame, to: target, in: commandBuffer)
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+        #expect(renderer.statistics == before, "a zero-size frame changes nothing")
+        #expect(renderer.lastFrameSize == CGSize(width: 64, height: 64),
+                "the zero-size frame must not touch lastFrameSize")
+    }
+
+    @Test func fiftyPercentBuildsFullChains() throws {
+        let device = try MetalTestTarget.makeDevice()
+        let renderer = try makeRenderer(device)
+        let size = PixelSize(width: 4096, height: 4096)
+        let image = LayeredImage.blank(size: size, fill: .black)
+        // 50 % (level 1 ≤ 2): base level 0 — the whole 0…6 chain per tile.
+        let half = transform(image: size, drawable: (256, 256), scale: 1, zoom: 0.5,
+                             center: CGPoint(x: 128, y: 128))
+        _ = try render(image: image, canvasTransform: half, renderer: renderer, device: device)
+        let range = try #require(half.visibleTileRange)
+        let fullTileBytes = (256 * 256 + 128 * 128 + 64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 4 * 4) * 4
+        #expect(range.count == 4)
+        #expect(renderer.statistics.residentTextureBytes == range.count * fullTileBytes)
+        // 10 % (level 3): fresh tiles are built at base level 3 (4 levels, not 7);
+        // tiles already resident with a full chain keep it.
+        let coarse = transform(image: size, drawable: (256, 256), scale: 1, zoom: 0.1,
+                               center: CGPoint(x: 128, y: 128))
+        _ = try render(image: image, canvasTransform: coarse, renderer: renderer, device: device)
+        let coarseRange = try #require(coarse.visibleTileRange)
+        var sawCoarseChain = false
+        for coordinate in coarseRange.coordinates {
+            guard let base = renderer.statistics.baseLevel(of: coordinate) else { continue }
+            #expect(base == 3 || base == 0, "tile \(coordinate) base \(base)")
+            sawCoarseChain = sawCoarseChain || base == 3
+        }
+        #expect(sawCoarseChain, "tiles outside the first view must be built at base 3")
+        // The byte accounting follows the base levels exactly.
+        let expectedBytes = renderer.statistics.baseLevels.values.reduce(0) { total, base in
+            total + (base...6).reduce(0) { sum, level in
+                let side = 256 >> level
+                return sum + side * side * 4
+            }
+        }
+        #expect(renderer.statistics.residentTextureBytes == expectedBytes)
+    }
 }

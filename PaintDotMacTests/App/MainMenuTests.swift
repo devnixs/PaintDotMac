@@ -66,25 +66,109 @@ struct MainMenuTests {
     @Test func topLevelMenusInOrder() {
         let menu = topLevelMenus()
         // 0022 creates the Image menu between View and Window (Paint.NET's order); 0024's
-        // Layers and 0031's Adjustments/Effects follow it there.
+        // Layers follows it there (File, Edit, View, Image, Layers, Window, Help; 0031
+        // inserts Adjustments/Effects after Layers).
         #expect(menu.items.map(\.submenu?.title)
-            == ["PaintDotMac", "File", "Edit", "View", "Image", "Window", "Help"])
+            == ["PaintDotMac", "File", "Edit", "View", "Image", "Layers", "Window", "Help"])
         #expect(menu.items.map(\.identifier?.rawValue)
             == ["menu.app", "menu.file", "menu.edit", "menu.view", "menu.image",
-                "menu.window", "menu.help"])
+                "menu.layers", "menu.window", "menu.help"])
     }
 
-    /// 0022: the Image menu starts with Crop to Selection ⇧⌘X (Paint.NET's Ctrl+Shift+X);
-    /// 0024/0035–0037 append the rest in Paint.NET order.
+    /// 0022: Crop to Selection ⇧⌘X; 0024 appends a separator and Flatten ⇧⌘F last
+    /// (Paint.NET's Image menu ends with Flatten).
     @Test func imageMenuItems() throws {
         try expectRows(MainMenu.imageMenuIdentifier, [
             Row(title: "Crop to Selection", key: "x", modifiers: [.command, .shift],
                 action: "cropToSelection:"),
+            .separator,
+            Row(title: "Flatten", key: "f", modifiers: [.command, .shift],
+                action: "flattenImage:"),
         ])
         let cropItem = try #require(submenu(MainMenu.imageMenuIdentifier).items.first {
             $0.identifier?.rawValue == "menu.image.cropToSelection"
         })
         #expect(cropItem.title == "Crop to Selection")
+    }
+
+    /// 0024: the last Image item is Flatten (⇧⌘F), right after a separator.
+    @Test func imageMenuFlattenLast() throws {
+        let items = try submenu(MainMenu.imageMenuIdentifier).items
+        let last = try #require(items.last)
+        #expect(last.title == "Flatten")
+        #expect(last.keyEquivalent == "f")
+        #expect(last.keyEquivalentModifierMask == [.command, .shift])
+        let flattenAction = try #require(last.action)
+        #expect(NSStringFromSelector(flattenAction) == "flattenImage:")
+        #expect(items.dropLast().last?.isSeparatorItem == true)
+        #expect(last.identifier?.rawValue == "menu.image.flatten")
+    }
+
+    /// 0024 L-1: the Layers menu, Paint.NET order, exact shortcuts and actions.
+    @Test func layersMenuItems() throws {
+        try expectRows(MainMenu.layersMenuIdentifier, [
+            Row(title: "Add New Layer", key: "n", modifiers: [.command, .shift],
+                action: "addNewLayer:"),
+            Row(title: "Delete Layer", key: "\u{8}", modifiers: [.command, .shift],
+                action: "deleteLayer:"),
+            Row(title: "Duplicate Layer", key: "d", modifiers: [.command, .shift],
+                action: "duplicateLayer:"),
+            Row(title: "Merge Layer Down", key: "e", modifiers: [.command],
+                action: "mergeLayerDown:"),
+            .separator,
+            Row(title: "Go to Layer Above", key: "", modifiers: [],
+                action: "goToLayerAbove:"),
+            Row(title: "Go to Layer Below", key: "", modifiers: [],
+                action: "goToLayerBelow:"),
+            .separator,
+            Row(title: "Move Layer Up", key: "", modifiers: [], action: "moveLayerUp:"),
+            Row(title: "Move Layer Down", key: "", modifiers: [], action: "moveLayerDown:"),
+        ])
+        // The menu sits directly after Image and before Window.
+        let titles = topLevelMenus().items.compactMap(\.submenu?.title)
+        guard let imageIndex = titles.firstIndex(of: "Image") else {
+            Issue.record("no Image menu")
+            return
+        }
+        #expect(titles[imageIndex + 1] == "Layers")
+        #expect(titles[imageIndex + 2] == "Window")
+        // Identifiers at the stated positions.
+        let identifiers = try submenu(MainMenu.layersMenuIdentifier).items.map(\.identifier?.rawValue)
+        #expect(identifiers == [
+            "menu.layers.addNewLayer", "menu.layers.deleteLayer", "menu.layers.duplicateLayer",
+            "menu.layers.mergeLayerDown", nil, "menu.layers.goToLayerAbove",
+            "menu.layers.goToLayerBelow", nil, "menu.layers.moveLayerUp",
+            "menu.layers.moveLayerDown",
+        ])
+    }
+
+    /// The 0024 key equivalents (⇧⌘N, ⇧⌘⌫, ⇧⌘D, ⌘E, ⇧⌘F) don't collide with any other
+    /// main-menu item (same key + modifiers).
+    @Test func noShortcutCollisions() throws {
+        func collect(_ menu: NSMenu, into list: inout [(key: String,
+                                                        modifiers: NSEvent.ModifierFlags)]) {
+            for item in menu.items where !item.isSeparatorItem {
+                if !item.keyEquivalent.isEmpty {
+                    list.append((item.keyEquivalent, item.keyEquivalentModifierMask))
+                }
+                if let submenu = item.submenu { collect(submenu, into: &list) }
+            }
+        }
+        var shortcuts: [(key: String, modifiers: NSEvent.ModifierFlags)] = []
+        collect(topLevelMenus(), into: &shortcuts)
+        let new: [(key: String, modifiers: NSEvent.ModifierFlags, label: String)] = [
+            ("n", [.command, .shift], "Add New Layer"),
+            ("\u{8}", [.command, .shift], "Delete Layer"),
+            ("d", [.command, .shift], "Duplicate Layer"),
+            ("e", [.command], "Merge Layer Down"),
+            ("f", [.command, .shift], "Flatten"),
+        ]
+        for entry in new {
+            let matches = shortcuts.filter {
+                $0.key == entry.key && $0.modifiers == entry.modifiers
+            }
+            #expect(matches.count == 1, "\(entry.label) shortcut collides with another item")
+        }
     }
 
     @Test func appMenuItems() throws {

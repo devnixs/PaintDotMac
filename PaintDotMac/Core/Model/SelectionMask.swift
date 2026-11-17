@@ -20,8 +20,7 @@ final class SelectionMaskTileStorage: Sendable, CustomStringConvertible {
 
 /// One mutable slot per tile in a parallel combine pass. Each `concurrentPerform` task
 /// writes only its own box, and `concurrentPerform` establishes the ordering edge before
-/// the results are read back — so the unchecked conformance is safe (the same pattern as
-/// `MetalCanvasRenderer.TileChainBox`).
+/// the results are read back — so the unchecked conformance is safe.
 final class SelectionMaskTileBox: @unchecked Sendable {
     var tile: SelectionMaskTile = .empty
 }

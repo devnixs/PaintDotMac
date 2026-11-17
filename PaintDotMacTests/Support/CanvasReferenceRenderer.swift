@@ -15,8 +15,31 @@ enum CanvasReferenceRenderer {
     static let testBackground = ColorRGBA8(red: 50, green: 60, blue: 70, alpha: 255)
 
     /// The expected `transform.drawableSize` device-pixel buffer, row-major, y counting
-    /// from the top (device space).
+    /// from the top (device space). 0003's single-layer view: layer 0, its own opacity
+    /// and visibility.
     static func render(image: LayeredImage, transform: CanvasTransform,
+                       checkerboard: CheckerboardStyle = .standard,
+                       backgroundColor: ColorRGBA8) -> [ColorRGBA8] {
+        guard let layer = image.layers.first else {
+            var output = [ColorRGBA8](repeating: backgroundColor,
+                                      count: transform.drawableSize.width * transform.drawableSize.height)
+            fillCheckerboard(&output, drawn: transform.drawnImageRectInDevice,
+                             width: transform.drawableSize.width,
+                             origin: transform.imageOriginInDevice,
+                             style: checkerboard, backingScale: transform.backingScale)
+            return output
+        }
+        return render(pixels: straightPixels(of: layer.surface), size: image.size,
+                      opacity: Double(layer.opacity) / 255, isVisible: layer.isVisible,
+                      transform: transform, checkerboard: checkerboard,
+                      backgroundColor: backgroundColor)
+    }
+
+    /// The 0024 oracle entry: any straight-RGBA8 image (typically `CPUCompositor`'s
+    /// multi-layer composite; pass `opacity: 1, isVisible: true`) through the same
+    /// premultiply, mip, sampling, checkerboard, and blend math.
+    static func render(pixels: [ColorRGBA8], size: PixelSize, opacity: Double, isVisible: Bool,
+                       transform: CanvasTransform,
                        checkerboard: CheckerboardStyle = .standard,
                        backgroundColor: ColorRGBA8) -> [ColorRGBA8] {
         let width = transform.drawableSize.width
@@ -27,13 +50,11 @@ enum CanvasReferenceRenderer {
         let origin = transform.imageOriginInDevice
         let zoom = transform.zoom
 
-        guard let layer = image.layers.first, layer.isVisible else {
+        guard isVisible, pixels.count == size.width * size.height else {
             fillCheckerboard(&output, drawn: drawn, width: width, origin: origin,
                              style: checkerboard, backingScale: transform.backingScale)
             return output
         }
-        let opacity = Double(layer.opacity) / 255
-        let size = image.size
         let level = level(for: zoom)
 
         // Whole-image premultiplied pyramid with transparent padding to a multiple of 2^L,
@@ -45,7 +66,7 @@ enum CanvasReferenceRenderer {
         var base = [UInt8](repeating: 0, count: paddedWidth * paddedHeight * 4)
         for y in 0..<size.height {
             for x in 0..<size.width {
-                let straight = layer.surface.pixel(at: PixelPoint(x: x, y: y))
+                let straight = pixels[y * size.width + x]
                 let a = Int(straight.alpha)
                 let offset = (y * paddedWidth + x) * 4
                 base[offset] = UInt8((Int(straight.red) * a + 127) / 255)
@@ -146,6 +167,20 @@ enum CanvasReferenceRenderer {
             }
         }
         return output
+    }
+
+    /// The surface's straight RGBA8 pixels, row-major (the `render(pixels:)` input form).
+    static func straightPixels(of surface: TiledSurface) -> [ColorRGBA8] {
+        let bytes = surface.readPixels(in: surface.bounds)
+        var pixels = [ColorRGBA8](repeating: .clear, count: surface.size.width * surface.size.height)
+        bytes.withUnsafeBytes { buffer in
+            for index in pixels.indices {
+                let offset = index * 4
+                pixels[index] = ColorRGBA8(red: buffer[offset], green: buffer[offset + 1],
+                                           blue: buffer[offset + 2], alpha: buffer[offset + 3])
+            }
+        }
+        return pixels
     }
 
     private static func fillCheckerboard(_ output: inout [ColorRGBA8], drawn: PixelRect, width: Int,

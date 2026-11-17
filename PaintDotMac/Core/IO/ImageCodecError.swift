@@ -13,6 +13,9 @@ enum ImageCodecError: Error, Equatable, Sendable, LocalizedError {
     case unsupportedWriteFormat(FileFormat)
     /// 0005: the encoder or ImageIO refused to produce the file.
     case encodingFailed
+    /// 0024 (interim rule 5): a document with more than one layer can't be written to
+    /// PNG until 0029 adds FMT-A's flatten-on-export confirmation. 0029 removes this case.
+    case layeredImageNeedsFlatten
 
     var errorDescription: String? {
         switch self {
@@ -21,6 +24,7 @@ enum ImageCodecError: Error, Equatable, Sendable, LocalizedError {
         case .unsupportedWriteFormat(let format):
             "PaintDotMac can\u{2019}t save images in the \(format.displayName) format yet."
         case .encodingFailed: "The image couldn\u{2019}t be saved."
+        case .layeredImageNeedsFlatten: "This image has more than one layer."
         case .limitExceeded(.dimensionsOutOfRange(let width, let height)) where width < 1 || height < 1:
             "The image has no pixels."
         default:
@@ -47,6 +51,9 @@ enum ImageCodecError: Error, Equatable, Sendable, LocalizedError {
                 + "but the limit is \(Self.byteCount(capBytes))."
         case .unsupportedWriteFormat, .encodingFailed:
             return nil
+        case .layeredImageNeedsFlatten:
+            return "Choose Image > Flatten, then save again. Saving layered images arrives "
+                + "with OpenRaster (.ora) support."
         }
     }
 

@@ -18,6 +18,8 @@ struct CanvasRendererStatistics: Equatable, Sendable {
     /// Σ bytes of all resident tile textures (all mip levels).
     var residentTextureBytes: Int
     var tilesUploadedLastFrame: Int
+    /// Composite tiles built last frame × their contributing layers (0024 NF-1).
+    var layerTilesCopiedLastFrame: Int = 0
     /// The level `L` the last encoded frame used.
     var lastFrameLevel: Int
     /// Per resident tile with a known mip base level.
@@ -32,12 +34,15 @@ enum CanvasRendererError: Error, Equatable, Sendable {
     case pipelineCreationFailed(String)
 }
 
-/// The display compositor for M0–M2 (spec 0003; PRD §4 Rendering, D-16: Metal for display,
-/// the CPU compositor of 0012 is the reference). Draws the bottom layer of the image
-/// (`layers[0]`; 0024 replaces this path with the multi-layer `MetalCompositor`) over the
-/// checkerboard, uploading one texture per visible, changed, non-empty 256×256 tile
-/// (AGENTS.md rules 3 and 4). Imports Metal only — no MetalKit, no AppKit — so it renders
-/// headlessly into any texture.
+/// The display compositor (spec 0003; PRD §4 Rendering, D-16: Metal for display, the CPU
+/// compositor of 0012 is the reference). Draws the whole layer stack over the
+/// checkerboard: 0024 replaced the single-layer upload path with the multi-layer
+/// `MetalCompositor`, so resident textures hold **composite** tiles — one per visible,
+/// stale, contributed 256×256 tile — and the frame uniform opacity is always 1 (layer
+/// visibility and opacity live inside the composite). Every other 0003 behavior —
+/// transform, checkerboard, sampling, intermediate, seam-free tiling, texture lifetime,
+/// budget, `invalidateAll`, errors — is kept. Imports Metal only — no MetalKit, no
+/// AppKit — so it renders headlessly into any texture.
 @MainActor
 final class MetalCanvasRenderer {
     /// The Apple GPU 2D texture size limit; the intermediate is bumped one mip level coarser
@@ -97,10 +102,15 @@ final class MetalCanvasRenderer {
 
     private let device: MTLDevice
     private let pipeline: MTLRenderPipelineState
+    /// The 0024 multi-layer composite builder (same metallib as the quad pipeline).
+    private let compositor: MetalCompositor
     private let targetPixelFormat: MTLPixelFormat
     private let textureBudgetBytes: Int
     private let tileStorageMode: MTLStorageMode
-    /// 1×1 transparent texture bound for the hidden-layer / no-layer checkerboard pass.
+    /// Decides which composite tiles are stale (0024 item 5); replaces 0003's
+    /// single-layer generation tracking.
+    private var tracker = CompositeChangeTracker()
+    /// 1×1 transparent texture bound for the no-contributing-layer checkerboard pass.
     private let clearTexture: MTLTexture
 
     private var resident: [TileCoordinate: Resident] = [:]
@@ -108,9 +118,10 @@ final class MetalCanvasRenderer {
     private var retired: [(texture: MTLTexture, frame: UInt64)] = []
     private var intermediate: MTLTexture?
     private var frameIndex: UInt64 = 0
-    private var lastLayerID: UUID?
-    private var lastImageSize: PixelSize?
-    private var lastSeenGeneration: UInt64 = 0
+
+    /// The canvas drawable size of the last frame that encoded, `nil` before the first.
+    /// A zero-size frame (target or canvas) returns before it and never overwrites this.
+    private(set) var lastFrameSize: CGSize?
 
     private(set) var statistics = CanvasRendererStatistics(
         residentTileCount: 0, residentTextureBytes: 0, tilesUploadedLastFrame: 0, lastFrameLevel: 0
@@ -154,6 +165,7 @@ final class MetalCanvasRenderer {
 
         self.device = device
         self.pipeline = pipeline
+        self.compositor = try MetalCompositor(device: device, library: library)
         self.targetPixelFormat = targetPixelFormat
         self.textureBudgetBytes = textureBudgetBytes
         self.tileStorageMode = device.hasUnifiedMemory ? .shared : .managed
@@ -175,15 +187,13 @@ final class MetalCanvasRenderer {
 
     /// Forget every resident texture's contents (whole-image replacement: revert, 0008's
     /// `.structure` history changes). Pixel edits never need it — `encode` finds them through
-    /// `changedTiles(since:)`.
+    /// the `CompositeChangeTracker`.
     func invalidateAll() {
         for entry in resident.values {
             retired.append((texture: entry.texture, frame: frameIndex))
         }
         resident.removeAll()
-        lastLayerID = nil
-        lastImageSize = nil
-        lastSeenGeneration = 0
+        tracker.reset()
         refreshStatistics(uploaded: statistics.tilesUploadedLastFrame, level: statistics.lastFrameLevel)
     }
 
@@ -196,40 +206,39 @@ final class MetalCanvasRenderer {
         guard canvasDrawable.width > 0, canvasDrawable.height > 0 else { return }
         frameIndex += 1
         let frameNumber = frameIndex
+        lastFrameSize = CGSize(width: canvasDrawable.width, height: canvasDrawable.height)
+        compositor.beginFrame()
 
-        // 1a. Change tracking through 0002's generation + changedTiles(since:) — no dirty
-        // set that callers must fill or clear. Runs every frame, also for a hidden layer.
-        let layer = frame.image.layers.first
-        if let layer {
-            let surface = layer.surface
-            let sameLineage = lastLayerID == layer.id
-                && lastImageSize == frame.image.size
-                && surface.generation >= lastSeenGeneration
-            if lastLayerID == nil || !sameLineage {
-                for coordinate in [TileCoordinate](resident.keys) {
-                    resident[coordinate]?.isStale = true
-                    resident[coordinate]?.baseLevel = nil
-                }
-            } else {
-                for coordinate in surface.changedTiles(since: lastSeenGeneration) {
-                    resident[coordinate]?.isStale = true
-                }
+        // 1a. Change tracking through 0024's `CompositeChangeTracker` — no dirty set
+        // that callers must fill or clear. Runs every frame.
+        switch tracker.update(for: frame.image) {
+        case .all:
+            for coordinate in [TileCoordinate](resident.keys) {
+                resident[coordinate]?.isStale = true
+                resident[coordinate]?.baseLevel = nil
             }
-            lastSeenGeneration = surface.generation
-            lastLayerID = layer.id
-            lastImageSize = frame.image.size
+        case .tiles(let coordinates):
+            for coordinate in coordinates {
+                resident[coordinate]?.isStale = true
+            }
         }
 
-        // 2–5. Uploads, intermediate, and quad parameters happen first: Metal allows only
-        // one active encoder per command buffer, and the background pass is the last one.
+        // 2–5. Composite tiles, intermediate, and quad parameters happen first: Metal
+        // allows only one active encoder per command buffer, and the background pass is
+        // the last one.
         var uploads = 0
         var usedLevel = CanvasSampling.forZoom(transform.zoom).level
         var quadTexture: MTLTexture?
         var quadUniforms: CanvasUniforms?
         let drawnRect = transform.drawnImageRectInDevice
         if let range = transform.visibleTileRange, !drawnRect.isEmpty {
-            if layer == nil || !(layer?.isVisible ?? false) {
-                // Hidden layer (or no layer): checkerboard only — opacity 0 over it.
+            // An image with no contributing layer anywhere (none visible, or all at
+            // opacity 0) shows checkerboard only — and keeps no composite textures.
+            let hasVisibleLayer = frame.image.layers.contains { $0.isVisible && $0.opacity > 0 }
+            if !hasVisibleLayer {
+                for coordinate in [TileCoordinate](resident.keys) {
+                    dropResident(coordinate, frame: frameNumber)
+                }
                 var uniforms = Self.checkerUniforms(frame: frame, target: target)
                 uniforms.opacity = 0
                 uniforms.isNearest = 1
@@ -238,14 +247,14 @@ final class MetalCanvasRenderer {
                 uniforms.intermediateSize = simd_uint2(1, 1)
                 quadTexture = clearTexture
                 quadUniforms = uniforms
-            } else if let layer, let intermediate = prepareIntermediate(
-                range: range, level: &usedLevel, layer: layer, surfaceSize: layer.surface.size,
+            } else if let intermediate = prepareIntermediate(
+                range: range, level: &usedLevel, image: frame.image,
                 commandBuffer: commandBuffer, frame: frameNumber, uploads: &uploads
             ) {
                 quadTexture = intermediate
                 quadUniforms = Self.frameUniforms(
                     frame: frame, target: target, range: range, level: usedLevel,
-                    intermediate: intermediate, layer: layer
+                    intermediate: intermediate
                 )
             }
             // When prepareIntermediate returns nil the GPU could not provide a texture:
@@ -291,10 +300,11 @@ final class MetalCanvasRenderer {
 
     // MARK: - Per-frame helpers
 
-    /// Uploads what the visible range needs and builds/clears/fills the intermediate
-    /// texture; returns it, or `nil` when the GPU could not provide one (graceful skip).
-    private func prepareIntermediate(range: TileRange, level: inout Int, layer: Layer,
-                                     surfaceSize: PixelSize, commandBuffer: MTLCommandBuffer,
+    /// Builds the composite textures the visible range needs and builds/clears/fills the
+    /// intermediate texture; returns it, or `nil` when the GPU could not provide one
+    /// (graceful skip).
+    private func prepareIntermediate(range: TileRange, level: inout Int, image: LayeredImage,
+                                     commandBuffer: MTLCommandBuffer,
                                      frame frameNumber: UInt64, uploads: inout Int) -> MTLTexture? {
         let tileSide = TiledSurface.tileSize
         // Level bump so the intermediate never exceeds the 2D texture limit per axis.
@@ -305,54 +315,32 @@ final class MetalCanvasRenderer {
         }
         let texelSide = tileSide >> level
 
-        // 3. Upload per tile: visible, non-empty tiles that are new, stale, or too coarse.
-        // The CPU premultiply + mip build is the cold-frame bottleneck (a 24 MP first
-        // frame), so it runs tile-parallel in bounded waves; texture creation and the
-        // residency bookkeeping stay on the main actor.
-        struct Pending { let coordinate: TileCoordinate; let tileBytes: [UInt8]
-            let validWidth: Int; let validHeight: Int }
-        var pending: [Pending] = []
+        // 3. Composite per tile: visible tiles that are new, stale, or too coarse. The
+        // 0024 base-level policy: `B = 0` for `L ≤ 2` (zoom ≥ 25 %) so the full 0…6
+        // chain survives zoom and pan; `B = L` below 25 % bounds memory for huge images
+        // (as 0003). A resident tile with base ≤ the needed level is reused as is.
+        let baseLevel = level <= 2 ? 0 : level
         for coordinate in range.coordinates {
-            guard let tile = layer.surface.tile(at: coordinate) else {
+            guard MetalCompositor.contributingLayers(of: image, at: coordinate).isEmpty == false else {
                 dropResident(coordinate, frame: frameNumber)   // now empty → no texture
                 continue
             }
             if let existing = resident[coordinate], !existing.isStale,
-               let baseLevel = existing.baseLevel, baseLevel <= level {
+               let existingBase = existing.baseLevel, existingBase <= level {
                 resident[coordinate]?.lastDrawnFrame = frameNumber
                 continue
             }
-            pending.append(Pending(
-                coordinate: coordinate, tileBytes: tile.bytes,
-                validWidth: min(tileSide, surfaceSize.width - coordinate.column * tileSide),
-                validHeight: min(tileSide, surfaceSize.height - coordinate.row * tileSide)
-            ))
-        }
-        let waveSize = 64
-        let items = pending
-        var waveStart = 0
-        while waveStart < pending.count {
-            let waveEnd = min(waveStart + waveSize, pending.count)
-            let boxes = (waveStart..<waveEnd).map { _ in TileChainBox() }
-            let buildLevel = level
-            let waveBase = waveStart
-            DispatchQueue.concurrentPerform(iterations: waveEnd - waveStart) { slot in
-                let item = items[waveBase + slot]
-                let level0 = TileMipmapper.paddedPremultipliedBytes(
-                    tileBytes: item.tileBytes, validWidth: item.validWidth, validHeight: item.validHeight
-                )
-                boxes[slot].chain = TileMipmapper.mipChainBytes(level0: level0, baseLevel: buildLevel)
+            guard let texture = compositor.makeTileTexture(baseLevel: baseLevel),
+                  compositor.encodeTile(coordinate, of: image, baseLevel: baseLevel,
+                                        into: texture, commandBuffer: commandBuffer)
+            else { continue }   // GPU could not provide buffers for this tile — skip it
+            if let previous = resident[coordinate] {
+                retired.append((texture: previous.texture, frame: frameNumber))
             }
-            // concurrentPerform returns only after every task finished; each task wrote
-            // only its own box, so the chains are safely visible here.
-            for slot in 0..<(waveEnd - waveStart) {
-                guard let chain = boxes[slot].chain else { continue }
-                if uploadPrebuilt(chain, level: buildLevel, at: pending[waveStart + slot].coordinate,
-                                  frame: frameNumber) {
-                    uploads += 1
-                }
-            }
-            waveStart = waveEnd
+            resident[coordinate] = Resident(texture: texture, baseLevel: baseLevel,
+                                            allocatedBytes: Self.textureBytes(baseLevel: baseLevel),
+                                            isStale: false, lastDrawnFrame: frameNumber)
+            uploads += 1
         }
 
         // 4. Intermediate: grow-only reuse, cleared, then exact texel copies per tile.
@@ -398,43 +386,6 @@ final class MetalCanvasRenderer {
         return texture
     }
 
-    /// One mutable slot per tile in a parallel build wave. Each `concurrentPerform` task
-    /// writes only its own box, and `concurrentPerform` establishes the ordering edge
-    /// before the main thread reads the chains back — so the unchecked conformance is safe.
-    fileprivate final class TileChainBox: @unchecked Sendable {
-        var chain: [[UInt8]]?
-    }
-
-    /// Uploads a chain built off the main actor into a **fresh** texture; the replaced
-    /// texture moves to the retired list (step 6).
-    private func uploadPrebuilt(_ chain: [[UInt8]], level: Int, at coordinate: TileCoordinate,
-                                frame frameNumber: UInt64) -> Bool {
-        let tileSide = TiledSurface.tileSize
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: tileSide >> level, height: tileSide >> level, mipmapped: true
-        )
-        descriptor.usage = .shaderRead
-        descriptor.storageMode = tileStorageMode
-        descriptor.mipmapLevelCount = chain.count
-        guard let texture = device.makeTexture(descriptor: descriptor) else { return false }
-        var side = tileSide >> level
-        for (index, levelBytes) in chain.enumerated() {
-            guard let base = levelBytes.withUnsafeBytes({ $0.baseAddress }) else { return false }
-            texture.replace(
-                region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: index,
-                withBytes: base, bytesPerRow: side * PixelFormat.rgba8.bytesPerPixel
-            )
-            side /= 2
-        }
-        if let previous = resident[coordinate] {
-            retired.append((texture: previous.texture, frame: frameNumber))
-        }
-        resident[coordinate] = Resident(texture: texture, baseLevel: level,
-                                        allocatedBytes: Self.textureBytes(baseLevel: level),
-                                        isStale: false, lastDrawnFrame: frameNumber)
-        return true
-    }
-
     private func dropResident(_ coordinate: TileCoordinate, frame frameNumber: UInt64) {
         guard let entry = resident.removeValue(forKey: coordinate) else { return }
         retired.append((texture: entry.texture, frame: frameNumber))
@@ -469,8 +420,7 @@ final class MetalCanvasRenderer {
     }
 
     private static func frameUniforms(frame: CanvasFrame, target: MTLTexture, range: TileRange,
-                                      level: Int, intermediate: MTLTexture,
-                                      layer: Layer) -> CanvasUniforms {
+                                      level: Int, intermediate: MTLTexture) -> CanvasUniforms {
         let transform = frame.transform
         let origin = transform.imageOriginInDevice
         let tileSide = TiledSurface.tileSize
@@ -499,7 +449,8 @@ final class MetalCanvasRenderer {
             UInt32(clamping: Int(clampedDouble: validWidth)), UInt32(clamping: Int(clampedDouble: validHeight))
         )
         uniforms.devicePerTexel = Float(transform.zoom * scale)
-        uniforms.opacity = Float(layer.opacity) / 255
+        // Layer opacity and visibility are inside the composite now (0024 item 6).
+        uniforms.opacity = 1
         uniforms.isNearest = CanvasSampling.forZoom(transform.zoom) == .nearest ? 1 : 0
         return uniforms
     }
@@ -547,6 +498,7 @@ final class MetalCanvasRenderer {
             residentTileCount: resident.count,
             residentTextureBytes: residentByteCount(),
             tilesUploadedLastFrame: uploaded,
+            layerTilesCopiedLastFrame: compositor.layerTilesCopiedLastFrame,
             lastFrameLevel: level,
             baseLevels: baseLevels
         )
