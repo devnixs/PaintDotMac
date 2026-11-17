@@ -199,6 +199,30 @@ struct GradientRendererTests {
         #expect(after.pixel(at: PixelPoint(x: 60, y: 50)) == gray(128))
     }
 
+    @Test func conicalWrapsAtNegativePole() {
+        // End to the LEFT: the handle vector has atan2 angle +π, so sample points above
+        // the start→end ray produce raw d < −π — the ONLY branch the right-pointing and
+        // down-pointing conical tests never reach. Oracles hand-derived:
+        // (41,46): d = −(π − atan 4/9) − π wraps to +atan(4/9) = 0.418224 → t = 0.133119
+        //   → w = 34 (an unwrapped d would clamp to 1 → white).
+        // (41,55): d = −atan(5/9) = −0.507099 → t = 0.161414 → w = 41 (no wrap needed).
+        // Continuity at the opposite ray (the seam): (60,49) and (60,51) are both
+        // |−π ± atan(1/10)| → t = 0.968274 → w = 247, i.e. the ramp peaks at (60,50) = S
+        // and folds — no 1→0 jump anywhere.
+        let before = transparentSurface(101, 101)
+        var after = before
+        _ = GradientRenderer.render(
+            parameters(type: .conical,
+                       start: CGPoint(x: 50.5, y: 50.5), end: CGPoint(x: 40.5, y: 50.5)),
+            before: before, into: &after, clip: nil)
+        #expect(after.pixel(at: PixelPoint(x: 40, y: 50)) == black)   // toward end
+        #expect(after.pixel(at: PixelPoint(x: 60, y: 50)) == white)   // opposite ray
+        #expect(after.pixel(at: PixelPoint(x: 41, y: 46)) == gray(34), "wrapped side")
+        #expect(after.pixel(at: PixelPoint(x: 41, y: 55)) == gray(41), "unwrapped side")
+        #expect(after.pixel(at: PixelPoint(x: 60, y: 49)) == gray(247), "seam continuity above")
+        #expect(after.pixel(at: PixelPoint(x: 60, y: 51)) == gray(247), "seam continuity below")
+    }
+
     // MARK: - Compose
 
     @Test func colorModeOverOpaqueUsesNormalBlend() {
@@ -451,6 +475,23 @@ struct GradientRendererTests {
         let t = GradientRenderer.position(.linear, start: p.start, end: p.end, x: 0, y: 0)
         #expect(GradientRenderer.weight(t) == 0)
         #expect(t.isFinite)
+    }
+
+    @Test(arguments: GradientType.allCases)
+    func hugeDistanceSaturatesL2WithoutTrap(type: GradientType) throws {
+        // end (1e300, 0): vx·vx overflows to +inf, so L² is inf — every per-type branch
+        // must stay finite (0/inf, x/inf → 0) and never trap. Pixel (0,0) oracles:
+        // linear/reflected/diamond/radial → t = 0 → P; conical is angle-based and
+        // unaffected → atan2(0.5, 0.5) − 0 = π/4 → t = 0.25 → w = 64 → gray 64.
+        let p = parameters(type: type, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 1e300, y: 0))
+        #expect(!p.isDegenerate)
+        let t = GradientRenderer.position(type, start: p.start, end: p.end, x: 0, y: 0)
+        #expect(t.isFinite, "t poisoned (NaN/inf) for \(type)")
+        let before = transparentSurface(4, 4)
+        var after = before
+        _ = GradientRenderer.render(p, before: before, into: &after, clip: nil)
+        #expect(after.pixel(at: PixelPoint(x: 0, y: 0))
+                    == (type == .conical ? gray(64) : black), "\(type)")
     }
 
     @Test(arguments: GradientType.allCases)

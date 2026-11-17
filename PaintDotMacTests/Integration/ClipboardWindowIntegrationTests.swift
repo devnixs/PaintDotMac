@@ -103,27 +103,27 @@ struct ClipboardWindowIntegrationTests {
             defer { clipboard.restore() }
             defer { finish(harness) }
 
-            let copy = harness.isEnabled(Selector("copy:"))
-            let cut = harness.isEnabled(Selector("cut:"))
-            let paste = harness.isEnabled(Selector("paste:"))
-            let pasteNew = harness.isEnabled(Selector("pasteIntoNewImage:"))
+            let copy = harness.isEnabled(#selector(NSText.copy(_:)))
+            let cut = harness.isEnabled(#selector(NSText.cut(_:)))
+            let paste = harness.isEnabled(#selector(NSText.paste(_:)))
+            let pasteNew = harness.isEnabled(#selector(PaintDocumentController.pasteIntoNewImage(_:)))
             #expect(copy, "Copy: a document is open")
             #expect(!cut, "Cut: no selection")
             #expect(!paste, "Paste: empty pasteboard")
             #expect(!pasteNew, "Paste into New Image: empty pasteboard")
 
             writeText("hi", to: clipboard.pasteboard)
-            #expect(!harness.isEnabled(Selector("paste:")), "text is not an image")
-            #expect(!harness.isEnabled(Selector("pasteIntoNewImage:")))
+            #expect(!harness.isEnabled(#selector(NSText.paste(_:))), "text is not an image")
+            #expect(!harness.isEnabled(#selector(PaintDocumentController.pasteIntoNewImage(_:))))
 
             writeImage(width: 10, height: 10, to: clipboard.pasteboard)
-            #expect(harness.isEnabled(Selector("paste:")))
-            #expect(harness.isEnabled(Selector("pasteIntoNewImage:")))
+            #expect(harness.isEnabled(#selector(NSText.paste(_:))))
+            #expect(harness.isEnabled(#selector(PaintDocumentController.pasteIntoNewImage(_:))))
 
             harness.windowController.setInitialSelection(PixelRect(x: 0, y: 0,
                                                                    width: 10, height: 10))
             pumpMainRunLoop()
-            #expect(harness.isEnabled(Selector("cut:")), "Cut with a selection")
+            #expect(harness.isEnabled(#selector(NSText.cut(_:))), "Cut with a selection")
         }
     }
 
@@ -139,7 +139,7 @@ struct ClipboardWindowIntegrationTests {
             defer { clipboard.restore() }
             defer { finish(harness) }
 
-            harness.perform(Selector("copy:"))
+            harness.perform(#selector(NSText.copy(_:)))
             pumpMainRunLoop()
             let pasteboardTypes = types(of: clipboard.pasteboard)
             #expect(pasteboardTypes.contains("public.png"))
@@ -165,7 +165,7 @@ struct ClipboardWindowIntegrationTests {
                                                                    width: 20, height: 15))
             pumpMainRunLoop()
 
-            harness.perform(Selector("copy:"))
+            harness.perform(#selector(NSText.copy(_:)))
             pumpMainRunLoop()
             let png = try #require(readPNG(from: clipboard.pasteboard))
             #expect(png.width == 20 && png.height == 15)
@@ -196,7 +196,7 @@ struct ClipboardWindowIntegrationTests {
             pumpMainRunLoop()
             #expect(antsMode(harness) == "animated")
 
-            harness.perform(Selector("cut:"))
+            harness.perform(#selector(NSText.cut(_:)))
             pumpMainRunLoop()
             #expect(names(harness) == ["Open Image", "Cut"])
             #expect(antsMode(harness) == "hidden", "Cut deselects")
@@ -230,7 +230,7 @@ struct ClipboardWindowIntegrationTests {
             writeImage(width: 30, height: 20, pixel: { _, _ in self.red },
                        to: clipboard.pasteboard)
 
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             #expect(names(harness) == ["Open Image", "Paste"])
             #expect(harness.appModel.activeToolID == .moveSelectedPixels,
@@ -254,7 +254,7 @@ struct ClipboardWindowIntegrationTests {
             defer { clipboard.restore() }
             writeImage(width: 40, height: 30, pixel: { _, _ in self.red },
                        to: clipboard.pasteboard)
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             harness.dragCanvas(from: view(harness, 20, 15), to: view(harness, 80, 60))
             pumpMainRunLoop()
@@ -275,7 +275,7 @@ struct ClipboardWindowIntegrationTests {
             defer { secondClipboard.restore() }
             writeImage(width: 40, height: 30, pixel: { _, _ in self.red },
                        to: secondClipboard.pasteboard)
-            second.perform(Selector("paste:"))
+            second.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             secondClipboard.restore()
             try #require(second.window.undoManager).undo()
@@ -301,9 +301,9 @@ struct ClipboardWindowIntegrationTests {
             defer { finish(harness) }
             writeImage(width: 30, height: 20, pixel: { _, _ in self.red },
                        asTIFFOnly: true, to: clipboard.pasteboard)
-            #expect(harness.isEnabled(Selector("paste:")), "TIFF alone is pasteable")
+            #expect(harness.isEnabled(#selector(NSText.paste(_:))), "TIFF alone is pasteable")
 
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             #expect(names(harness) == ["Open Image", "Paste"])
             #expect(harness.statusBar.selectionSizeText == "30 \u{00D7} 20")
@@ -321,9 +321,9 @@ struct ClipboardWindowIntegrationTests {
             let url = try fixtures.writePNG(named: "clip-25.png", width: 25, height: 25,
                                             pixel: { _, _ in self.red })
             writeFileURL(url, to: clipboard.pasteboard)
-            #expect(harness.isEnabled(Selector("paste:")), "an image file URL is pasteable")
+            #expect(harness.isEnabled(#selector(NSText.paste(_:))), "an image file URL is pasteable")
 
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             #expect(names(harness) == ["Open Image", "Paste"])
             #expect(harness.statusBar.selectionSizeText == "25 \u{00D7} 25")
@@ -346,7 +346,7 @@ struct ClipboardWindowIntegrationTests {
                        to: clipboard.pasteboard)
             let zoomBefore = harness.statusBar.zoom
 
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             #expect(clipboard.prompt.askCount == 1, "the E-6 prompt was asked")
             #expect(harness.statusBar.imageSizeText == "100 \u{00D7} 80")
@@ -383,7 +383,7 @@ struct ClipboardWindowIntegrationTests {
             writeImage(width: 100, height: 80, pixel: { _, _ in self.red },
                        to: clipboard.pasteboard)
 
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             #expect(clipboard.prompt.askCount == 1)
             #expect(harness.statusBar.imageSizeText == "64 \u{00D7} 48")
@@ -404,7 +404,7 @@ struct ClipboardWindowIntegrationTests {
             writeImage(width: 100, height: 80, pixel: { _, _ in self.red },
                        to: clipboard.pasteboard)
 
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             #expect(clipboard.prompt.askCount == 1)
             #expect(names(harness) == ["Open Image"], "Cancel adds no Paste step")
@@ -427,7 +427,7 @@ struct ClipboardWindowIntegrationTests {
             writeImage(width: 200, height: 200, pixel: { _, _ in self.red },
                        to: clipboard.pasteboard)
 
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             #expect(clipboard.alerts.alerts.map(\.message)
                     == ["The image is too large to paste."])
@@ -472,11 +472,11 @@ struct ClipboardWindowIntegrationTests {
             harness.canvasDrag(to: view(harness, 40, 30))
             pumpMainRunLoop()
             #expect(harness.appModel.dispatcher.isGestureInProgress, "mid-gesture")
-            #expect(!harness.isEnabled(Selector("paste:")), "Paste is disabled mid-gesture")
-            #expect(!harness.isEnabled(Selector("copy:")), "Copy is disabled mid-gesture")
+            #expect(!harness.isEnabled(#selector(NSText.paste(_:))), "Paste is disabled mid-gesture")
+            #expect(!harness.isEnabled(#selector(NSText.copy(_:))), "Copy is disabled mid-gesture")
 
-            harness.perform(Selector("paste:"))   // the key-equivalent path
-            harness.perform(Selector("copy:"))
+            harness.perform(#selector(NSText.paste(_:)))   // the key-equivalent path
+            harness.perform(#selector(NSText.copy(_:)))
             pumpMainRunLoop()
             #expect(names(harness) == ["Open Image"], "no step while the gesture is open")
             let board = try #require(readPNG(from: clipboard.pasteboard))
@@ -503,7 +503,7 @@ struct ClipboardWindowIntegrationTests {
                 ColorRGBA8(red: UInt8(x * 6 + 5), green: 3, blue: 9, alpha: 255)
             }
             writeImage(width: 40, height: 30, pixel: pattern, to: clipboard.pasteboard)
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             harness.dragCanvas(from: view(harness, 20, 15), to: view(harness, 90, 65))
             pumpMainRunLoop()
@@ -513,7 +513,7 @@ struct ClipboardWindowIntegrationTests {
 
             // 0020: every command finishes the pending session first (via the window
             // action's prepareForNavigation), then Copy reads the layer.
-            harness.perform(Selector("copy:"))
+            harness.perform(#selector(NSText.copy(_:)))
             pumpMainRunLoop()
             #expect(names(harness) == ["Open Image", "Paste", "Move Pixels", "Finish Pixels"])
             let png = try #require(readPNG(from: clipboard.pasteboard))
@@ -536,9 +536,9 @@ struct ClipboardWindowIntegrationTests {
             writeFileURL(url, to: clipboard.pasteboard)
             try FileManager.default.removeItem(at: url)
             // The file is never opened for validation — the extension still says image.
-            #expect(harness.isEnabled(Selector("paste:")))
+            #expect(harness.isEnabled(#selector(NSText.paste(_:))))
 
-            harness.perform(Selector("paste:"))
+            harness.perform(#selector(NSText.paste(_:)))
             pumpMainRunLoop()
             #expect(clipboard.alerts.alerts.map(\.message)
                     == ["The clipboard doesn\u{2019}t contain an image."],

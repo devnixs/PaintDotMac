@@ -179,11 +179,15 @@ struct MoveSelectedPixelsToolTests {
         context.nav.transform = CanvasTransform(
             imageSize: canvas, viewSize: CGSize(width: 600, height: 400),
             backingScale: 1, zoom: 1, center: CGPoint(x: 300, y: 200))
+        // Local idiom (the suite's `rectSelection` pins its own 8×8 canvas): keeps the
+        // `#require` on an opaque initializer instead of a constant-folded literal.
+        func setupSelection(_ rect: CGRect) throws -> Selection {
+            try #require(Selection(rect: rect, canvasSize: canvas))
+        }
         context.performHistory(SelectionHistoryItem(name: "setup", icon: .generic, before: nil,
-                                                    after: try #require(
-                                                        Selection(rect: CGRect(x: 250, y: 10,
-                                                                                width: 20, height: 20),
-                                                                    canvasSize: canvas))))
+                                                    after: try setupSelection(
+                                                        CGRect(x: 250, y: 10,
+                                                               width: 20, height: 20))))
         let original = context.image.activeLayer.surface
         let tool = MoveSelectedPixelsTool()
         tool.activate(context: context)

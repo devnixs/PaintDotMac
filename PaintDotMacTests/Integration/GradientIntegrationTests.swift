@@ -157,6 +157,29 @@ struct GradientIntegrationTests {
         #expect(!context.bridge.history.canUndo)
     }
 
+    // MARK: - Bounded capture (NF-4)
+
+    @Test func smallGradientOnHugeCanvasCapturesOneTile() throws {
+        // A small RADIAL gradient inside tile (0,0) of a 4000 × 3000 opaque canvas
+        // (radial because its clamped far field equals the before color; a linear one
+        // would span every row). The step must hold the ONE changed tile — both sides
+        // allocated, so byteCost is exactly 2 · Tile.byteCount, nothing canvas-sized (NF-4).
+        let context = BridgeSessionContext(size: PixelSize(width: 4000, height: 3000))
+        context.memoryOptions.setValue(GradientType.radial, for: GradientOptions.keys().type)
+        let tool = GradientTool()
+        tool.mouseDown(event(CGPoint(x: 128, y: 128)), context: context)
+        tool.mouseDragged(event(CGPoint(x: 178, y: 128)), context: context)
+        tool.mouseUp(event(CGPoint(x: 178, y: 128)), context: context)
+        pressReturn(tool, context)
+        let step = try #require(context.bridge.history.undoStep)
+        let item = try #require(step.item as? TileDiffHistoryItem)
+        let layerID = context.image.layers[0].id
+        #expect(item.diff.changedTiles == [layerID: [TileCoordinate(column: 0, row: 0)]],
+                "only the tile the gradient touched")
+        #expect(item.diff.byteCost == 2 * Tile.byteCount,
+                "one before/after tile pair, nothing canvas-sized")
+    }
+
     // MARK: - Selection clip (TOOL-B)
 
     @Test func selectionClipsGradient() throws {
