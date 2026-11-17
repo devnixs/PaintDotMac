@@ -50,6 +50,16 @@ final class BridgeToolContext: ToolContext {
         bridge.undoManager.groupsByEvent = false
     }
 
+    /// 0018: a caller-built image (for multi-layer sessions).
+    init(image: LayeredImage, base: HistoryBaseStep = .openImage,
+         budgetBytes: Int = HistoryStack.defaultBudgetBytes) {
+        bridge = UndoBridge(state: DocumentState(image: image),
+                            base: base,
+                            budgetBytes: budgetBytes,
+                            undoManager: NavigationUndoManager())
+        bridge.undoManager.groupsByEvent = false
+    }
+
     func activateTool(_ id: ToolID) {
         activatedTools.append(id)
         dispatcher?.requestToolSwitch(id)

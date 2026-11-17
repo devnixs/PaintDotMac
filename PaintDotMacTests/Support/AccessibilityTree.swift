@@ -121,7 +121,7 @@ enum AX {
         where object.responds(to: Selector(name)) {
             return boolValue(object, name)
         }
-        let attributeSelector = Selector("accessibilityAttributeValue:")
+        let attributeSelector = NSSelectorFromString("accessibilityAttributeValue:")
         guard object.responds(to: attributeSelector),
               let raw = object.perform(attributeSelector, with: "AXEnabled" as NSString)?
                   .takeUnretainedValue() as? NSNumber

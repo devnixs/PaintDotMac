@@ -32,10 +32,14 @@ enum MainMenu {
     // Zoom to Selection (0014, ⇧⌘B — Paint.NET's Ctrl+Shift+B).
     static let zoomToSelectionItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.zoomToSelection")
     static let actualSizeItemIdentifier = NSUserInterfaceItemIdentifier("menu.view.actualSize")
-    // Edit > selection items (0013; 0018 inserts Erase Selection / Fill Selection between
-    // Deselect and Invert Selection, as in Paint.NET's Edit menu).
+    // Edit > selection items (0013; 0018's Erase Selection / Fill Selection sit between
+    // Deselect and Invert Selection, as 0013 planned).
     static let editSelectAllItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.selectAll")
     static let editDeselectItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.deselect")
+    static let editEraseSelectionItemIdentifier =
+        NSUserInterfaceItemIdentifier("menu.edit.eraseSelection")
+    static let editFillSelectionItemIdentifier =
+        NSUserInterfaceItemIdentifier("menu.edit.fillSelection")
     static let editInvertSelectionItemIdentifier =
         NSUserInterfaceItemIdentifier("menu.edit.invertSelection")
     /// Panel toggle action (0006); each item's `representedObject` carries the `PanelKind`
@@ -55,6 +59,12 @@ enum MainMenu {
     static let selectAllAction = NSSelectorFromString("selectAll:")
     static let deselectAction = NSSelectorFromString("deselect:")
     static let invertSelectionAction = NSSelectorFromString("invertSelection:")
+
+    /// The Edit menu's Erase / Fill Selection actions (0018), sent first-responder-style
+    /// to `DocumentWindowController` (target nil). ⌦ also erases but a menu item carries
+    /// one key equivalent, so the key monitor handles the ⌦ alias (and the ⌫ repeat).
+    static let eraseSelectionAction = NSSelectorFromString("eraseSelection:")
+    static let fillSelectionAction = NSSelectorFromString("fillSelection:")
 
     // Actions AppKit routes through the responder chain that no class exposes to Swift;
     // every action is sent to the first responder (target = nil).
@@ -144,8 +154,9 @@ enum MainMenu {
         menu.addItem(makeItem("Copy", key: "c", modifiers: .command, action: copyAction))
         menu.addItem(makeItem("Paste", key: "v", modifiers: .command, action: pasteAction))
         menu.addItem(.separator())
-        // Paint.NET's Edit menu order (E-3): Select All, Deselect, (Erase/Fill Selection →
-        // 0018 inserts here), Invert Selection.
+        // Paint.NET's Edit menu order (E-3) with 0018's items between Deselect and
+        // Invert Selection. `NSBackspaceCharacter` shows as ⌫ and matches the Delete
+        // key; ⌦ erases too (key monitor only) and ⌥⌫ fills (E-4, §5.12).
         let selectAllItem = makeItem("Select All", key: "a", modifiers: .command,
                                      action: selectAllAction)
         selectAllItem.identifier = editSelectAllItemIdentifier
@@ -154,6 +165,15 @@ enum MainMenu {
                                     action: deselectAction)
         deselectItem.identifier = editDeselectItemIdentifier
         menu.addItem(deselectItem)
+        // `NSBackspaceCharacter` — the ⌫ key equivalent with no modifiers.
+        let eraseSelectionItem = makeItem("Erase Selection", key: "\u{8}",
+                                          action: eraseSelectionAction)
+        eraseSelectionItem.identifier = editEraseSelectionItemIdentifier
+        menu.addItem(eraseSelectionItem)
+        let fillSelectionItem = makeItem("Fill Selection", key: "\u{8}", modifiers: .option,
+                                         action: fillSelectionAction)
+        fillSelectionItem.identifier = editFillSelectionItemIdentifier
+        menu.addItem(fillSelectionItem)
         let invertSelectionItem = makeItem("Invert Selection", key: "i", modifiers: .command,
                                            action: invertSelectionAction)
         invertSelectionItem.identifier = editInvertSelectionItemIdentifier

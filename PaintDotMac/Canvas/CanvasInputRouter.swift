@@ -11,9 +11,13 @@ final class CanvasInputRouter {
 
     /// The `keyWindow` parameter is the test seam: integration tests pass their offscreen
     /// document window or panel, since nothing is key in a headless run.
+    /// `selectionPixelAction` overrides the 0018 command dispatch the same way: headless
+    /// windows are never key, so `DocumentHarness` walks its window's responder chain
+    /// where AppKit would use the key window's.
     @discardableResult
     static func handleShortcutKeyDown(_ event: NSEvent, model: AppModel,
-                                      keyWindow: NSWindow? = NSApp.keyWindow) -> Bool {
+                                      keyWindow: NSWindow? = NSApp.keyWindow,
+                                      selectionPixelAction: ((Selector) -> Bool)? = nil) -> Bool {
         let windowKind: ToolKeyWindowKind
         if keyWindow?.identifier == DocumentWindowController.windowIdentifier {
             windowKind = .document
@@ -23,7 +27,7 @@ final class CanvasInputRouter {
             // Sheets, alerts, dialogs, Settings — no tool keys.
             windowKind = .other
         }
-        let textInputHasFocus = hasTextInputFocus(in: keyWindow)
+        let textInputHasFocus = textInputHasFocus(in: keyWindow)
         let modifiers = modifiers(from: event.modifierFlags)
         if model.dispatcher.handleShortcut(
             charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
@@ -39,8 +43,45 @@ final class CanvasInputRouter {
                                keyWindow: windowKind, textInputHasFocus: textInputHasFocus) {
             return true
         }
-        return handleColorKey(event, model: model, modifiers: modifiers,
-                              keyWindow: windowKind, textInputHasFocus: textInputHasFocus)
+        if handleColorKey(event, model: model, modifiers: modifiers,
+                          keyWindow: windowKind, textInputHasFocus: textInputHasFocus) {
+            return true
+        }
+        return handleSelectionPixelKey(event, model: model, modifiers: modifiers,
+                                       keyWindow: windowKind, textInputHasFocus: textInputHasFocus,
+                                       action: selectionPixelAction)
+    }
+
+    /// ⌫ / ⌦ erase, ⌥⌫ fills (spec 0018; PRD E-4, §5.12, D-45). Resolution and the gate
+    /// live in `SelectionPixelCommand.selectionPixelShortcut`; the monitor runs before
+    /// menu key-equivalent matching, so a press lands exactly once. Auto-repeat is
+    /// consumed and ignored, so holding ⌫ makes one step, not dozens. The action reaches
+    /// the main window's controller through the responder chain; the action re-runs its
+    /// own enablement checks.
+    private static func handleSelectionPixelKey(_ event: NSEvent, model: AppModel,
+                                                modifiers: ToolModifiers, keyWindow: ToolKeyWindowKind,
+                                                textInputHasFocus: Bool,
+                                                action: ((Selector) -> Bool)?) -> Bool {
+        let decision = SelectionPixelCommand.selectionPixelShortcut(
+            keyCode: event.keyCode, modifiers: modifiers, isRepeat: event.isARepeat,
+            keyWindow: keyWindow, textInputHasFocus: textInputHasFocus,
+            toolCapturesKeyboard: model.dispatcher.activeTool.capturesKeyboard,
+            gestureInProgress: model.dispatcher.isGestureInProgress)
+        guard case .perform(let command) = decision else {
+            return decision == .consumeIgnored
+        }
+        let selector: Selector = switch command {
+        case .eraseSelection: #selector(DocumentWindowController.eraseSelection(_:))
+        case .fillSelection: #selector(DocumentWindowController.fillSelection(_:))
+        }
+        if let action {
+            // The command is consumed either way: the key is ours, it must not reach
+            // the field editor or the menu afterwards.
+            _ = action(selector)
+        } else {
+            NSApp.sendAction(selector, to: nil, from: nil)
+        }
+        return true
     }
 
     /// `[` / `]` (PRD §5.12, D-12; spec 0009): step the active brush tool's width by ∓1/±1
@@ -107,8 +148,10 @@ final class CanvasInputRouter {
 
     /// The field editor of any `NSTextField`/SwiftUI `TextField` is an `NSText`; other text
     /// input clients (SwiftUI hosting views) answer `NSTextInputClient`. The `CanvasView`
-    /// itself never counts — it is the non-text first responder tool keys need.
-    static func hasTextInputFocus(in window: NSWindow?) -> Bool {
+    /// itself never counts — it is the non-text first responder tool keys need. 0018: the
+    /// Erase / Fill Selection menu validation runs the same predicate, so the ⌫ / ⌥⌫
+    /// key equivalents cannot take the key away from a focused text field.
+    static func textInputHasFocus(in window: NSWindow?) -> Bool {
         guard let responder = window?.firstResponder else { return false }
         if responder is CanvasView { return false }
         if responder is NSText { return true }

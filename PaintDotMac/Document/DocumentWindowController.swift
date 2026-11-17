@@ -371,6 +371,53 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         return !appModel.dispatcher.isGestureInProgress && command.isEnabled(in: bridge.state)
     }
 
+    // MARK: - Erase / Fill Selection (Edit menu, spec 0018)
+
+    /// Responder-chain actions for the Edit menu and the ⌫/⌦/⌥⌫ key monitor (target nil;
+    /// the window controller sits in the main window's chain, so they work while a
+    /// floating panel is key — PRD D-45).
+    @objc func eraseSelection(_ sender: Any?) { runSelectionPixelCommand(.eraseSelection) }
+
+    @objc func fillSelection(_ sender: Any?) { runSelectionPixelCommand(.fillSelection) }
+
+    private func runSelectionPixelCommand(_ command: SelectionPixelCommand) {
+        guard let bridge = (document as? PaintDocument)?.undoBridge,
+              !appModel.dispatcher.isGestureInProgress else { return }
+        Self.performSelectionPixelCommand(command, bridge: bridge, model: appModel)
+    }
+
+    /// The shared command path, also exercised by integration tests: the active tool's
+    /// pending edit commits first (its own step — once 0020 lands this call carries the
+    /// command's reason, and `commandFinishesFirst` covers it), then exactly one
+    /// "Erase Selection" / "Fill Selection" step. The primary color is read at invocation
+    /// time (C-1), and the canvas/ants refresh follows `onStateChange` (0013 handles
+    /// `.pixelsAndSelection`; Fill reports `.pixels`).
+    static func performSelectionPixelCommand(_ command: SelectionPixelCommand,
+                                             bridge: UndoBridge, model: AppModel) {
+        bridge.prepareForNavigation?()
+        let item: (any HistoryItem)?
+        switch command {
+        case .eraseSelection: item = EraseSelection.makeHistoryItem(for: bridge.state)
+        case .fillSelection: item = FillSelection.makeHistoryItem(for: bridge.state,
+                                                                  color: model.colors.primary)
+        }
+        if let item { bridge.perform(item) }
+    }
+
+    /// Enabled for any open document (D-45(a)) unless a gesture is in flight, a tool
+    /// captures the keyboard (Text, 0040 — ⌫ deletes its text), or a text field has
+    /// focus: the ⌫/⌥⌫ equivalents carry no ⌘, so `validateMenuItem` is what keeps them
+    /// from stealing the key from the field editor (`NSMenu.performKeyEquivalent` never
+    /// fires a disabled item).
+    private func selectionPixelCommandIsEnabled(_ command: SelectionPixelCommand) -> Bool {
+        guard let bridge = (document as? PaintDocument)?.undoBridge,
+              !appModel.dispatcher.isGestureInProgress,
+              !appModel.dispatcher.activeTool.capturesKeyboard,
+              !CanvasInputRouter.textInputHasFocus(in: NSApp.keyWindow ?? window)
+        else { return false }
+        return command.isEnabled(in: bridge.state)
+    }
+
     // MARK: - Test seam (spec 0013)
 
     /// Sets the document's selection without a history step — the document stays clean
@@ -414,6 +461,8 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
             return (document as? PaintDocument)?.undoBridge.state.selection != nil
         case #selector(selectAll(_:)): return selectionCommandIsEnabled(.selectAll)
         case #selector(deselect(_:)): return selectionCommandIsEnabled(.deselect)
+        case #selector(eraseSelection(_:)): return selectionPixelCommandIsEnabled(.eraseSelection)
+        case #selector(fillSelection(_:)): return selectionPixelCommandIsEnabled(.fillSelection)
         case #selector(invertSelection(_:)): return selectionCommandIsEnabled(.invertSelection)
         default: return true
         }

@@ -549,12 +549,21 @@ private extension Tile {
     /// inBounds.height)` is zero.
     func paddingIsZero(inBounds area: PixelSize) -> Bool {
         withUnsafeBytes { buffer in
+            // Every padding run is one contiguous row segment (columns `firstColumn…`
+            // of the row), so scan it 8 bytes at a time; `isFullyTransparent` does the
+            // same (0002). The DEBUG `setTile` check calls this per stored tile, and a
+            // per-byte loop costs more than the fill itself on a 4000×3000 layer (0018).
             for y in 0..<Tile.size {
                 let firstColumn = y < area.height ? area.width : 0
-                for x in firstColumn..<Tile.size {
-                    let offset = y * Tile.bytesPerRow + x * 4
-                    if buffer[offset] != 0 || buffer[offset + 1] != 0
-                        || buffer[offset + 2] != 0 || buffer[offset + 3] != 0 { return false }
+                var offset = y * Tile.bytesPerRow + firstColumn * 4
+                let end = (y + 1) * Tile.bytesPerRow
+                while offset + 8 <= end {
+                    if buffer.loadUnaligned(fromByteOffset: offset, as: UInt64.self) != 0 { return false }
+                    offset += 8
+                }
+                while offset < end {
+                    if buffer[offset] != 0 { return false }
+                    offset += 1
                 }
             }
             return true

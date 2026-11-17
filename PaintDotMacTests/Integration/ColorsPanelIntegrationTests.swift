@@ -120,7 +120,7 @@ struct ColorsPanelIntegrationTests {
         defer { finish(harness) }
         let hexField = try #require(harness.textFields().first, "the hex box is not an NSTextField")
         harness.focus(hexField)
-        #expect(CanvasInputRouter.hasTextInputFocus(in: harness.window),
+        #expect(CanvasInputRouter.textInputHasFocus(in: harness.window),
                 "the hex box's field editor is the window's first responder")
         let before = harness.model.colors
         let tool = harness.model.activeToolID

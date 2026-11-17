@@ -50,18 +50,43 @@ struct TileDiff: Sendable {
                 .union(after.allocatedTileCoordinates)
                 .sorted()
         }
+        // Fill / erase results commonly repeat one buffer across every interior tile, so
+        // each buffer (pair) is compared or classified once instead of 256 KB per tile
+        // (0018's perf targets). Addresses are stable for the whole loop — both surfaces
+        // own their buffers and nothing allocates or frees here.
+        var equality: [UnsafeRawPointer: [UnsafeRawPointer: Bool]] = [:]
+        var transparency: [UnsafeRawPointer: Bool] = [:]
+        func buffer(_ tile: Tile) -> UnsafeRawPointer {
+            tile.bytes.withUnsafeBytes { $0.baseAddress! }
+        }
+        func isFullyTransparent(_ tile: Tile) -> Bool {
+            let key = buffer(tile)
+            if let cached = transparency[key] { return cached }
+            let value = tile.isFullyTransparent
+            transparency[key] = value
+            return value
+        }
+        func contentsEqual(_ lhs: Tile, _ rhs: Tile) -> Bool {
+            let lhsKey = buffer(lhs)
+            if let cached = equality[lhsKey]?[buffer(rhs)] { return cached }
+            let value = lhs == rhs
+            equality[lhsKey, default: [:]][buffer(rhs)] = value
+            return value
+        }
         var entries: [Entry] = []
         entries.reserveCapacity(coordinates.count)
         for coordinate in coordinates {
             let beforeTile = before.tile(at: coordinate)
             let afterTile = after.tile(at: coordinate)
             if beforeTile == nil && afterTile == nil { continue }
-            if let beforeTile, let afterTile, beforeTile.sharesStorage(with: afterTile) {
-                continue  // identity fast path — no memcmp
+            if let beforeTile, let afterTile {
+                if beforeTile.sharesStorage(with: afterTile) {
+                    continue  // identity fast path — no memcmp
+                }
+                if contentsEqual(beforeTile, afterTile) { continue }  // content-identical
             }
-            if beforeTile == afterTile { continue }  // content-identical
-            if (beforeTile == nil && afterTile?.isFullyTransparent == true)
-                || (afterTile == nil && beforeTile?.isFullyTransparent == true) {
+            if (beforeTile == nil && afterTile.map(isFullyTransparent) == true)
+                || (afterTile == nil && beforeTile.map(isFullyTransparent) == true) {
                 continue  // absent and transparent are pixel-identical
             }
             entries.append(Entry(layerID: layerID, coordinate: coordinate,

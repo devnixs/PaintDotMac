@@ -291,22 +291,31 @@ enum CanvasPointerButton {
 extension DocumentHarness {
     /// Sends a synthesized keyDown through the app's one shortcut entry point
     /// (`CanvasInputRouter.handleShortcutKeyDown`) with `appModel`; `in:` overrides the
-    /// key window (headless runs have none).
+    /// key window (headless runs have none). `keyCode` is the virtual key code the real
+    /// keyboard would deliver (0018: ⌫ = 51 with `"\u{7F}"`, ⌦ = 117 with `"\u{F728}"`).
+    /// The 0018 selection-pixel actions dispatch through this harness's responder-chain
+    /// lookup — the headless equivalent of AppKit's `sendAction(to: nil)` from the key
+    /// window's chain.
     @discardableResult
-    func shortcut(_ characters: String, modifiers: NSEvent.ModifierFlags = [],
+    func shortcut(_ characters: String, keyCode: UInt16 = 0,
+                  modifiers: NSEvent.ModifierFlags = [],
                   in keyWindow: NSWindow? = nil) -> Bool {
         let event = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: modifiers,
             timestamp: ProcessInfo.processInfo.systemUptime,
             windowNumber: (keyWindow ?? window).windowNumber, context: nil,
             characters: characters, charactersIgnoringModifiers: characters,
-            isARepeat: false, keyCode: 0
+            isARepeat: false, keyCode: keyCode
         )
         guard let event else {
             Issue.record("could not synthesize a keyDown event")
             return false
         }
-        return CanvasInputRouter.handleShortcutKeyDown(event, model: appModel, keyWindow: keyWindow ?? window)
+        return CanvasInputRouter.handleShortcutKeyDown(event, model: appModel,
+                                                       keyWindow: keyWindow ?? window) { [weak self] selector in
+            guard let self, let target = self.target(for: selector) else { return false }
+            return NSApp.sendAction(selector, to: target, from: nil)
+        }
     }
 
     private func deliver(_ type: NSEvent.EventType, atView point: CGPoint,
