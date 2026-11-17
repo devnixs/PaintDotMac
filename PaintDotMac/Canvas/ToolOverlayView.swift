@@ -33,8 +33,45 @@ final class ToolOverlayView: NSView {
             if let ctx = NSGraphicsContext.current?.cgContext {
                 TransformHandlesOverlay.draw(preview, transform: canvasView.transform, in: ctx)
             }
+        case .gradientHandles(let start, let end)?:
+            drawGradientHandles(start: start, end: end, transform: canvasView.transform)
         case nil:
             break
+        }
+    }
+
+    /// The Gradient's endpoint handles (spec 0023): a 1 pt black line over a 1 pt white line
+    /// (the white offset 1 pt so it rims the black on any background), and at each end a
+    /// 10 pt circle — white fill, 1 pt black stroke.
+    private func drawGradientHandles(start: CGPoint, end: CGPoint,
+                                     transform: CanvasTransform) {
+        let startView = transform.canvasToView(start)
+        let endView = transform.canvasToView(end)
+        NSGraphicsContext.current?.imageInterpolation = .none
+
+        func line(offsetY: CGFloat) -> NSBezierPath {
+            let path = NSBezierPath()
+            path.move(to: CGPoint(x: startView.x, y: startView.y + offsetY))
+            path.line(to: CGPoint(x: endView.x, y: endView.y + offsetY))
+            path.lineWidth = 1
+            return path
+        }
+
+        let underline = line(offsetY: 1)
+        NSColor.white.setStroke()
+        underline.stroke()
+        let overline = line(offsetY: 0)
+        NSColor.black.setStroke()
+        overline.stroke()
+
+        for center in [startView, endView] {
+            let circle = NSRect(x: center.x - 5, y: center.y - 5, width: 10, height: 10)
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: circle).fill()
+            let stroke = NSBezierPath(ovalIn: circle.insetBy(dx: 0.5, dy: 0.5))
+            stroke.lineWidth = 1
+            NSColor.black.setStroke()
+            stroke.stroke()
         }
     }
 

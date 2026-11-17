@@ -6,7 +6,7 @@ import Testing
 @MainActor
 struct ToolOptionsBarModelTests {
     @Test func finishVisibility() {
-        let pendingTools: [ToolID] = [.moveSelectedPixels, .text, .lineCurve, .shapes]
+        let pendingTools: [ToolID] = [.moveSelectedPixels, .gradient, .text, .lineCurve, .shapes]
         for id in ToolID.allCases {
             let descriptor = ToolRegistry.descriptor(for: id)
             if pendingTools.contains(id) {

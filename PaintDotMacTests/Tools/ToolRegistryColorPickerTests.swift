@@ -22,7 +22,7 @@ struct ToolRegistryColorPickerTests {
         #expect(registry.implementedIDs
                     == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
                         .moveSelectedPixels, .moveSelection, .zoom, .pan,
-                        .paintBucket,
+                        .paintBucket, .gradient,
                         .paintbrush, .eraser, .pencil, .colorPicker])
         #expect(registry.implementedIDs.filter { $0 == .colorPicker }.count == 1)
         #expect(registry.isImplemented(.colorPicker))

@@ -31,7 +31,7 @@ struct ToolRegistryTests {
             (.zoom, "Zoom", "z", .view, false),
             (.pan, "Pan", "h", .view, false),
             (.paintBucket, "Paint Bucket", "f", .fill, false),
-            (.gradient, "Gradient", "g", .fill, false),
+            (.gradient, "Gradient", "g", .fill, true),
             (.paintbrush, "Paintbrush", "b", .drawing, false),
             (.eraser, "Eraser", "e", .drawing, false),
             (.pencil, "Pencil", "p", .drawing, false),
@@ -68,12 +68,13 @@ struct ToolRegistryTests {
         // Later tool specs extend this list as they register their tool (0011 added the
         // Eraser and the Pencil; 0012 the Color Picker; 0014 the two selection tools;
         // 0015 the Lasso; 0016 the Magic Wand; 0017 the Paint Bucket; 0019 Move
-        // Selection; 0020 Move Selected Pixels).
+        // Selection; 0020 Move Selected Pixels; 0023 the Gradient).
         #expect(ToolRegistry.standard().implementedIDs
                     == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
                         .moveSelectedPixels, .moveSelection,
-                        .zoom, .pan, .paintBucket,
+                        .zoom, .pan, .paintBucket, .gradient,
                         .paintbrush, .eraser, .pencil, .colorPicker])
+        #expect(ToolRegistry.standard().makeTool(.gradient) is GradientTool)
         #expect(ToolRegistry.standard().makeTool(.magicWand) is MagicWandTool)
         #expect(ToolRegistry.standard().makeTool(.zoom) is ZoomTool)
         #expect(ToolRegistry.standard().makeTool(.pan) is PanTool)
@@ -125,7 +126,7 @@ struct ToolRegistryTests {
         #expect(registry.implementedIDs
                     == [.rectangleSelect, .lassoSelect, .ellipseSelect, .magicWand,
                         .moveSelectedPixels, .moveSelection,
-                        .zoom, .pan, .paintBucket,
+                        .zoom, .pan, .paintBucket, .gradient,
                         .paintbrush, .eraser, .pencil, .colorPicker],
                 "paintbrush, eraser, pencil, color picker consecutively — ToolID.allCases order")
         #expect(registry.defaultToolID == .paintbrush)

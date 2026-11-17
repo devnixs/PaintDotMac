@@ -135,6 +135,10 @@ struct ToolOptionsContent: View {
             // T-9 / 0017: Fill, the flood options (disabled while Fill = Selection),
             // Antialiasing, and the Blend Mode popup — all under `tool.paintBucket.*`.
             PaintBucketToolOptionsView(model: model)
+        case .gradient:
+            // T-10 / 0023: Gradient type, Mode, Antialiasing, and the Blend Mode popup
+            // (disabled in Transparency Mode) — all under `tool.gradient.*`.
+            GradientToolOptionsView(model: model)
         case .paintbrush:
             BrushToolOptionsView(model: model, tool: .paintbrush, showsBlendMode: true)
         case .eraser:
@@ -521,6 +525,107 @@ struct PaintBucketToolOptionsView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+                .accessibilityIdentifier("toolOptions.blendMode")
+            }
+        }
+    }
+}
+
+/// Gradient options (spec 0023, PRD T-10 / APP-4 / TOOL-C), Paint.NET's Gradient Tool
+/// controls left to right: **Gradient type** (the five PRD T-10 types in enum order),
+/// **Mode** (Color Mode / Transparency Mode), **Antialiasing enabled** (0009's control —
+/// D-50a, it only softens the selection edge), and the **Blend Mode** popup (D-15), greyed
+/// in Transparency Mode where it is not used. Values persist under `tool.gradient.*`
+/// (TOOL-C) through `GradientOptions.save`; every write bumps `revision`, re-renders a
+/// pending gradient via `optionsDidChange`, and re-syncs this view.
+struct GradientToolOptionsView: View {
+    let model: AppModel
+
+    /// Reading the store here registers the observation (every write bumps `revision`).
+    private var options: GradientOptions {
+        _ = model.toolOptions.revision
+        return GradientOptions.load(from: model.toolOptions)
+    }
+
+    /// Saves the whole option set (the store write dispatches `optionsDidChange`).
+    private func save(_ updated: GradientOptions) {
+        updated.save(to: model.toolOptions)
+    }
+
+    var body: some View {
+        let value = options
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                Text("Gradient type:")
+                Picker("Gradient type", selection: Binding(
+                    get: { value.type },
+                    set: { updated in
+                        var next = value
+                        next.type = updated
+                        save(next)
+                    }
+                )) {
+                    ForEach(GradientType.allCases, id: \.self) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .help("Gradient type")
+                .accessibilityIdentifier("toolOptions.gradientType")
+                .accessibilityLabel("Gradient type")
+                .accessibilityValue(value.type.displayName)
+            }
+            Picker("Mode", selection: Binding(
+                get: { value.mode },
+                set: { updated in
+                    var next = value
+                    next.mode = updated
+                    save(next)
+                }
+            )) {
+                ForEach(GradientMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+            .help("Mode")
+            .accessibilityIdentifier("toolOptions.gradientMode")
+            .accessibilityLabel("Mode")
+            .accessibilityValue(value.mode.displayName)
+            Toggle("Antialiasing enabled", isOn: Binding(
+                get: { value.antialiasing },
+                set: { updated in
+                    var next = value
+                    next.antialiasing = updated
+                    save(next)
+                }
+            ))
+            .toggleStyle(.checkbox)
+            .accessibilityIdentifier("toolOptions.antialiasing")
+            HStack(spacing: 4) {
+                Text("Blend Mode:")
+                Picker("", selection: Binding(
+                    get: { value.blendMode },
+                    set: { updated in
+                        var next = value
+                        next.blendMode = updated
+                        save(next)
+                    }
+                )) {
+                    // D-15: the implemented layer modes in L-3 order; 0026/0027/0059
+                    // add theirs as they land.
+                    ForEach(ToolOptionsBar.selectableBlendModes, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+                // Transparency Mode changes only the alpha — no blend mode is used (D-50c).
+                .disabled(value.mode == .transparency)
                 .accessibilityIdentifier("toolOptions.blendMode")
             }
         }

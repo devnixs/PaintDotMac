@@ -94,6 +94,8 @@ enum ToolOverlay: Sendable, Equatable {
     case lassoPath(points: [CGPoint], rubberBand: CGPoint?)
     /// The Move tools' transform frame with its 8 nubs (spec 0019, extended by 0020).
     case transformHandles(TransformHandlesPreview)
+    /// The Gradient's two endpoint handles (spec 0023), canvas space.
+    case gradientHandles(start: CGPoint, end: CGPoint)
 }
 
 extension ToolOverlay {
