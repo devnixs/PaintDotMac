@@ -113,6 +113,33 @@ struct LayerPropertiesDialogModelTests {
         #expect(model.blendModeOptions.map(\.displayName) == ["Normal"])
     }
 
+    /// Edge cases: empty / very long / Unicode names are taken **as typed** (Paint.NET
+    /// allows them) and survive the OK step's apply/revert round-trip exactly.
+    @Test func namesAreStoredExactlyAsTyped() throws {
+        let size = PixelSize(width: 4, height: 4)
+        for name in ["", "x", String(repeating: "L", count: 5_000),
+                     "层 Layer 🎨 ‏ RTL", " spaced \n name "] {
+            let layer = Layer(name: "L", surface: TiledSurface(size: size))
+            var state = DocumentState(image: LayeredImage(size: size, layers: [layer],
+                                                          activeLayerIndex: 0))
+            let spy = SpyBox()
+            let model = LayerPropertiesDialogModel(layerID: layer.id,
+                                                   original: layer.properties) {
+                spy.calls.append($0)
+            }
+            model.edited.name = name
+            #expect(spy.calls.last?.name == name, "live preview carries \(name.debugDescription)")
+            let item = try #require(model.ok())
+            #expect(item.after.name == name)
+            #expect(!item.isNoOp, "an intentional rename is never a no-op")
+            // apply → revert restores the original name exactly.
+            item.apply(to: &state)
+            #expect(state.image.layers[0].name == name)
+            item.revert(&state)
+            #expect(state.image.layers[0].name == "L")
+        }
+    }
+
     /// The spec's Edge-cases table, fallback 77.
     @Test(arguments: [
         ("", UInt8(77)), ("abc", UInt8(77)), ("-5", UInt8(0)), ("300", UInt8(255)),

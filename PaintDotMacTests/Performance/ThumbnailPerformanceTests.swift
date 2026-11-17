@@ -10,6 +10,16 @@ import XCTest
 /// What NF-1 actually protects — painting latency — is structural: thumbnails render
 /// only in `Task.detached` and never on the main actor.
 final class ThumbnailPerformanceTests: XCTestCase {
+    /// Which optimization the measured binary was built with — the assertion pins the
+    /// Debug ceiling; a `-configuration Release` run reports the shipping number.
+    private static var configurationLabel: String {
+        #if DEBUG
+        "Debug -Onone"
+        #else
+        "Release -O"
+        #endif
+    }
+
     func testLargeLayerThumbnailRender() throws {
         var surface = TiledSurface(size: PixelSize(width: 4000, height: 3000))
         surface.fill(ColorRGBA8(red: 200, green: 100, blue: 50, alpha: 255))
@@ -22,7 +32,7 @@ final class ThumbnailPerformanceTests: XCTestCase {
         let elapsed = start.duration(to: .now)
         let milliseconds = Double(elapsed.components.seconds) * 1_000
             + Double(elapsed.components.attoseconds) / 1e15
-        print("ThumbnailPerformance 4000×3000 render (Debug -Onone): \(milliseconds) ms")
+        print("ThumbnailPerformance 4000×3000 render (\(Self.configurationLabel)): \(milliseconds) ms")
         XCTAssertEqual(thumbnail.size, PixelSize(width: 80, height: 60))
         XCTAssertLessThan(milliseconds, 1500, "reported (\(milliseconds) ms)")
     }

@@ -293,11 +293,13 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
   enablement + actions, double-click opens the dialog for the clicked layer with busy
   no-ops, OK/Cancel live-preview round-trip, follows the active document),
   `HistoryIconSymbolTests` (`layerVisibility` → "eye"), `ThumbnailPerformanceTests`
-  (4000×3000 + 65535×1 sparse; reported ~1.07 s in **Debug -Onone** — the gate builds
-  Debug, where a 12-megapixel box filter is ~10× slower than the Release build the
-  spec's "tens of ms" targets; the test pins a strict 1500 ms Debug ceiling and the
-  Release timing is a manual check. NF-1's protected behavior — painting latency — is
-  structural: thumbnails never render on the main actor).
+  (4000×3000 + 65535×1 sparse; ~1.07 s in the gate's **Debug -Onone** build, where a
+  12-megapixel box filter is ~10× slower than Release — the test pins a strict 1500 ms
+  Debug ceiling. Reviewer-measured in **Release** (`test -configuration Release
+  ENABLE_TESTABILITY=YES`): **32.7 ms** for the 4000×3000 layer (0.03 ms for the
+  65535×1 sparse case), inside the ≤ 50 ms M1 target and far below the 150 ms spec
+  bound — the Release claim is measured, not hoped. NF-1's protected behavior —
+  painting latency — is structural: thumbnails never render on the main actor).
 - Deviations (documented): the rows render in a `ScrollView`/`LazyVStack` (0010's
   container) instead of `List` — `List`'s collection view never realizes rows in a
   never-shown panel, so the headless AX tests (and VoiceOver off-screen) would see no
@@ -306,7 +308,38 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
   "active"/"inactive" accessibility value via the button trait. The dialog's own AX
   tree needs a visible sheet (out of the headless harness's reach); its fields are
   asserted through the shared `LayerPropertiesDialogModel` the buttons call.
-- Review: pending.
+- Review: complete 2026-11-17 (independent reviewer). Traced every acceptance criterion
+  and edge case to tests; Release thumbnail timing measured (above). Bug fixed:
+  `isDocumentBusy` was a computed property over the non-observable `SheetPresenting`
+  seam, so opening/closing the Layer Properties sheet never re-rendered the panel —
+  rows and footer buttons stayed visually enabled until some unrelated refresh (the
+  model guards still made every action a no-op). It is now a stored `@Observable`
+  property re-read on every `refresh()` (every open/close path already calls it).
+  Also fixed: leftover `print("PROBE-obs …")` debug statements in the observer, a dead
+  parameter on `scheduleTrailing`, and a configuration-mislabeling perf-test print.
+  Crash audit: zero-size layers are unreachable (`TiledSurface.init` preconditions
+  sides ≥ 1); no AppKit/NSImage in the renderer or the detached render path (the only
+  CG conversion is an 80×80 `CGImage` on the main actor); cache/throttle are value
+  types used on the main actor only, the detached task captures Sendable values;
+  `PanelPlaceholderView` deletion has zero references. Mutation checks — each broke
+  behavior and turned tests red, then reverted: stale cache key by layer id only
+  (3 `ThumbnailCacheTests` red), partial Cancel restore (unit spy + bridge integration
+  red), double history step on OK (exact-count integration red), moved layer not
+  following active (`LayerOperationsMoveTests` adjacency/active red), `retain(only:)`
+  no-op (cache unit red), thumbnail pruning removed in `scheduleThumbnails`
+  (`thumbnailUpdatesAfterEdit` deleted-layer poll red), "Hide/Show Layer" name change
+  (2 suites red), throttle `scheduleAt(now + …)` losing coalescing (3 assertions red);
+  the pre-fix busy regression above doubles as the busy-gating mutation. The in-flight
+  doc-switch guards (`renderGeneration`, live-layer filter) are defense-in-depth:
+  mutation analysis shows cancellation + bind's cache reset + `retain`/dict pruning
+  mask their removal, and `documentSwitchDropsInFlightThumbnailRender` pins the
+  observable end state (a render finished across a switch never lands in the new
+  document's panel). Tests added: `documentSwitchDropsInFlightThumbnailRender`,
+  `hundredLayerDocumentStreamsThumbnails` (100-layer first-open batch),
+  `panelNoOpsMidGesture` (dispatcher-busy gating of row/checkbox/drag/footer), busy
+  footer enablement + no-op assertions in `doubleClickOpensProperties`,
+  `namesAreStoredExactlyAsTyped` (empty/5000-char/Unicode names as typed + apply/
+  revert round-trip).
 - Manual verification (not yet performed):
   - [ ] Window > Layers (⌥⌘3) opens the panel on a 3-layer document: live thumbnails
         over the checkerboard, top layer first, active row highlighted; click a row —

@@ -72,8 +72,8 @@ struct LayersPanelWindowIntegrationTests {
         let panelController = PanelController(model: harness.appModel)
         let root = try #require(panelController.panels[.layers]?.contentView)
         // Give the never-shown panel a real content size and force a layout pass so the
-        // `List` realizes its rows off screen (their AX elements exist only after the
-        // hosting collection view lays out).
+        // rows realize off screen (their AX elements exist only after the hosting view
+        // lays out its content).
         panelController.panels[.layers]?.setContentSize(NSSize(width: 260, height: 480))
         root.layoutSubtreeIfNeeded()
         harness.appModel.setActiveSession(harness.windowController.toolSession)
@@ -395,6 +395,21 @@ struct LayersPanelWindowIntegrationTests {
             #expect(!fixture.harness.isEnabled(NSSelectorFromString("showLayerProperties:")))
             await press(fixture.root, "layerRow.0")
             #expect(fixture.bridge.state.image.activeLayerIndex == 1, "row clicks are ignored")
+            #expect(await checkboxValue(fixture.root, 1) == 1)
+            await press(fixture.root, "layerVisibility.1")
+            #expect(await checkboxValue(fixture.root, 1) == 1, "checkboxes are ignored")
+            // The footer bar is disabled while the sheet is up, and pressing a footer
+            // button anyway changes nothing (spec item 7's busy gating).
+            for id in ["layers.add", "layers.delete", "layers.duplicate", "layers.mergeDown",
+                       "layers.moveUp", "layers.moveDown", "layers.properties"] {
+                #expect(AX.enabledState(inRoot: fixture.root, identifier: id) == false,
+                        "\(id) disabled while busy")
+            }
+            let rowsBefore = fixture.panel.model.rows.count
+            await press(fixture.root, "layers.add")
+            await press(fixture.root, "layers.duplicate")
+            #expect(fixture.panel.model.rows.count == rowsBefore,
+                    "footer buttons no-op while busy")
             #expect(rowNames(fixture) == historyBefore, "busy actions add no step")
 
             // Cancel (the dialog's Cancel button calls exactly this): closes, restores,
@@ -513,6 +528,56 @@ struct LayersPanelWindowIntegrationTests {
             other.close()
             pumpMainRunLoop()
             #expect(fixture.panel.model.rows.count == 2, "closing B leaves A bound")
+        }
+    }
+
+    // MARK: - Mid-gesture gating (0006 rule, spec item 7)
+
+    /// While a canvas gesture is in flight the dispatcher is busy, so every panel
+    /// mutation — row select, checkbox, drag, footer button — is a no-op (the same rule
+    /// 0024's menu validation enforces mid-gesture).
+    @Test func panelNoOpsMidGesture() async throws {
+        try await TestRunGate.withLock {
+            let fixtures = try FixtureFiles()
+            defer { cleanup(); fixtures.removeAll() }
+            let fixture = try await setUp(fixtures)
+            defer { finish(fixture) }
+            try await addLayer(fixture)
+            let historyBefore = rowNames(fixture)
+            let activeBefore = fixture.bridge.state.image.activeLayerIndex
+
+            // Hold a gesture open: Rectangle Select (0014 cycling idiom), press, drag,
+            // no release.
+            for _ in 0..<4 where fixture.harness.appModel.activeToolID != .rectangleSelect {
+                #expect(fixture.harness.shortcut("s"))
+            }
+            #expect(fixture.harness.appModel.activeToolID == .rectangleSelect)
+            fixture.harness.canvasPress(
+                at: fixture.harness.viewPoint(forImagePoint: CGPoint(x: 10, y: 10)))
+            fixture.harness.canvasDrag(
+                to: fixture.harness.viewPoint(forImagePoint: CGPoint(x: 60, y: 40)))
+            pumpMainRunLoop()
+            #expect(fixture.harness.appModel.dispatcher.isGestureInProgress, "mid-gesture")
+
+            #expect(await press(fixture.root, "layerRow.0"))
+            #expect(fixture.bridge.state.image.activeLayerIndex == activeBefore,
+                    "row clicks no-op mid-gesture")
+            await press(fixture.root, "layerVisibility.1")
+            #expect(await checkboxValue(fixture.root, 1) == 1, "checkboxes no-op mid-gesture")
+            let rowsBefore = fixture.panel.model.rows.count
+            fixture.panel.move(displaySource: IndexSet(integer: 0), displayDestination: 2)
+            await press(fixture.root, "layers.add")
+            #expect(fixture.panel.model.rows.count == rowsBefore,
+                    "footer buttons and drags no-op mid-gesture")
+            #expect(rowNames(fixture) == historyBefore, "a gesture adds no panel step yet")
+
+            fixture.harness.canvasRelease(
+                at: fixture.harness.viewPoint(forImagePoint: CGPoint(x: 60, y: 40)))
+            pumpMainRunLoop()
+            #expect(!fixture.harness.appModel.dispatcher.isGestureInProgress)
+            // After the gesture the panel works again.
+            #expect(await press(fixture.root, "layerRow.0"))
+            #expect(fixture.bridge.state.image.activeLayerIndex == 0)
         }
     }
 }

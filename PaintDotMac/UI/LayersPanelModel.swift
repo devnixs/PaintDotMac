@@ -34,6 +34,13 @@ struct ThumbnailRenderResult: Sendable {
 final class LayersPanelModel {
     /// The rows and enablement to render.
     private(set) var model: LayerListModel = .empty
+    /// True while the bound document has the Layer Properties sheet attached: row
+    /// clicks, checkboxes, drags, double-clicks, and buttons are disabled for that
+    /// document (spec item 7; follows the presenter seam's `isPresenting`).
+    /// Stored, not computed: the `SheetPresenting` seam is not observable, so SwiftUI
+    /// would never re-evaluate the view when `isPresenting` flips. Every open/close
+    /// path calls `refresh()`, which re-reads the seam here and re-renders the panel.
+    private(set) var isDocumentBusy = false
     /// +1 per rebuild, for the tests that count refreshes.
     private(set) var refreshCount: Int = 0
     /// The last rendered thumbnail per layer, keyed by layer id.
@@ -69,13 +76,6 @@ final class LayersPanelModel {
 
     /// The currently bound bridge (`nil` with no active document); exposed for tests.
     var boundBridge: UndoBridge? { bridge }
-
-    /// True while the bound document has the Layer Properties sheet attached: row
-    /// clicks, checkboxes, drags, double-clicks, and buttons are disabled for that
-    /// document (spec item 7; follows the presenter seam's `isPresenting`).
-    var isDocumentBusy: Bool {
-        boundWindowController?.layerPropertiesPresenter.isPresenting ?? false
-    }
 
     /// The bound document's window controller (0024's menu actions are the panel's
     /// command targets; its presenter seam is the busy flag).
@@ -126,7 +126,8 @@ final class LayersPanelModel {
         refresh()
     }
 
-    /// Rebuilds from the (weakly held) bridge; `.empty` when it is gone.
+    /// Rebuilds from the (weakly held) bridge; `.empty` when it is gone. Also
+    /// re-publishes `isDocumentBusy` (the presenter seam is only observed through here).
     func refresh() {
         pendingRefresh = false
         if let bridge {
@@ -134,6 +135,7 @@ final class LayersPanelModel {
         } else {
             model = .empty
         }
+        isDocumentBusy = boundWindowController?.layerPropertiesPresenter.isPresenting ?? false
         refreshCount += 1
         scheduleThumbnails()
     }
@@ -232,12 +234,14 @@ final class LayersPanelModel {
         case .renderNow:
             startRender(pending)
         case .scheduleAt(let time):
-            scheduleTrailing(pending, at: time)
+            scheduleTrailing(at: time)
         }
     }
 
-    private func scheduleTrailing(_ pending: [(id: Layer.ID, surface: TiledSurface)],
-                                  at time: TimeInterval) {
+    /// One trailing render at `time`. What it renders is recomputed when it fires (the
+    /// surfaces may have moved on again in the meantime), so a request that becomes
+    /// fully fresh meanwhile renders nothing.
+    private func scheduleTrailing(at time: TimeInterval) {
         trailingTask?.cancel()
         let delay = max(0, time - clock())
         trailingTask = Task { @MainActor [weak self] in
@@ -255,7 +259,7 @@ final class LayersPanelModel {
             if case .renderNow = self.thumbnailThrottle.requestRender(now: self.clock()) {
                 self.startRender(current)
             } else {
-                self.scheduleTrailing(current, at: time)
+                self.scheduleTrailing(at: time)
             }
         }
     }
@@ -344,10 +348,8 @@ final class LayersPanelModel {
             _ = bridge.state
             _ = bridge.historyRevision
         } onChange: { [weak self, weak bridge] in
-            print("PROBE-obs fired token=\(token)")
             MainActor.assumeIsolated {
                 guard let self, self.revisionToken == token, self.bridge === bridge else {
-                    print("PROBE-obs guard failed")
                     return
                 }
                 self.observeBoundBridge()

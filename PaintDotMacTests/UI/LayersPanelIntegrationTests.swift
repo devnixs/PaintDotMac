@@ -46,6 +46,14 @@ struct LayersPanelIntegrationTests {
         pumpMainRunLoop()
     }
 
+    /// Hard-blocks the main thread for `seconds` **without** pumping the run loop: work
+    /// already queued on the main actor (a finished thumbnail render's apply task)
+    /// stays queued until the block ends.
+    @MainActor
+    private func blockMainThread(for seconds: TimeInterval) {
+        Thread.sleep(forTimeInterval: seconds)
+    }
+
     // MARK: - Selection is not an edit (H-6)
 
     @Test func selectLayerIsNotAHistoryStep() {
@@ -367,5 +375,83 @@ struct LayersPanelIntegrationTests {
         bridge.perform(delete)
         try await poll { panel.thumbnails[layer1] == nil }
         #expect(panel.thumbnails[layer0] != nil)
+    }
+
+    /// Switching documents while a render is in flight (spec edge case): document A's
+    /// finished-but-unapplied result must never land in document B's panel. Blocking
+    /// the main thread lets A's detached render *complete* while `bind(B)` is still
+    /// queued ahead of the apply task, so the apply exercises the superseded-generation
+    /// and live-layer checks — not just task cancellation.
+    @Test func documentSwitchDropsInFlightThumbnailRender() async throws {
+        var wide = TiledSurface(size: PixelSize(width: 1_200, height: 900))
+        wide.fill(red)
+        let contextA = BridgeToolContext(
+            image: LayeredImage(size: PixelSize(width: 1_200, height: 900),
+                                layers: [Layer(name: "Wide", surface: wide)],
+                                activeLayerIndex: 0),
+            base: .openImage)
+        contextA.bridge.undoManager.groupsByEvent = false
+        let panel = LayersPanelModel()
+        let clock = Clock()
+        panel.clock = { clock.now }
+        panel.bind(to: contextA.bridge)
+        let layerA = contextA.bridge.state.image.layers[0].id
+
+        let contextB = BridgeToolContext(
+            image: LayeredImage(size: size, layers: [layer("Small", .white)],
+                                activeLayerIndex: 0),
+            base: .openImage)
+        contextB.bridge.undoManager.groupsByEvent = false
+        let layerB = contextB.bridge.state.image.layers[0].id
+
+        // A's 1200×900 render finishes in tens of ms in Debug; keep the main thread
+        // (and with it the queued apply task) parked well past that, then switch
+        // documents without ever yielding the main actor.
+        blockMainThread(for: 0.5)
+        clock.now = 1.0   // B's first render takes the leading edge at bind time
+        panel.bind(to: contextB.bridge)
+
+        func poll(_ body: () -> Bool) async throws {
+            let deadline = Date().addingTimeInterval(3)
+            while !body(), Date() < deadline {
+                try await Task.sleep(for: .milliseconds(20))
+                pumpMainRunLoop(for: 0.02)
+            }
+            #expect(body(), "document-switch thumbnail condition not met within 3 s")
+        }
+        try await poll { panel.thumbnails[layerB] != nil }
+        // Let any stale apply (and a possible stale trailing render) land, then check
+        // the panel holds *only* document B's layers.
+        clock.now = 5.0
+        try await settle()
+        try await settle()
+        #expect(panel.thumbnails[layerA] == nil, "document A's thumbnail leaked into B")
+        #expect(Set(panel.thumbnails.keys) == [layerB])
+    }
+
+    /// A 100-layer document (spec edge: "a 100-layer document scrolls and thumbnails
+    /// stream in without beachball"): the first open renders every layer in one
+    /// detached batch — bounded, off the main actor, no crash.
+    @Test func hundredLayerDocumentStreamsThumbnails() async throws {
+        let layers = (0..<100).map { index in
+            layer("L\(index)", ColorRGBA8(red: UInt8(index), green: 0, blue: 0, alpha: 255))
+        }
+        let context = BridgeToolContext(
+            image: LayeredImage(size: size, layers: layers, activeLayerIndex: 99),
+            base: .openImage)
+        context.bridge.undoManager.groupsByEvent = false
+        let panel = LayersPanelModel()
+        let clock = Clock()
+        panel.clock = { clock.now }
+        panel.bind(to: context.bridge)
+
+        let deadline = Date().addingTimeInterval(10)
+        while panel.thumbnails.count < 100, Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+            pumpMainRunLoop(for: 0.02)
+        }
+        #expect(panel.thumbnails.count == 100,
+                "only \(panel.thumbnails.count) of 100 thumbnails arrived")
+        #expect(Set(panel.thumbnails.keys) == Set(layers.map(\.id)))
     }
 }
