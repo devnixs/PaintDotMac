@@ -411,14 +411,17 @@ extension DocumentHarness {
             return nil
         }
         let before = Set(NSDocumentController.shared.documents.map { ObjectIdentifier($0) })
-        let original = (controller.pasteboard, controller.newImagePresenter,
-                        controller.alertPresenter, controller.showsWindows)
+        let original = (controller.newImagePresenter, controller.alertPresenter,
+                        controller.showsWindows)
+        let originalClipboard = ClipboardController.shared
         defer {
-            (controller.pasteboard, controller.newImagePresenter,
-             controller.alertPresenter, controller.showsWindows) = original
+            (controller.newImagePresenter, controller.alertPresenter,
+             controller.showsWindows) = original
+            ClipboardController.shared = originalClipboard
             pasteboard.releaseGlobally()
         }
-        controller.pasteboard = pasteboard
+        // 0021: `newDocument` reads the clipboard through `ClipboardController.shared`.
+        ClipboardController.shared = ClipboardController(pasteboard: pasteboard)
         controller.newImagePresenter = presenter
         controller.alertPresenter = alerts
         controller.showsWindows = false
@@ -439,5 +442,109 @@ extension DocumentHarness {
         windowController.appModel = appModel
         return DocumentHarness(document: created, windowController: windowController,
                                window: window, appModel: appModel, appModelSuiteName: suiteName)
+    }
+}
+
+// MARK: - Clipboard (spec 0021)
+
+/// The 0021 clipboard seams on one harness (AGENTS.md *Headless testing*): a private
+/// pasteboard behind `ClipboardController.shared`, a `RecordingAlertPresenter` and a
+/// `ScriptedPasteExpandPrompt` on the window controller. `restore()` puts everything
+/// back and releases the pasteboard; the user's clipboard is never touched.
+@MainActor
+final class ClipboardHarness {
+    let pasteboard: NSPasteboard
+    let alerts: RecordingAlertPresenter
+    let prompt: ScriptedPasteExpandPrompt
+
+    private weak var windowController: DocumentWindowController?
+    private let original: (shared: ClipboardController, alerts: AlertPresenting,
+                           prompt: PasteExpandPrompting?)
+    private var restored = false
+
+    fileprivate init(pasteboard: NSPasteboard, windowController: DocumentWindowController,
+                     expandChoice: PasteCanvasChoice?) {
+        self.pasteboard = pasteboard
+        self.windowController = windowController
+        self.alerts = RecordingAlertPresenter()
+        self.prompt = ScriptedPasteExpandPrompt(choice: expandChoice)
+        self.original = (ClipboardController.shared, windowController.alertPresenter,
+                         windowController.pasteExpandPrompt)
+        ClipboardController.shared = ClipboardController(pasteboard: pasteboard)
+        windowController.alertPresenter = alerts
+        windowController.pasteExpandPrompt = prompt
+    }
+
+    /// Restores `ClipboardController.shared` and the window controller's seams, and
+    /// releases the private pasteboard. Idempotent.
+    func restore() {
+        guard !restored else { return }
+        restored = true
+        ClipboardController.shared = original.shared
+        if let windowController {
+            windowController.alertPresenter = original.alerts
+            windowController.pasteExpandPrompt = original.prompt
+        }
+        pasteboard.releaseGlobally()
+    }
+}
+
+extension DocumentHarness {
+    /// Swaps in the 0021 clipboard seams on this harness's window controller; call
+    /// `restore()` on the returned token at the test's end (`defer`).
+    func useClipboard(_ pasteboard: NSPasteboard,
+                      expandChoice: PasteCanvasChoice? = nil) -> ClipboardHarness {
+        ClipboardHarness(pasteboard: pasteboard, windowController: windowController,
+                         expandChoice: expandChoice)
+    }
+}
+
+extension DocumentHarness {
+    /// Performs Edit > Paste into New Image in-process with no document open (spec 0021
+    /// `pasteIntoNewImageWithoutDocument`): swaps `ClipboardController.shared` to the
+    /// private pasteboard, installs a recording alert presenter and `showsWindows =
+    /// false` on the shared `PaintDocumentController`, calls `pasteIntoNewImage(nil)`,
+    /// and restores the seams. Returns a harness over the created document, or `nil`
+    /// when none was created (the failure cases). The window is never shown.
+    @MainActor
+    static func pasteIntoNewImage(pasteboard: NSPasteboard,
+                                  alerts: RecordingAlertPresenter = RecordingAlertPresenter()
+    ) -> DocumentHarness? {
+        guard let controller = NSDocumentController.shared as? PaintDocumentController else {
+            Issue.record("the shared document controller is not a PaintDocumentController")
+            return nil
+        }
+        let before = Set(NSDocumentController.shared.documents.map { ObjectIdentifier($0) })
+        let original = (controller.alertPresenter, controller.showsWindows)
+        let originalClipboard = ClipboardController.shared
+        defer {
+            (controller.alertPresenter, controller.showsWindows) = original
+            ClipboardController.shared = originalClipboard
+            pasteboard.releaseGlobally()
+        }
+        ClipboardController.shared = ClipboardController(pasteboard: pasteboard)
+        controller.alertPresenter = alerts
+        controller.showsWindows = false
+        controller.pasteIntoNewImage(nil)
+        guard let created = NSDocumentController.shared.documents.first(
+            where: { !before.contains(ObjectIdentifier($0)) }
+        ) as? PaintDocument else { return nil }
+        if created.windowControllers.isEmpty {
+            created.makeWindowControllers()
+        }
+        guard let windowController = created.windowControllers.first as? DocumentWindowController,
+              let window = windowController.window else {
+            Issue.record("the pasted document has no document window controller")
+            return nil
+        }
+        let (appModel, suiteName) = makeAppModel()
+        windowController.appModel = appModel
+        let harness = DocumentHarness(document: created, windowController: windowController,
+                                      window: window, appModel: appModel,
+                                      appModelSuiteName: suiteName)
+        // The window is never ordered onto the screen, so keyboard input needs the
+        // canvas as first responder (what showing the window would do).
+        window.makeFirstResponder(harness.canvasView)
+        return harness
     }
 }

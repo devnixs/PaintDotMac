@@ -120,6 +120,14 @@ final class MoveSelectedPixelsTool: Tool {
                 floating = drag.duplicate
                     ? existing.withUnderlay(existing.activeLayerSurface(in: context.image))
                     : existing
+                if drag.lastRegion == .zero {
+                    // The session was rendered before this drag started (a Paste
+                    // session per 0021, or a second gesture on a live session): its
+                    // currently drawn destination must be part of the first live
+                    // render, or the old copy is left behind on the layer.
+                    drag.lastRegion = existing.destinationBounds
+                        .intersection(context.image.size.bounds)
+                }
             } else {
                 floating = FloatingPixels.lift(from: drag.beforeState,
                                                duplicate: drag.duplicate,

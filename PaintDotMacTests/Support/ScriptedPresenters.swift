@@ -51,6 +51,24 @@ final class ScriptedNewImagePresenter: NewImagePresenting {
     }
 }
 
+/// A `PasteExpandPrompting` that records that it was asked and answers with a scripted
+/// choice (0021; `nil` = Cancel). Nothing is ever shown (AGENTS.md *Headless testing*).
+@MainActor
+final class ScriptedPasteExpandPrompt: PasteExpandPrompting {
+    /// How many times the E-6 prompt was asked.
+    private(set) var askCount = 0
+    let choice: PasteCanvasChoice?
+
+    init(choice: PasteCanvasChoice?) {
+        self.choice = choice
+    }
+
+    func choose(completion: @escaping (PasteCanvasChoice?) -> Void) {
+        askCount += 1
+        completion(choice)  // synchronous: the scripted "sheet" answers at once
+    }
+}
+
 /// An `AlertPresenting` that records alerts instead of showing a modal `NSAlert`.
 @MainActor
 final class RecordingAlertPresenter: AlertPresenting {

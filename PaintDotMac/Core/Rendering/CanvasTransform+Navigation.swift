@@ -77,6 +77,19 @@ extension CanvasTransform {
         return updated.clampedScroll()
     }
 
+    /// A canvas-size change (0021's expanding Paste first; 0022 and 0035–0037 reuse it
+    /// unchanged): same `viewSize`, `backingScale`, and **zoom**, `imageSize = size`, the
+    /// new image centered, then `clampedScroll` (PRD Open question 5's rule — the zoom is
+    /// kept, the image re-centers). Returns `self` when the size is unchanged, so a
+    /// structure change that keeps the size (a layer op) never jumps the scroll.
+    func withImageSize(_ size: PixelSize) -> CanvasTransform {
+        guard size != imageSize else { return self }
+        var updated = self
+        updated.imageSize = size
+        updated.center = CGPoint(x: Double(size.width) / 2, y: Double(size.height) / 2)
+        return updated.clampedScroll()
+    }
+
     /// Window resize: keeps the zoom and the canvas point at the view center, then re-clamps.
     /// A zero new size updates only `viewSize` (`clampedScroll` is a no-op there).
     func resized(to newViewSize: CGSize) -> CanvasTransform {

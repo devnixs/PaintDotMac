@@ -36,9 +36,6 @@ enum ImageEncoder {
     // MARK: - PNG
 
     private static func encodePNG(surface: TiledSurface, size: PixelSize, dpi: Double) throws(ImageCodecError) -> Data {
-        // A size mismatch is a caller bug; refuse instead of reading out of bounds or
-        // writing a file whose pixels contradict its header.
-        guard surface.size == size else { throw .encodingFailed }
         guard LayeredImage.isValidDPI(dpi) else { throw .encodingFailed }
         // PNG's pHYs unit 1 = metre (the PNG specification): ppm = round(dpi / 0.0254),
         // 96 DPI → 3780, 72 → 2835, 300 → 11811. pHYs fields are UInt32.
@@ -46,8 +43,33 @@ enum ImageEncoder {
         guard pixelsPerMeter >= 1, pixelsPerMeter <= Double(UInt32.max) else { throw .encodingFailed }
         let ppm = Int(pixelsPerMeter)
 
-        // One contiguous straight-RGBA8 buffer; absent sparse tiles read as (0, 0, 0, 0).
-        // Sizes are `Int` and `ImageLimits` has accepted the size before it became a surface.
+        let image = try makeCGImage(surface, size: size)
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output, UTType.png.identifier as CFString, 1, nil
+        ) else { throw .encodingFailed }
+        let properties: [CFString: Any] = [
+            // APP-5: the document's DPI travels with the file, in both encodings.
+            kCGImagePropertyDPIWidth: dpi,
+            kCGImagePropertyDPIHeight: dpi,
+            kCGImagePropertyPNGDictionary: [
+                kCGImagePropertyPNGXPixelsPerMeter: ppm,
+                kCGImagePropertyPNGYPixelsPerMeter: ppm,
+            ] as CFDictionary,
+        ]
+        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { throw .encodingFailed }
+        return output as Data
+    }
+
+    /// The straight-RGBA8 `CGImage` the PNG writer encodes (0021 reuses it for the
+    /// clipboard TIFF so both clipboard flavors come from the same pixels).
+    /// One contiguous straight-RGBA8 buffer; absent sparse tiles read as (0, 0, 0, 0).
+    /// Sizes are `Int` and `ImageLimits` has accepted the size before it became a surface.
+    static func makeCGImage(_ surface: TiledSurface, size: PixelSize) throws(ImageCodecError) -> CGImage {
+        // A size mismatch is a caller bug; refuse instead of reading out of bounds or
+        // writing a file whose pixels contradict its header.
+        guard surface.size == size else { throw .encodingFailed }
         let bytes = surface.readPixels(in: surface.bounds)
         let bytesPerPixel = PixelFormat.rgba8.bytesPerPixel
         guard let provider = CGDataProvider(data: Data(bytes) as CFData),
@@ -65,22 +87,6 @@ enum ImageEncoder {
             provider: provider, decode: nil,
             shouldInterpolate: false, intent: .defaultIntent
         ) else { throw .encodingFailed }
-
-        let output = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(
-            output, UTType.png.identifier as CFString, 1, nil
-        ) else { throw .encodingFailed }
-        let properties: [CFString: Any] = [
-            // APP-5: the document's DPI travels with the file, in both encodings.
-            kCGImagePropertyDPIWidth: dpi,
-            kCGImagePropertyDPIHeight: dpi,
-            kCGImagePropertyPNGDictionary: [
-                kCGImagePropertyPNGXPixelsPerMeter: ppm,
-                kCGImagePropertyPNGYPixelsPerMeter: ppm,
-            ] as CFDictionary,
-        ]
-        CGImageDestinationAddImage(destination, image, properties as CFDictionary)
-        guard CGImageDestinationFinalize(destination) else { throw .encodingFailed }
-        return output as Data
+        return image
     }
 }

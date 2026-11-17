@@ -253,4 +253,33 @@ struct CanvasTransformNavigationTests {
             expectClose(back.center, start.center)
         }
     }
+
+    // MARK: - Canvas-size changes (spec 0021)
+
+    @Test func withImageSizeKeepsZoomAndRecenters() {
+        let start = transform(image: (4000, 3000), view: (800, 600), zoom: 0.5,
+                              center: CGPoint(x: 1000, y: 1000))
+        // 1000×500 at zoom 0.5 → 500×250 device pixels, smaller than the 800×600 view:
+        // centered, zoom kept (0004's `clampedScroll` centers a smaller image).
+        let small = start.withImageSize(PixelSize(width: 1000, height: 500))
+        #expect(small.zoom == 0.5)
+        #expect(small.imageSize == PixelSize(width: 1000, height: 500))
+        expectClose(small.center, CGPoint(x: 500, y: 250))
+        expectClose(small.canvasToView(CGPoint(x: 500, y: 250)), CGPoint(x: 400, y: 300))
+
+        // 3000×3000 at zoom 1 is larger than the view: center (1500, 1500) sits well
+        // inside the clamp range, so the image center lands at the view center.
+        let big = start.withImageSize(PixelSize(width: 3000, height: 3000))
+        #expect(big.zoom == 0.5, "the zoom never changes (0021 / Open question 5)")
+        #expect(big.center == CGPoint(x: 1500, y: 1500))
+        expectClose(big.canvasToView(CGPoint(x: 1500, y: 1500)), CGPoint(x: 400, y: 300))
+    }
+
+    @Test func withImageSizeSameSizeIsIdentity() {
+        // Panned away from center; a size that changes nothing must return `self`
+        // exactly — no scroll jump for structure changes that keep the size.
+        let start = transform(image: (4000, 3000), view: (800, 600), zoom: 2,
+                              center: CGPoint(x: 1000, y: 2000))
+        #expect(start.withImageSize(PixelSize(width: 4000, height: 3000)) == start)
+    }
 }

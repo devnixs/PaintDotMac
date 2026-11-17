@@ -42,6 +42,12 @@ enum MainMenu {
         NSUserInterfaceItemIdentifier("menu.edit.fillSelection")
     static let editInvertSelectionItemIdentifier =
         NSUserInterfaceItemIdentifier("menu.edit.invertSelection")
+    // Edit > clipboard items (0021; the block 0001 placed, 0021 implements).
+    static let editCutItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.cut")
+    static let editCopyItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.copy")
+    static let editPasteItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.paste")
+    static let editPasteIntoNewImageItemIdentifier =
+        NSUserInterfaceItemIdentifier("menu.edit.pasteIntoNewImage")
     /// Panel toggle action (0006); each item's `representedObject` carries the `PanelKind`
     /// raw value and its identifier is `menu.window.panel.<kind>`.
     static let togglePanelAction = NSSelectorFromString("togglePanel:")
@@ -73,6 +79,9 @@ enum MainMenu {
     private static let cutAction = NSSelectorFromString("cut:")
     private static let copyAction = NSSelectorFromString("copy:")
     private static let pasteAction = NSSelectorFromString("paste:")
+    // Edit > Paste into New Image (0021) — `PaintDocumentController` implements it, so it
+    // works with or without an open document (the document controller is the last responder).
+    private static let pasteIntoNewImageAction = NSSelectorFromString("pasteIntoNewImage:")
     // `NSDocument.saveDocument(_:)` is imported as `save(_:)` and `saveDocumentAs(_:)` as
     // `saveAs(_:)`; pin the menu actions to the selector names AppKit dispatches.
     private static let saveDocumentAction = NSSelectorFromString("saveDocument:")
@@ -150,9 +159,23 @@ enum MainMenu {
         menu.addItem(makeItem("Undo", key: "z", modifiers: .command, action: undoAction))
         menu.addItem(makeItem("Redo", key: "z", modifiers: [.command, .shift], action: redoAction)) // no ⌘Y alias (D-12)
         menu.addItem(.separator())
-        menu.addItem(makeItem("Cut", key: "x", modifiers: .command, action: cutAction))
-        menu.addItem(makeItem("Copy", key: "c", modifiers: .command, action: copyAction))
-        menu.addItem(makeItem("Paste", key: "v", modifiers: .command, action: pasteAction))
+        // The clipboard block (0021). 0030 inserts Copy Merged after Copy and Paste into
+        // New Layer after Paste.
+        let cutItem = makeItem("Cut", key: "x", modifiers: .command, action: cutAction)
+        cutItem.identifier = editCutItemIdentifier
+        menu.addItem(cutItem)
+        let copyItem = makeItem("Copy", key: "c", modifiers: .command, action: copyAction)
+        copyItem.identifier = editCopyItemIdentifier
+        menu.addItem(copyItem)
+        let pasteItem = makeItem("Paste", key: "v", modifiers: .command, action: pasteAction)
+        pasteItem.identifier = editPasteItemIdentifier
+        menu.addItem(pasteItem)
+        // Paste into New Image ⌥⌘V (Paint.NET's Ctrl+Alt+V; the PRD §5.12 Alt→⌥ rule).
+        let pasteIntoNewImageItem = makeItem("Paste into New Image", key: "v",
+                                             modifiers: [.command, .option],
+                                             action: pasteIntoNewImageAction)
+        pasteIntoNewImageItem.identifier = editPasteIntoNewImageItemIdentifier
+        menu.addItem(pasteIntoNewImageItem)
         menu.addItem(.separator())
         // Paint.NET's Edit menu order (E-3) with 0018's items between Deselect and
         // Invert Selection. `NSBackspaceCharacter` shows as ⌫ and matches the Delete

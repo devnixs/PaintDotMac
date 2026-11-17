@@ -56,6 +56,13 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
 
     private var wiredModel: AppModel
 
+    /// 0021's presentation seams (AGENTS.md *Headless testing*): clipboard alerts run as
+    /// this window's sheet, the E-6 expand prompt as its sheet too. Tests install a
+    /// `RecordingAlertPresenter` and a `ScriptedPasteExpandPrompt` (or `nil` = Cancel),
+    /// so nothing is ever shown.
+    var alertPresenter: AlertPresenting = ModalAlertPresenter()
+    var pasteExpandPrompt: PasteExpandPrompting?
+
     /// The hosted tool options bar (0006); rebound when `appModel` is replaced.
     private var optionsBarHosting: NSHostingView<AnyView>?
 
@@ -188,6 +195,9 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         }
 
         shouldCascadeWindows = true
+        // 0021: the clipboard alerts and the E-6 prompt are sheets of this window.
+        alertPresenter = ModalAlertPresenter(sheetWindow: window)
+        pasteExpandPrompt = ModalPasteExpandPrompt(window: window)
         // The window's undo manager comes from the document's bridge (0008), and the
         // field editor keeps typing on the window's own manager.
         window.delegate = self
@@ -246,6 +256,15 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
             case .pixelsAndSelection:
                 canvasView.image = document.image
             case .structure:
+                // 0021: the first canvas-size changes land here (expanding Paste and its
+                // undo/redo) — keep the zoom and re-center the new image *before* the
+                // swap, so the after-transform-change path (status-bar zoom, overlay,
+                // ants) runs against the new image (0022/0035–0037 reuse this).
+                let bridge = document.undoBridge
+                if canvasView.transform.imageSize != bridge.state.image.size {
+                    canvasView.transform = canvasView.transform
+                        .withImageSize(bridge.state.image.size)
+                }
                 // Whole-image replacement (0008 item 12): the renderer must forget every
                 // resident tile texture, not just redraw the cached ones.
                 canvasView.image = document.image
@@ -445,6 +464,141 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         return command.isEnabled(in: bridge.state)
     }
 
+    // MARK: - Cut / Copy / Paste (Edit menu, spec 0021)
+
+    /// Responder-chain actions for the Edit menu (target nil). Each ignores a mouse
+    /// gesture in progress and lets the active tool's pending edit commit first
+    /// (`prepareForNavigation`, reason `.command` — 0020: a floating move/paste records
+    /// "Finish Pixels" before the command's own step).
+    @objc func cut(_ sender: Any?) {
+        guard let bridge = beginClipboardCommand() else { return }
+        Self.performCut(bridge: bridge, clipboard: .shared, alerts: alertPresenter)
+    }
+
+    @objc func copy(_ sender: Any?) {
+        guard let bridge = beginClipboardCommand() else { return }
+        Self.performCopy(bridge: bridge, clipboard: .shared, alerts: alertPresenter)
+    }
+
+    @objc func paste(_ sender: Any?) {
+        guard let bridge = (document as? PaintDocument)?.undoBridge,
+              !appModel.dispatcher.isGestureInProgress else { return }
+        // `performPaste` runs `prepareForNavigation` itself (shared with the integration
+        // path); a window without Metal pastes at the canvas top-left.
+        let visible = canvasView?.transform.visibleCanvasRect
+            ?? CGRect(origin: .zero, size: CGSize(width: bridge.state.image.size.width,
+                                                  height: bridge.state.image.size.height))
+        Self.performPaste(bridge: bridge, clipboard: .shared, visibleCanvasRect: visible,
+                          prompt: pasteExpandPrompt, alerts: alertPresenter,
+                          limits: PaintDocument.imageLimits,
+                          background: appModel.colors.secondary)
+    }
+
+    /// The Copy/Cut entry: gesture check, then the command-reason pending-edit commit.
+    private func beginClipboardCommand() -> UndoBridge? {
+        guard let bridge = (document as? PaintDocument)?.undoBridge,
+              !appModel.dispatcher.isGestureInProgress else { return nil }
+        bridge.prepareForNavigation?()
+        return bridge
+    }
+
+    /// Copy's shared path (also the integration entry): encode first, so a failure leaves
+    /// the pasteboard untouched (0021 item 7); the alert names the failure.
+    static func performCopy(bridge: UndoBridge, clipboard: ClipboardController,
+                            alerts: AlertPresenting) {
+        do {
+            try clipboard.write(ClipboardCopy.copiedSurface(from: bridge.state),
+                                dpi: bridge.state.image.dpi)
+        } catch {
+            alerts.showAlert(message: "The selection couldn\u{2019}t be copied.",
+                             informativeText: error.errorDescription)
+        }
+    }
+
+    /// Cut's shared path: the clipboard write happens first — no history step and no
+    /// erase when the pasteboard refuses (the alert covers it).
+    static func performCut(bridge: UndoBridge, clipboard: ClipboardController,
+                           alerts: AlertPresenting) {
+        guard let (surface, item) = ClipboardCopy.cut(bridge.state) else { return }
+        do {
+            try clipboard.write(surface, dpi: bridge.state.image.dpi)
+        } catch {
+            alerts.showAlert(message: "The selection couldn\u{2019}t be cut.",
+                             informativeText: error.errorDescription)
+            return
+        }
+        bridge.perform(item)
+    }
+
+    /// Paste's shared path (the window controller and the integration tests both run
+    /// this): read through the codec (E-5 order, document limits), ask the E-6 prompt
+    /// only when the clipboard is larger than the canvas (`nil` presenter = Cancel:
+    /// nothing happens), then one "Paste" step. An expansion beyond `limits` gets the
+    /// same "too large" alert and no change. The scripted prompt completes
+    /// synchronously, so headless tests see the whole flow inline.
+    static func performPaste(bridge: UndoBridge, clipboard: ClipboardController,
+                             visibleCanvasRect: CGRect, prompt: PasteExpandPrompting?,
+                             alerts: AlertPresenting, limits: ImageLimits,
+                             background: ColorRGBA8) {
+        bridge.prepareForNavigation?()
+        let surface: TiledSurface
+        switch clipboard.readImage(limits: limits) {
+        case .failure(let error):
+            alerts.showAlert(message: error.alertMessage,
+                             informativeText: error.alertInformativeText)
+            return
+        case .success(let image):
+            surface = image.surface
+        }
+        let clipboardSize = surface.size
+        let canvasSize = bridge.state.image.size
+        func finish(_ choice: PasteCanvasChoice?) {
+            let plan = PastePlanner.plan(clipboardSize: clipboardSize, canvasSize: canvasSize,
+                                         visibleCanvasRect: visibleCanvasRect, choice: choice)
+            var expanded: DocumentState?
+            if let newSize = plan.newCanvasSize {
+                do {
+                    expanded = try PastePlanner.expandedState(bridge.state, to: newSize,
+                                                              background: background,
+                                                              limits: limits)
+                } catch {
+                    let readError = ClipboardReadError.limitExceeded(error)
+                    alerts.showAlert(message: readError.alertMessage,
+                                     informativeText: readError.alertInformativeText)
+                    return
+                }
+            }
+            let item = PasteStep.makeHistoryItem(surface: surface, plan: plan,
+                                                 state: bridge.state, expanded: expanded,
+                                                 baseStepID: bridge.history.currentStepID)
+            bridge.perform(item)
+        }
+        if PastePlanner.needsExpansionPrompt(clipboardSize: clipboardSize, canvasSize: canvasSize) {
+            // A prompt answer of `nil` is Cancel: nothing happens (no step, no plan;
+            // a nil choice without a prompt means "no prompt was needed").
+            prompt?.choose { choice in
+                guard let choice else { return }
+                finish(choice)
+            }
+        } else {
+            finish(nil)
+        }
+    }
+
+    /// Copy: a document and no gesture. Cut: plus a selection. Paste: no gesture and the
+    /// pasteboard offers an image (0021 item 7).
+    private func clipboardCommandIsEnabled(_ kind: ClipboardCommand) -> Bool {
+        guard let bridge = (document as? PaintDocument)?.undoBridge,
+              !appModel.dispatcher.isGestureInProgress else { return false }
+        switch kind {
+        case .copy: return true
+        case .cut: return bridge.state.selection != nil
+        case .paste: return ClipboardController.shared.canPaste
+        }
+    }
+
+    private enum ClipboardCommand { case copy, cut, paste }
+
     // MARK: - Test seam (spec 0013)
 
     /// Sets the document's selection without a history step — the document stays clean
@@ -491,6 +645,9 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         case #selector(eraseSelection(_:)): return selectionPixelCommandIsEnabled(.eraseSelection)
         case #selector(fillSelection(_:)): return selectionPixelCommandIsEnabled(.fillSelection)
         case #selector(invertSelection(_:)): return selectionCommandIsEnabled(.invertSelection)
+        case #selector(cut(_:)): return clipboardCommandIsEnabled(.cut)
+        case #selector(copy(_:)): return clipboardCommandIsEnabled(.copy)
+        case #selector(paste(_:)): return clipboardCommandIsEnabled(.paste)
         default: return true
         }
     }

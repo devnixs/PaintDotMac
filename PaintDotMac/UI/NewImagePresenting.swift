@@ -58,14 +58,22 @@ final class ModalNewImagePresenter: NSObject, NewImagePresenting, NSWindowDelega
     }
 }
 
-/// The real alert presenter: a one-button `NSAlert`.
+/// The real alert presenter: a one-button `NSAlert`. `sheetWindow` (0021) runs it as that
+/// window's sheet — document-window alerts are sheets; with no window (document
+/// controller) it stays app-modal.
 @MainActor
 struct ModalAlertPresenter: AlertPresenting {
+    var sheetWindow: NSWindow?
+
     func showAlert(message: String, informativeText: String?) {
         let alert = NSAlert()
         alert.messageText = message
         alert.informativeText = informativeText ?? ""
         alert.addButton(withTitle: "OK")
-        alert.runModal()
+        if let sheetWindow {
+            alert.beginSheetModal(for: sheetWindow)
+        } else {
+            alert.runModal()
+        }
     }
 }

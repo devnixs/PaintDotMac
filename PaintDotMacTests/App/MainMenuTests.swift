@@ -112,6 +112,9 @@ struct MainMenuTests {
             Row(title: "Cut", key: "x", modifiers: [.command], action: "cut:"),
             Row(title: "Copy", key: "c", modifiers: [.command], action: "copy:"),
             Row(title: "Paste", key: "v", modifiers: [.command], action: "paste:"),
+            // 0021: Paint.NET order — Paste into New Image directly after Paste.
+            Row(title: "Paste into New Image", key: "v", modifiers: [.command, .option],
+                action: "pasteIntoNewImage:"),
             .separator,
             // 0013's Paint.NET selection block with 0018's Erase/Fill Selection inserted
             // between Deselect and Invert Selection. ⌫ is `NSBackspaceCharacter`; ⌦ is a
@@ -124,6 +127,39 @@ struct MainMenuTests {
             Row(title: "Invert Selection", key: "i", modifiers: [.command],
                 action: "invertSelection:"),
         ])
+    }
+
+    @Test func editMenuClipboardItems() throws {
+        // 0021: titles, shortcuts, actions, and identifiers of the clipboard block,
+        // in Paint.NET order (Cut, Copy, Paste, Paste into New Image).
+        let edit = try submenu(MainMenu.editMenuIdentifier)
+        let byIdentifier: [(NSUserInterfaceItemIdentifier, String, String,
+                            NSEvent.ModifierFlags, String)] = [
+            (MainMenu.editCutItemIdentifier, "Cut", "x", [.command], "cut:"),
+            (MainMenu.editCopyItemIdentifier, "Copy", "c", [.command], "copy:"),
+            (MainMenu.editPasteItemIdentifier, "Paste", "v", [.command], "paste:"),
+            (MainMenu.editPasteIntoNewImageItemIdentifier, "Paste into New Image", "v",
+             [.command, .option], "pasteIntoNewImage:"),
+        ]
+        var indices: [Int] = []
+        for (identifier, title, key, modifiers, action) in byIdentifier {
+            let item = try #require(edit.items.first { $0.identifier == identifier },
+                                    "missing \(identifier.rawValue)")
+            indices.append(edit.items.firstIndex(of: item) ?? -1)
+            #expect(item.title == title)
+            #expect(item.keyEquivalent == key)
+            #expect(item.keyEquivalentModifierMask == modifiers)
+            #expect(item.action == NSSelectorFromString(action))
+        }
+        #expect(indices == indices.sorted(), "the clipboard items keep their order")
+        // ⌥⌘V is distinct from ⌘V (noDuplicateShortcuts covers the whole menu).
+        let pasteIndex = try #require(edit.items.firstIndex {
+            $0.identifier == MainMenu.editPasteItemIdentifier
+        })
+        let pasteNewIndex = try #require(edit.items.firstIndex {
+            $0.identifier == MainMenu.editPasteIntoNewImageItemIdentifier
+        })
+        #expect(pasteNewIndex == pasteIndex + 1, "Paste into New Image follows Paste")
     }
 
     @Test func editMenuSelectionItems() throws {

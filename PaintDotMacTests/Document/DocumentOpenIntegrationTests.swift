@@ -127,13 +127,19 @@ struct DocumentOpenIntegrationTests {
             // `NSDocument` validation now; no File menu item uses them in M0.
             #expect(harness.isEnabled(NSSelectorFromString("saveDocument:")))
             #expect(harness.isEnabled(NSSelectorFromString("saveDocumentAs:")))
-            // Acceptance: while a document is open, Undo and the clipboard actions stay
-            // disabled (0021 adds them) and Open… stays enabled. 0013: `selectAll:` is
-            // answered by the window controller and enabled for any open document.
-            for name in ["undo:", "cut:", "copy:", "paste:"] {
-                #expect(harness.isEnabled(NSSelectorFromString(name)) == false,
-                        "\(name) must stay disabled until its spec")
-            }
+            // Acceptance: Undo stays disabled at the base step and Open… stays
+            // enabled. 0013: `selectAll:` is answered by the window controller and
+            // enabled for any open document. 0021 implements the clipboard actions:
+            // Copy is enabled with a document open, Cut stays disabled while there is
+            // no selection. Paste / Paste into New Image depend on the pasteboard —
+            // their matrix is pinned in `ClipboardWindowIntegrationTests.menuEnablement`
+            // on a private pasteboard, never asserted against the user's clipboard.
+            #expect(harness.isEnabled(NSSelectorFromString("undo:")) == false,
+                    "undo: stays disabled at the base step")
+            #expect(harness.isEnabled(NSSelectorFromString("copy:")),
+                    "0021: Copy is enabled with a document open")
+            #expect(harness.isEnabled(NSSelectorFromString("cut:")) == false,
+                    "0021: Cut needs a selection")
             #expect(harness.isEnabled(NSSelectorFromString("selectAll:")),
                     "0013: Select All is enabled with a document open")
             #expect(harness.isEnabled(#selector(NSDocumentController.openDocument(_:))))
