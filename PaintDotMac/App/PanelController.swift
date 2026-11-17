@@ -168,8 +168,8 @@ final class PanelController: NSObject, NSWindowDelegate {
             // The History panel has real content since 0010.
             AnyView(HistoryPanelView(panel: model.historyPanel))
         case .layers:
-            // 0025 replaces this case with real content (D-36).
-            AnyView(PanelPlaceholderView(kind: kind))
+            // 0025 replaced the placeholder with the real Layers panel (L-5, D-36).
+            AnyView(LayersPanelView(model: model.layersPanel))
         }
     }
 

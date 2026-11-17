@@ -193,3 +193,48 @@ enum ActiveLayerStep: Sendable {
         }
     }
 }
+
+/// The Layers panel's drag-to-reorder (spec 0025 item 4, PRD L-5): a move from one layer
+/// index to any other, shifting the layers between. 0024's `LayerCommand` only has the
+/// adjacent up/down swap; a drag across several positions is **one** step (one gesture =
+/// one undo), named after its direction.
+///
+/// The step is 0024's kind — `DocumentSnapshotHistoryItem` — because the move *changes
+/// the layer stack*, so undo restoring the recorded `activeLayerIndex` is exactly what
+/// H-6 prescribes for stack changes. After the move the moved layer is active (Paint.NET:
+/// the dragged layer stays selected). Every layer keeps its `id` and tile storage; only
+/// the array order and the active index change.
+enum LayerMove {
+    /// Moves the layer at `from` to index `to` (both 0 = bottom), shifting the layers
+    /// between. The moved layer becomes active. nil when `from == to` or either index is
+    /// out of range.
+    static func applied(from: Int, to: Int, in image: LayeredImage) -> LayeredImage? {
+        guard from != to,
+              image.layers.indices.contains(from),
+              image.layers.indices.contains(to)
+        else { return nil }
+        var layers = image.layers
+        let moved = layers.remove(at: from)
+        layers.insert(moved, at: to)
+        return LayeredImage(size: image.size, dpi: image.dpi,
+                            layers: layers, activeLayerIndex: to)
+    }
+
+    /// nil when `applied` is nil; otherwise the one snapshot step named "Move Layer Up"
+    /// (`to > from`) or "Move Layer Down" (`to < from`), icon `.layerMove`.
+    ///
+    /// **Precondition `state.floatingPixels == nil`** — like 0024's layer commands, the
+    /// caller commits the pending tool edit first via `prepareForNavigation` (0020
+    /// item 9), so the snapshot never captures a floating state on a reordered stack.
+    static func makeHistoryItem(from: Int, to: Int,
+                                for state: DocumentState) -> DocumentSnapshotHistoryItem? {
+        assert(state.floatingPixels == nil,
+               "layer moves require floating pixels to be committed first (0020 item 9)")
+        guard let moved = applied(from: from, to: to, in: state.image) else { return nil }
+        let name = to > from ? LayerCommand.moveLayerUp.name : LayerCommand.moveLayerDown.name
+        return DocumentSnapshotHistoryItem(
+            name: name, icon: .layerMove,
+            before: state,
+            after: DocumentState(image: moved, selection: state.selection, floatingPixels: nil))
+    }
+}

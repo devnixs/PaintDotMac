@@ -164,28 +164,6 @@ struct PanelsIntegrationTests {
         }
     }
 
-    @Test func placeholderText() async throws {
-        try await TestRunGate.withLock {
-            let fixtures = try FixtureFiles()
-            defer { cleanup(); fixtures.removeAll() }
-            let harness = try await openFixture(fixtures, named: "panels.png")
-            defer { finish(harness) }
-
-            let controller = PanelController(model: harness.appModel)
-            // Colors has real content since 0007 and History since 0010; only Layers is a
-            // placeholder now (D-36).
-            for kind in [PanelKind.layers] {
-                let panel = try #require(controller.panels[kind])
-                let content = try #require(panel.contentView)
-                pumpMainRunLoop()
-                let shows = AX.withAccessibilityClient {
-                    AX.containsStaticText(inRoot: content, PanelPlaceholderView.message)
-                }
-                #expect(shows, "\(kind.rawValue) shows the placeholder text (D-36)")
-            }
-        }
-    }
-
     @Test func optionsBarInEveryWindow() async throws {
         try await TestRunGate.withLock {
             let fixtures = try FixtureFiles()

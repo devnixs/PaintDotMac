@@ -46,6 +46,7 @@ enum HistoryIcon: String, CaseIterable, Sendable {
     case layerMerge
     case layerMove
     case layerProperties
+    case layerVisibility
     case flatten
     case importLayer
     case adjustment

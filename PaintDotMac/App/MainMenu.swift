@@ -58,7 +58,10 @@ enum MainMenu {
     static let layersGoToAboveItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.goToLayerAbove")
     static let layersGoToBelowItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.goToLayerBelow")
     static let layersMoveUpItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.moveLayerUp")
-    static let layersMoveDownItemIdentifier = NSUserInterfaceItemIdentifier("menu.layers.moveLayerDown")
+    static let layersMoveDownItemIdentifier =
+        NSUserInterfaceItemIdentifier("menu.layers.moveLayerDown")
+    static let layersPropertiesItemIdentifier =
+        NSUserInterfaceItemIdentifier("menu.layers.properties")
     // Edit > clipboard items (0021; the block 0001 placed, 0021 implements).
     static let editCutItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.cut")
     static let editCopyItemIdentifier = NSUserInterfaceItemIdentifier("menu.edit.copy")
@@ -97,6 +100,7 @@ enum MainMenu {
     /// The Layers menu's actions (0024), sent first-responder-style to
     /// `DocumentWindowController` (target nil).
     static let addNewLayerAction = NSSelectorFromString("addNewLayer:")
+    static let showLayerPropertiesAction = NSSelectorFromString("showLayerProperties:")
     static let deleteLayerAction = NSSelectorFromString("deleteLayer:")
     static let duplicateLayerAction = NSSelectorFromString("duplicateLayer:")
     static let mergeLayerDownAction = NSSelectorFromString("mergeLayerDown:")
@@ -340,6 +344,12 @@ enum MainMenu {
         let moveDownItem = makeItem(LayerCommand.moveLayerDown.name, action: moveLayerDownAction)
         moveDownItem.identifier = layersMoveDownItemIdentifier
         menu.addItem(moveDownItem)
+        // 0025: "Layer Properties…" at the end after a separator (LayersMenu.html);
+        // PRD §5.12 maps it to double-clicking a layer row, so it gets no key equivalent.
+        menu.addItem(.separator())
+        let propertiesItem = makeItem("Layer Properties…", action: showLayerPropertiesAction)
+        propertiesItem.identifier = layersPropertiesItemIdentifier
+        menu.addItem(propertiesItem)
         return menu
     }
 

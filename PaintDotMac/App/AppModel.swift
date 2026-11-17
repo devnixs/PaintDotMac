@@ -33,6 +33,11 @@ final class AppModel {
     /// rows, and forwards Undo/Redo/clicks to its `UndoBridge`.
     let historyPanel: HistoryPanelModel
 
+    /// The Layers panel's model (0025): follows `activeSession`, holds that document's
+    /// layer rows and thumbnails, and forwards row/checkbox/drag/button actions to its
+    /// `UndoBridge` and 0024 layer commands.
+    let layersPanel: LayersPanelModel
+
     /// The tool options bar / active tool changed while a pointer may sit over a canvas;
     /// routers register here to re-query their cursor immediately.
     @ObservationIgnored private var cursorRefreshHooks: [UUID: @MainActor () -> Void] = [:]
@@ -64,6 +69,7 @@ final class AppModel {
         // Initialized first so `self` may be captured below; `follow(self)` runs at the
         // end of `init`, once the model is whole.
         self.historyPanel = HistoryPanelModel()
+        self.layersPanel = LayersPanelModel()
         self.registry = registry
         self.defaults = defaults
         // The colors live in the same suite as everything else app-wide (AGENTS.md: never
@@ -90,6 +96,8 @@ final class AppModel {
         }
         // The History panel follows this model's active session from the first change on.
         historyPanel.follow(self)
+        // …and so does the Layers panel (0025).
+        layersPanel.follow(self)
     }
 
     private func mirrorDispatcherState() {

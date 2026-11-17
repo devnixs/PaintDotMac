@@ -23,6 +23,8 @@ struct HistoryIconSymbolTests {
         #expect(HistoryIcon.newImage.symbolName == "doc.badge.plus")
         #expect(HistoryIcon.paintbrush.symbolName == "paintbrush.pointed")
         #expect(HistoryIcon.generic.symbolName == "clock.arrow.circlepath")
+        // 0025: the visibility step's icon.
+        #expect(HistoryIcon.layerVisibility.symbolName == "eye")
     }
 
     /// The tool cases' raw values are `ToolID` raw values (0008); their symbols must match

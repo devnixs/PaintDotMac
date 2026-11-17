@@ -44,6 +44,7 @@ extension HistoryIcon {
         case .layerMerge: "square.stack.3d.down.right"
         case .layerMove: "arrow.up.arrow.down"
         case .layerProperties: "slider.horizontal.3"
+        case .layerVisibility: "eye"
         case .flatten: "square.stack"
         case .importLayer: "square.and.arrow.down"
         case .adjustment: "slider.vertical.3"

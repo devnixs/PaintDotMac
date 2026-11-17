@@ -123,6 +123,11 @@ struct MainMenuTests {
             .separator,
             Row(title: "Move Layer Up", key: "", modifiers: [], action: "moveLayerUp:"),
             Row(title: "Move Layer Down", key: "", modifiers: [], action: "moveLayerDown:"),
+            .separator,
+            // 0025: Layer Properties… last, no key equivalent (§5.12 maps it to
+            // double-clicking a layer row).
+            Row(title: "Layer Properties…", key: "", modifiers: [],
+                action: "showLayerProperties:"),
         ])
         // The menu sits directly after Image and before Window.
         let titles = topLevelMenus().items.compactMap(\.submenu?.title)
@@ -138,7 +143,7 @@ struct MainMenuTests {
             "menu.layers.addNewLayer", "menu.layers.deleteLayer", "menu.layers.duplicateLayer",
             "menu.layers.mergeLayerDown", nil, "menu.layers.goToLayerAbove",
             "menu.layers.goToLayerBelow", nil, "menu.layers.moveLayerUp",
-            "menu.layers.moveLayerDown",
+            "menu.layers.moveLayerDown", nil, "menu.layers.properties",
         ])
     }
 

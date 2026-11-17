@@ -63,6 +63,12 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
     var alertPresenter: AlertPresenting = ModalAlertPresenter()
     var pasteExpandPrompt: PasteExpandPrompting?
 
+    /// 0025's sheet seam (AGENTS.md *Headless testing*): Layer Properties presents
+    /// through this; integration tests install a recording one that keeps the
+    /// controller without showing it. `isPresenting` is what
+    /// `LayersPanelModel.isDocumentBusy` follows and what disables the menu action.
+    var layerPropertiesPresenter: SheetPresenting = DocumentSheetPresenter()
+
     /// The hosted tool options bar (0006); rebound when `appModel` is replaced.
     private var optionsBarHosting: NSHostingView<AnyView>?
 
@@ -674,6 +680,61 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
                                 commitPendingEdit: { bridge.prepareForNavigation?() })
     }
 
+    // MARK: - Layer Properties dialog (spec 0025)
+
+    /// Layers > Layer Properties… and the Layers panel's Properties button / row
+    /// double-click, for the active layer: finishes a pending tool edit first
+    /// (`prepareForNavigation`, reason `.command` — floating pixels record "Finish
+    /// Pixels" before the dialog reads the layer), then presents
+    /// `LayerPropertiesDialogView` through the `layerPropertiesPresenter` seam as a
+    /// sheet. No-op with a gesture in flight or a sheet already attached; live preview
+    /// writes through `updateLiveState` (never a step) and OK commits the single
+    /// "Layer Properties" item (the stack drops it when nothing changed, H-6).
+    @objc func showLayerProperties(_ sender: Any?) {
+        guard let bridge = (document as? PaintDocument)?.undoBridge,
+              let window,
+              !appModel.dispatcher.isGestureInProgress,
+              !layerPropertiesPresenter.isPresenting else { return }
+        bridge.prepareForNavigation?()
+        let activeLayer = bridge.state.image.activeLayer
+        let layerID = activeLayer.id
+        let model = LayerPropertiesDialogModel(layerID: layerID,
+                                               original: activeLayer.properties) { [weak self] properties in
+            guard let self,
+                  let bridge = (self.document as? PaintDocument)?.undoBridge else { return }
+            // Live preview: no step, no edited-state change; the `.structure` canvas
+            // refresh is the same one `onStateChange` performs (0008).
+            bridge.updateLiveState { state in
+                guard let index = state.image.layerIndex(for: layerID) else { return }
+                state.image.layers[index].properties = properties
+            }
+            self.refreshCanvas(for: .structure)
+            self.appModel.layersPanel.refresh()
+        }
+        model.onDismiss = { [weak self] in
+            guard let self else { return }
+            self.layerPropertiesPresenter.dismiss()
+            self.appModel.layersPanel.refresh()
+        }
+        model.onCommit = { item in
+            bridge.commit(item)
+        }
+        let controller = NSHostingController(rootView: LayerPropertiesDialogView(model: model))
+        layerPropertiesPresenter.present(controller, on: window) { [weak self] in
+            // Sheet gone (OK, Cancel, or the window's close path): the panel re-enables.
+            self?.appModel.layersPanel.refresh()
+        }
+        appModel.layersPanel.refresh()
+    }
+
+    /// Menu validation for "Layer Properties…": enabled iff no gesture is in flight and
+    /// no sheet is attached (spec item 9).
+    private func showLayerPropertiesIsEnabled() -> Bool {
+        (document as? PaintDocument)?.undoBridge != nil
+            && !appModel.dispatcher.isGestureInProgress
+            && !layerPropertiesPresenter.isPresenting
+    }
+
     /// Menu validation: enabled iff no gesture is in flight and the command's own
     /// enablement holds (Go to: the target index exists). The existing `.structure`
     /// handling of `onStateChange` (set `canvasView.image`, `invalidateAll()`, status
@@ -748,6 +809,7 @@ final class DocumentWindowController: NSWindowController, NSMenuItemValidation, 
         case #selector(flattenImage(_:)): return layerCommandIsEnabled(.flatten)
         case #selector(goToLayerAbove(_:)): return goToLayerIsEnabled(.above)
         case #selector(goToLayerBelow(_:)): return goToLayerIsEnabled(.below)
+        case #selector(showLayerProperties(_:)): return showLayerPropertiesIsEnabled()
         default: return true
         }
     }

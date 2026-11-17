@@ -92,6 +92,16 @@ enum AX {
         string(object, "accessibilityTitle")
     }
 
+    /// The numeric accessibility value: SwiftUI checkboxes vend `NSNumber` 1/0, text
+    /// controls may vend the digits as a `String` — both shapes resolve through this.
+    static func valueNumber(of object: NSObject) -> Int? {
+        switch a11yValue(object, "accessibilityValue") {
+        case let number as NSNumber: return number.intValue
+        case let text as String: return Int(text)
+        default: return nil
+        }
+    }
+
     /// The selected trait (SwiftUI `.isSelected`).
     static func isSelected(_ object: NSObject) -> Bool {
         boolValue(object, "isSelected")

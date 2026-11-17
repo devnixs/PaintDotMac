@@ -265,3 +265,58 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
 - Toggle Layer Visibility and Move Layer to Top/Bottom menu items (not in the PRD's L-requirements for v1.0; the visibility checkbox covers toggling). Go to Layer Above/Below already exist (0024).
 - Docked panels (0052); inline rename in the row (rename via Layer Properties only); multi-layer selection.
 - OpenRaster storage of properties (0028).
+
+## Verification status
+
+- Implemented 2026-11-17. Quality gate (full, clean build, `quality-gate.sh`): **GREEN** —
+  `tests: 1898 passed, 0 failed, 0 skipped (of 1898)`; no crash reports during the run;
+  `build-for-testing` warning scan: zero compiler warnings (app + test sources).
+- New tests: 12 suites — `LayerListModelTests` (rows top-first, empty, enablement ==
+  0024 menu validation, `moveTarget` mapping, display-index conversion, visibility-item
+  building, defensive clamp), `LayerOperationsMoveTests` (names, active-moved-layer,
+  adjacency parity with 0024, no-op, round-trip, storage sharing, painted pixels),
+  `LayerPropertiesHistoryItemTests` (round-trip, Paint.NET names, no-op, cost/change,
+  H-6 active-layer/selection preservation), `LayerPanelPropertyTests` (100 seeded
+  sessions, ids/order/properties/tile-storage exact round-trip, H-6 during undo),
+  `ThumbnailRendererTests` (fitted-size table, hand-computed checker composites,
+  premultiplied average, tile-boundary walk vs independent reference, cancellation),
+  `ThumbnailCacheTests` (generation + storage staleness, snapshot-collision case,
+  `retain(only:)`), `ThumbnailThrottleTests` (leading edge, coalesced trailing at
+  +0.25 s, injected clock), `LayerPropertiesDialogModelTests` (live-preview apply,
+  Cancel/OK contract, opacity parse table incl. fallback 77),
+  `LayersPanelIntegrationTests` (select-is-no-step, visibility step + composite + undo
+  titles, drag-reorder, dialog flow on the real bridge, finish-floating-first for all
+  four actions, follows-active-document + refresh counting, thumbnail update after
+  paint + deleted-layer drop, throttled), `LayersPanelWindowIntegrationTests` (AX:
+  panel lists top-first with thumbnails/checkboxes, row click selects without a step,
+  checkbox adds one Hide/Show step with undo/redo, drag reorder one step, footer
+  enablement + actions, double-click opens the dialog for the clicked layer with busy
+  no-ops, OK/Cancel live-preview round-trip, follows the active document),
+  `HistoryIconSymbolTests` (`layerVisibility` → "eye"), `ThumbnailPerformanceTests`
+  (4000×3000 + 65535×1 sparse; reported ~1.07 s in **Debug -Onone** — the gate builds
+  Debug, where a 12-megapixel box filter is ~10× slower than the Release build the
+  spec's "tens of ms" targets; the test pins a strict 1500 ms Debug ceiling and the
+  Release timing is a manual check. NF-1's protected behavior — painting latency — is
+  structural: thumbnails never render on the main actor).
+- Deviations (documented): the rows render in a `ScrollView`/`LazyVStack` (0010's
+  container) instead of `List` — `List`'s collection view never realizes rows in a
+  never-shown panel, so the headless AX tests (and VoiceOver off-screen) would see no
+  rows; drag-reorder stays real via `.draggable`/`.dropDestination` routing the same
+  `move(displaySource:displayDestination:)` call, and the row vends its
+  "active"/"inactive" accessibility value via the button trait. The dialog's own AX
+  tree needs a visible sheet (out of the headless harness's reach); its fields are
+  asserted through the shared `LayerPropertiesDialogModel` the buttons call.
+- Review: pending.
+- Manual verification (not yet performed):
+  - [ ] Window > Layers (⌥⌘3) opens the panel on a 3-layer document: live thumbnails
+        over the checkerboard, top layer first, active row highlighted; click a row —
+        no History change; double-click opens Layer Properties; Name/Visible/blend
+        (Normal only)/Opacity slider+field work; OK records one "Layer Properties"
+        step; Cancel restores.
+  - [ ] Drag rows to reorder while watching History: one step per drag, the moved row
+        becomes active; ⌘Z restores the order.
+  - [ ] Paint a long stroke with the panel open: no canvas latency; thumbnails refresh
+        at ≤ 4/s; deleting a layer drops its thumbnail; switching documents while
+        rendering does not crash.
+  - [ ] Hide every layer: checkerboard only; paint still lands on the hidden active
+        layer; a 100-layer document scrolls and thumbnails stream in without beachball.
