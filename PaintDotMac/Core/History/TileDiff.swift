@@ -53,10 +53,16 @@ struct TileDiff: Sendable {
         // Fill / erase results commonly repeat one buffer across every interior tile, so
         // each buffer (pair) is compared or classified once instead of 256 KB per tile
         // (0018's perf targets). Addresses are stable for the whole loop — both surfaces
-        // own their buffers and nothing allocates or frees here.
+        // own their buffers and nothing allocates or frees here, so two keys match only
+        // when the buffers ARE the same storage (same bytes, same classification).
+        // `TileDiffTests.memoizedBufferKeysAreBufferIdentity` exercises the aliased
+        // shapes (one buffer at several coordinates, distinct buffers with equal bytes).
         var equality: [UnsafeRawPointer: [UnsafeRawPointer: Bool]] = [:]
         var transparency: [UnsafeRawPointer: Bool] = [:]
         func buffer(_ tile: Tile) -> UnsafeRawPointer {
+            // `bytes` always holds exactly `Tile.byteCount` entries (0002's inits), so
+            // the base address is never nil and lives as long as the tile does — which
+            // is the whole loop, because both surfaces keep every tile alive.
             tile.bytes.withUnsafeBytes { $0.baseAddress! }
         }
         func isFullyTransparent(_ tile: Tile) -> Bool {

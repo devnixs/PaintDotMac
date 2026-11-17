@@ -172,6 +172,31 @@ struct EraseSelectionTests {
         #expect(after.image == before.image, "pixels unchanged — a deselect-only step")
     }
 
+    @Test func allocatedTransparentTilesAreAnEraseNoOp() throws {
+        // An allocated but fully transparent tile (before `releaseTransparentTiles` runs,
+        // or restored by undo) erases to "absent", which is pixel-identical: no diff
+        // entry, no byte cost — with a selection the step is the deselect, without one
+        // there is no step at all (H-6). Exercises the `TileDiff` transparent-tile
+        // classification through the real command.
+        var surface = TiledSurface(size: PixelSize(width: 512, height: 512))
+        surface.setTile(Tile(), at: TileCoordinate(column: 0, row: 0))
+        surface.setTile(Tile(), at: TileCoordinate(column: 1, row: 1))
+        let selection = Selection.all(canvasSize: surface.size)
+        let (erased, touched) = EraseSelection.erase(surface, mask: selection.mask)
+        #expect(touched == [TileCoordinate(column: 0, row: 0), TileCoordinate(column: 1, row: 1)],
+                "the tiles are replaced, but the replacement equals the old pixels")
+        #expect(erased.allocatedTileCoordinates.isEmpty)
+
+        #expect(EraseSelection.makeHistoryItem(for: state(surface)) == nil,
+                "transparent tiles, no selection: no step")
+        let item = try #require(EraseSelection.makeHistoryItem(for: state(surface, selection: selection)))
+        // Deselect-only steps merge to the degenerate `.pixelsAndSelection([:])` (0013's
+        // table starts from `.pixels([:])); the empty tile set uploads nothing and
+        // `affectsSelection` still refreshes the ants.
+        #expect(item.change == .pixelsAndSelection([:]))
+        #expect(item.change.affectsSelection)
+    }
+
     @Test func partialTileBecomesNilWhenTransparent() {
         // Opaque pixels only where the ellipse's mask is 255 → erasing empties the tile.
         var surface = TiledSurface(size: PixelSize(width: 256, height: 256))

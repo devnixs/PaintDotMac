@@ -66,7 +66,10 @@ struct FillSelectionTests {
 
     /// The integer rule against an independent `Double` reference:
     /// `outA = round(Da·(1−f) + Ca·f)`, `ch = round((Dc·Da(1−f) + Cc·Ca·f) / (Da(1−f) + Ca·f))`
-    /// with `f = m/255`; ±0 on alpha, ±1 on channels (`Double` rounding at exact halves).
+    /// with `f = m/255`; alpha exact, channels exact — ±1 only where the reference
+    /// quotient sits at an exact half (`Double` cannot resolve which way an exact tie
+    /// rounds; every other quotient is ≥ 1⁄(2·sum) ≈ 7.7 µ away from a half, far outside
+    /// the reference's ~1e-12 rounding error, so anything else must match to the byte).
     @Test func pixelFormulaReference() {
         var rng = SeededRandom(seed: SeededRandom.resolvedSeed(default: 0x0018_F115_0000_0001))
         for _ in 0..<20_000 {
@@ -74,31 +77,68 @@ struct FillSelectionTests {
             let color = rng.color()
             let m = UInt8(truncatingIfNeeded: rng.int(in: 0...255))
             let got = FillSelection.fillPixel(p, color: color, coverage: m)
-            let expected: ColorRGBA8
-            if m == 0 {
-                expected = p
-            } else {
-                let f = Double(m) / 255
-                let wD = Double(p.alpha) * (1 - f)
-                let wC = Double(color.alpha) * f
-                let sum = wD + wC
-                let outA = Int(sum.rounded())
-                if outA == 0 {
-                    expected = .clear
-                } else {
-                    func channel(_ d: UInt8, _ c: UInt8) -> UInt8 {
-                        UInt8(min(255, ((Double(d) * wD + Double(c) * wC) / sum).rounded()))
+            guard m != 0 else {
+                #expect(got == p, "m 0 is a no-op: p=\(p) — \(rng.comment)")
+                continue
+            }
+            let f = Double(m) / 255
+            let wD = Double(p.alpha) * (1 - f)
+            let wC = Double(color.alpha) * f
+            let sum = wD + wC
+            let outA = Int(sum.rounded())
+            #expect(Int(got.alpha) == outA, "alpha exact: p=\(p) c=\(color) m=\(m) — \(rng.comment)")
+            if outA == 0 {
+                #expect(got == .clear, "p=\(p) c=\(color) m=\(m) — \(rng.comment)")
+                continue
+            }
+            func check(_ gotChannel: UInt8, _ dest: UInt8, _ src: UInt8, _ name: String) {
+                let q = (Double(dest) * wD + Double(src) * wC) / sum
+                let expected = UInt8(min(255, q.rounded()))
+                let nearTie = abs((q - q.rounded(.towardZero)) - 0.5) < 1e-9
+                #expect(abs(Int(gotChannel) - Int(expected)) <= (nearTie ? 1 : 0),
+                        "\(name) p=\(p) c=\(color) m=\(m) — \(rng.comment)")
+            }
+            check(got.red, p.red, color.red, "red")
+            check(got.green, p.green, color.green, "green")
+            check(got.blue, p.blue, color.blue, "blue")
+        }
+    }
+
+    @Test func roundingBoundaryIsExact() {
+        // The channel rule's `sum / 2` bias is round-half-up, and no pair of
+        // (p, color, m) produces an exact .5 quotient — the closest are the
+        // r = (sum−1)/2 / r = (sum+1)/2 neighbours at 0.5 ∓ 1/(2·sum). A rounding bias
+        // off by ±1 flips the byte there and nowhere else nearby, so this sweep —
+        // pinned below the 0.5±1e-9 near-tie window of `pixelFormulaReference` —
+        // catches any half-value mutation deterministically (12+ of its triples sit
+        // exactly on such a boundary). Expected = the spec's normative integer formula.
+        let pRGB = (UInt8(255), UInt8(128), UInt8(7))
+        let cRGB = (UInt8(13), UInt8(200), UInt8(60))
+        for pa in UInt8(0)...47 {
+            for ca in UInt8(0)...47 {
+                for m in UInt8(1)...47 {
+                    let p = ColorRGBA8(red: pRGB.0, green: pRGB.1, blue: pRGB.2, alpha: pa)
+                    let color = ColorRGBA8(red: cRGB.0, green: cRGB.1, blue: cRGB.2, alpha: ca)
+                    let out = FillSelection.fillPixel(p, color: color, coverage: m)
+                    let wD = UInt32(pa) * (255 - UInt32(m))
+                    let wC = UInt32(ca) * UInt32(m)
+                    let sum = wD + wC
+                    let outA = (sum + 127) / 255
+                    #expect(Int(out.alpha) == Int(outA), "alpha pa=\(pa) ca=\(ca) m=\(m)")
+                    if outA == 0 {
+                        #expect(out == .clear, "pa=\(pa) ca=\(ca) m=\(m)")
+                        continue
                     }
-                    expected = ColorRGBA8(red: channel(p.red, color.red),
-                                          green: channel(p.green, color.green),
-                                          blue: channel(p.blue, color.blue),
-                                          alpha: UInt8(outA))
+                    func expected(_ d: UInt8, _ c: UInt8) -> UInt8 {
+                        UInt8((UInt32(d) * wD + UInt32(c) * wC + sum / 2) / sum)
+                    }
+                    #expect(out.red == expected(p.red, color.red), "red pa=\(pa) ca=\(ca) m=\(m)")
+                    #expect(out.green == expected(p.green, color.green),
+                            "green pa=\(pa) ca=\(ca) m=\(m)")
+                    #expect(out.blue == expected(p.blue, color.blue),
+                            "blue pa=\(pa) ca=\(ca) m=\(m)")
                 }
             }
-            TestImages.expectColor(got, expected, tolerance: 1,
-                                   "p=\(p) c=\(color) m=\(m) — \(rng.comment)")
-            #expect(abs(Int(got.alpha) - Int(expected.alpha)) == 0,
-                    "alpha exact: p=\(p) c=\(color) m=\(m) — \(rng.comment)")
         }
     }
 

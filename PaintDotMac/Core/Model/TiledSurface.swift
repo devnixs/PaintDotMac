@@ -529,22 +529,6 @@ private extension Tile {
         }
     }
 
-    /// Zero every pixel outside the in-bounds area `(0, 0, area.width, area.height)`.
-    mutating func zeroOutside(area: PixelSize) {
-        withUnsafeMutableBytes { buffer in
-            for y in 0..<Tile.size {
-                let firstColumn = y < area.height ? area.width : 0
-                for x in firstColumn..<Tile.size {
-                    let offset = y * Tile.bytesPerRow + x * 4
-                    buffer[offset] = 0
-                    buffer[offset + 1] = 0
-                    buffer[offset + 2] = 0
-                    buffer[offset + 3] = 0
-                }
-            }
-        }
-    }
-
     /// True when every byte outside the in-bounds area `(0, 0, inBounds.width,
     /// inBounds.height)` is zero.
     func paddingIsZero(inBounds area: PixelSize) -> Bool {
@@ -570,3 +554,27 @@ private extension Tile {
         }
     }
 }
+
+extension Tile {
+    /// Zero every pixel outside the in-canvas area `(0, 0, area.width, area.height)`,
+    /// so a tile stored at an edge coordinate honours the padding invariant `setTile`
+    /// asserts. One helper for every writer that stamps `Tile(filledWith:)` — which
+    /// fills the padding too — onto a partially covered coordinate (0002's `fill`,
+    /// 0018's Fill Selection).
+    mutating func zeroOutside(area: PixelSize) {
+        guard area.width < Self.size || area.height < Self.size else { return }
+        withUnsafeMutableBytes { buffer in
+            for y in 0..<Self.size {
+                let firstColumn = y < area.height ? area.width : 0
+                for x in firstColumn..<Self.size {
+                    let offset = y * Self.bytesPerRow + x * 4
+                    buffer[offset] = 0
+                    buffer[offset + 1] = 0
+                    buffer[offset + 2] = 0
+                    buffer[offset + 3] = 0
+                }
+            }
+        }
+    }
+}
+

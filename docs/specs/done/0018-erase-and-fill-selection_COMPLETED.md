@@ -253,21 +253,54 @@ None. All former open questions were approved by the user on 2026-11-15 ("accept
 ## Verification status
 
 Implemented 2026-11-17 (spec 0018). Quality gate, full run
-(`.agents/skills/spec-implementer/scripts/quality-gate.sh`):
+(`.agents/skills/spec-implementer/scripts/quality-gate.sh`) — final run after the review
+fixes (the review added 3 tests; the pre-review run was 1393/0/0):
 
 ```
 ==> Debug build (clean build)
 No compiler warnings.
 
 ==> Headless tests (Debug, PaintDotMacTests only; no UI tests, no app launch)
-tests: 1393 passed, 0 failed, 0 skipped (of 1393)
+tests: 1396 passed, 0 failed, 0 skipped (of 1396)
 
 ==> GREEN
-tests: 1393 passed, 0 failed, 0 skipped (of 1393)
+tests: 1396 passed, 0 failed, 0 skipped (of 1396)
 tests: no crash reports during the run
 ```
 
-Review: pending.
+Review: 2026-11-17, independent review — approved. Every acceptance criterion and edge
+case traced to a failing-if-broken test; oracles verified independent — `pixelFormulaExhaustive`
+proves the spec's `mul255` closed form against `EraseOps`'s distinct 65025-denominator formula
+(a real cross-form proof, not the tautological `matchesEraseOps`), the fill hand values are
+hand-computed (`(184,0,71,178)` discriminates round from floor), `pixelFormulaReference` is a
+`Double` reference with alpha exact (no ties exist in `a·(255−m)` mod 255) — and tightened in
+review so channels are exact except within 1e-9 of an exact tie, where `±1` stands.
+The two beyond-spec-file-list Core changes were the review focus. `TileDiff.between` memoization:
+buffer-address keys are sound (both surfaces keep every tile alive for the whole loop, so keys
+match only for identical storage), but the pre-review suites pass with a broken memo key — with
+the key made lhs-only (and rhs-only), all 84 pre-existing history/erase/fill tests stayed green;
+added `TileDiffTests.memoizedBufferKeysAreBufferIdentity` (one buffer aliased across coordinates,
+distinct buffers with equal bytes, aliased after-pair, transparency and nil pairs), which kills
+both. The `paddingIsZero` Debug trap cannot fire on any user path: every tile writer
+(brush/eraser/pencil via `blendPixels`, flood fill, the compositor, `TileDiff` restores, decoder
+import) addresses only in-canvas pixels, and Fill Selection stamps its `Tile(filledWith:)` edge
+tiles through the padding helper, which review deduplicated (0018's private copy and 0002's
+`zeroOutside` were identical 12-line twins) into one module-internal `Tile.zeroOutside(area:)`;
+an off-by-one in it trips the trap in tests immediately. Added `allocatedTransparentTilesAreAnEraseNoOp`
+(deselect-only erase of allocated-transparent tiles: empty diff, degenerate
+`.pixelsAndSelection([:])` change, ants still refreshed) and `roundingBoundaryIsExact` (the
+`(pa, ca, m) ≤ 47` sweep contains 12 triples exactly at the `0.5 ∓ 1/(2·sum)` rounding boundary,
+catching any half-value mutation deterministically). Mutations tried — all 11 caught: memo key
+lhs-only, memo key rhs-only (both by the new test only), erase `.partial` → `setTile(nil)`
+shortcut, erase keeping RGB when `newA == 0` (D-27), fill rounding floor and `half = (sum+1)/2`
+(hand value + tightened oracle), padding off-by-one (trap), gate fed unstripped ⌥ (⌥⌫ row),
+repeat no longer consumed, ⌥⌦ accepted as Fill, and `validateMenuItem` dropping the text-focus
+term (field-editor rows). Core stays UI-free, no force unwraps outside tests, the `concurrentPerform`
+boxes are disjoint and CoW-safe (each job's buffer has the surface's own reference until `setTile`),
+commands run only through `HistoryStack`/`UndoBridge` after `prepareForNavigation`, and the window
+tests drive the real key codes (51/117) through the real router and re-read saved PNGs.
+Final full gate after the review fixes: **GREEN** — 1396 passed, 0 failed, 0 skipped, no
+crash reports, zero warnings.
 
 Performance (Debug test build medians on 4000×3000, each including `makeHistoryItem`
 with the `TileDiff` and `HistoryStack.perform`; gate 3× the target): Erase Selection

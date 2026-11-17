@@ -242,4 +242,55 @@ struct TileDiffTests {
                 "RGB under alpha 0 survives the round trip")
         #expect(restored.layers[0].surface.pixel(at: PixelPoint(x: 20, y: 5)) == semi)
     }
+
+    @Test func memoizedBufferKeysAreBufferIdentity() throws {
+        // Spec 0018 review: `between` memoizes comparison / classification per tile
+        // BUFFER address (fill / erase repeat one buffer across the interior). The memo
+        // is only correct when the key is the full buffer identity: a one-sided key
+        // (lhs-only or rhs-only) would answer aliased pairs from a stale entry and drop
+        // real changes from the diff. Shapes: (0,0) red→red in a FRESH buffer caches
+        // true; (1,0) reuses the before-buffer with different after bytes (an lhs-only
+        // key returns the stale true and misses the entry); (2,0) reuses the after-buffer
+        // with different before bytes (an rhs-only key does the same); (3,0) and (4,0)
+        // pin the transparency memo (allocated-transparent vs nil and vs a second
+        // zero buffer never enter the diff, while a nil → opaque pair always does).
+        let red = Tile(filledWith: ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 255))
+        let red2 = Tile(filledWith: ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 255))
+        let blue = Tile(filledWith: ColorRGBA8(red: 0, green: 0, blue: 255, alpha: 255))
+        let blue2 = Tile(filledWith: ColorRGBA8(red: 0, green: 0, blue: 255, alpha: 255))
+        let red3 = Tile(filledWith: ColorRGBA8(red: 255, green: 0, blue: 0, alpha: 255))
+        let size = PixelSize(width: 1536, height: 256)
+        var before = TiledSurface(size: size)
+        before.setTile(red, at: coord(0, 0))   // one buffer aliased across …
+        before.setTile(red, at: coord(1, 0))   // … two coordinates
+        before.setTile(blue, at: coord(2, 0))
+        before.setTile(Tile(), at: coord(3, 0))        // allocated, fully transparent
+        before.setTile(Tile(), at: coord(4, 0))        // second zero buffer
+        var after = TiledSurface(size: size)
+        after.setTile(red2, at: coord(0, 0))
+        after.setTile(blue2, at: coord(1, 0))
+        after.setTile(red2, at: coord(2, 0))  // aliased after-buffer pair with (0,0)
+        after.setTile(red3, at: coord(5, 0))  // nil → opaque: always an entry
+        let layerID = UUID()
+        let diff = TileDiff.between(before: before, after: after, layerID: layerID)
+        #expect(diff.entries.map(\.coordinate)
+                    == [coord(1, 0), coord(2, 0), coord(5, 0)],
+                "content-equal pairs and transparent↔nil pairs stay out; changed aliased pairs stay in")
+        let changed = Dictionary(uniqueKeysWithValues: diff.entries.map { ($0.coordinate, $0) })
+        let at1 = try #require(changed[coord(1, 0)])
+        #expect(at1.before!.sharesStorage(with: red), "the entry stores the shared before buffer")
+        #expect(at1.after!.sharesStorage(with: blue2))
+        let at2 = try #require(changed[coord(2, 0)])
+        #expect(at2.before!.sharesStorage(with: blue))
+        #expect(at2.after!.sharesStorage(with: red2))
+        #expect(diff.byteCost == 5 * Tile.byteCount, "two full pairs plus one allocation")
+
+        // Apply / revert round-trip the aliased surface exactly.
+        var live = LayeredImage(size: size, layers: [Layer(id: layerID, name: "L", surface: after)],
+                                activeLayerIndex: 0)
+        diff.revert(&live)
+        #expect(live.layers[0].surface == before, "revert restores every aliased coordinate")
+        diff.apply(to: &live)
+        #expect(live.layers[0].surface == after)
+    }
 }

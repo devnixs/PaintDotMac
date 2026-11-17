@@ -80,7 +80,7 @@ enum FillSelection {
                             shared = cached
                         } else {
                             var tile = Tile(filledWith: color)
-                            tile.zeroPadding(outside: area)
+                            tile.zeroOutside(area: area)
                             sharedTiles[area] = tile
                             shared = tile
                         }
@@ -176,22 +176,3 @@ enum FillSelection {
     }
 }
 
-private extension Tile {
-    /// Zero every pixel outside the in-canvas area `(0, 0, area.width, area.height)` so
-    /// an edge tile honours the 0002 padding invariant (`setTile` asserts it in Debug).
-    mutating func zeroPadding(outside area: PixelSize) {
-        guard area.width < Self.size || area.height < Self.size else { return }
-        withUnsafeMutableBytes { buffer in
-            for y in 0..<Self.size {
-                let firstColumn = y < area.height ? area.width : 0
-                for x in firstColumn..<Self.size {
-                    let offset = y * Self.bytesPerRow + x * 4
-                    buffer[offset] = 0
-                    buffer[offset + 1] = 0
-                    buffer[offset + 2] = 0
-                    buffer[offset + 3] = 0
-                }
-            }
-        }
-    }
-}
